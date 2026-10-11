@@ -1,0 +1,13 @@
+Material Design Icons (Pictogrammers)
+=====================================
+Font: materialdesignicons-webfont.ttf
+Source: https://github.com/Templarian/MaterialDesign-Webfont (npm @mdi/font 7.4.47)
+Author: Austin Andrews (Templarian) and contributors
+License: Apache License 2.0
+https://www.apache.org/licenses/LICENSE-2.0
+
+Icon names: https://pictogrammers.com/library/mdi/
+
+Replaces the previous Google Material Icons font (MaterialIcons-Regular.ttf,
+Apache 2.0) — same license family; chosen for the repeat-off / repeat-once /
+repeat icon semantics.

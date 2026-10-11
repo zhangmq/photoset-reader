@@ -1,0 +1,17 @@
+# 不进版本库（用户 2026-10-11 指定）
+# ⚠️ 注释必须独占一行：gitignore 的 # 只在行首才算注释
+docs/
+.archive/
+dist/
+build/
+out/
+.testdata/
+.scratch/
+AGENTS.md
+
+# 构建/编辑器产物
+*.o
+*.so
+.vscode/
+.idea/
+*.swp
