@@ -4,13 +4,13 @@ import ImageBrowser
 // ══ 文件列表行（列表视图）═════════════════════════════════════
 //   ┌────┐ 文件名  [类型 tag]                    412 MB      3288×2200
 //   └────┘
-//   类型 tag = **图标 + 文本**，紧挨标题（只标图片之外的：压缩包 / 图集）
+//   类型 tag = **图标 + 文本**，紧挨标题（只标图片之外的：压缩包 / 文件夹）
 Item {
     id: root
     property string name: ""
     property string sizeText: ""       // 文件大小
     property string resText: ""        // 分辨率
-    property string kind: "image"        // image | archive | collection
+    property string kind: "image"        // image | archive | folder
     property string thumb: ""
     property bool   missing: false
     property bool   selected: false
@@ -21,9 +21,9 @@ Item {
 
     readonly property bool isImage: kind === "image"
     readonly property string kindGlyph: kind === "archive" ? Theme.icZip
-                                      : kind === "collection" ? Theme.icCollections : ""
+                                      : kind === "folder" ? Theme.icFolder : ""
     readonly property string kindLabel: kind === "archive" ? "压缩包"
-                                      : kind === "collection" ? "图集" : ""
+                                      : kind === "folder" ? "文件夹" : ""
 
     implicitHeight: content.implicitHeight + Theme.spaceSm * 2
 

@@ -8,7 +8,8 @@ import ImageBrowser
 //   ② 列表标题行：左「图集列表」+ 数量徽标   右「过滤框」「排序」
 //   ③ 图集卡片列表（无数据 → 空态引导）
 // ①② 都是 bar：共用 barH、满宽 + spaceLg padding、1px bottom border。
-// 本屏只做纯 UI：信号全部发出、无人接收；过滤与排序尚未接数据源。
+// 数据：`ui.library`（SQLite，轮询 data_version 同步）；卡片上的扫描状态/动作见 CollectionCard。
+// 仍是纯 UI 的部分：过滤与排序**尚未接数据源**（信号发出、无人接收）。
 Item {
     id: root
 
@@ -17,6 +18,7 @@ Item {
     property string filterText: ""
     property bool   debugOpenSort: false          // 调试：截图时自动展开排序菜单
     property bool   debugOpenSettings: false      // 调试：截图时自动打开设置
+    property int    debugSettingsTab: 0           // 调试：设置弹框开在哪一页（0常规/1图像/2系统/3快捷键）
 
     // 点当前排序项 = 切换方向；点其它项 = 切换字段（默认降序）
     function pickSort(key) {
@@ -142,7 +144,7 @@ Item {
                     }
                     Badge {
                         Layout.alignment: Qt.AlignVCenter
-                        label: String(library.count)      // 用 Badge 默认色（= DSH rowTag）
+                        label: String(ui.library.count)   // 用 Badge 默认色（= DSH rowTag）
                     }
 
                     Item { Layout.fillWidth: true }   // 撑开
@@ -187,7 +189,7 @@ Item {
             Loader {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                sourceComponent: library.count > 0 ? listComp : emptyComp
+                sourceComponent: ui.library.count > 0 ? listComp : emptyComp
             }
         }
     }
@@ -196,9 +198,10 @@ Item {
     SettingsDialog {
         id: settingsDialog
     }
-    Component.onCompleted: if (root.debugOpenSettings) settingsDialog.open()
-
-    PlaceholderLibrary { id: library }
+    Component.onCompleted: if (root.debugOpenSettings) {
+        settingsDialog.tab = root.debugSettingsTab
+        settingsDialog.open()
+    }
 
     // ══ 浮层 ══════════════════════════════════════════════
     //   「打开」与「排序」两个菜单都不在这里 —— 由各自的按钮自己持有
@@ -208,7 +211,10 @@ Item {
         ListView {
             id: list
             clip: true
-            model: library
+            // 图集库列表**永远来自 SQLite**（设计 11 §四）：`ui.library` 轮询 data_version 同步
+            //   roles: collectionId / name / path / addedAt / lastViewedAt / progressValue /
+            //          progressText / missing / cover / scanState / scannedItems / resetCommitting
+            model: ui.library
             leftMargin: Theme.spaceMd
             rightMargin: Theme.spaceMd
             topMargin: Theme.spaceMd
@@ -219,6 +225,7 @@ Item {
                 // 最大宽度限制：宽屏上卡片不会被拉得过长
                 width: Math.min(list.width - Theme.spaceMd * 2, Theme.cardMaxW)
                 anchors.horizontalCenter: parent ? parent.horizontalCenter : undefined
+                collectionId: model.collectionId
                 name: model.name
                 path: model.path
                 addedAt: model.addedAt
@@ -227,8 +234,15 @@ Item {
                 progressText: model.progressText
                 missing: model.missing
                 cover: model.cover
+                scanState: model.scanState
+                scannedItems: model.scannedItems
+                resetCommitting: model.resetCommitting
                 onActivated: root.collectionActivated(index)
                 onRemoveRequested: root.collectionRemoveRequested(index)
+                // 重置 / 取消：**走 core**（`LibraryCore::requestReset/cancelReset`，设计 14 §9.1）
+                //   —— 卡片只发信号、动作由 `ui` 执行（见 07 §三）。
+                onScanRequested: ui.requestReset(model.collectionId)
+                onCancelScanRequested: ui.cancelReset(model.collectionId)
             }
         }
     }

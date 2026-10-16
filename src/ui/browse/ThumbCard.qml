@@ -12,7 +12,7 @@ Item {
     id: root
     property string name: ""
     property string thumb: ""
-    property string kind: "image"        // image | archive | collection
+    property string kind: "image"        // image | archive | folder
     property bool   missing: false
     property bool   selected: false
 
@@ -21,7 +21,7 @@ Item {
 
     readonly property bool isImage: kind === "image"
     readonly property string kindGlyph: kind === "archive" ? Theme.icZip
-                                      : kind === "collection" ? Theme.icCollections : ""
+                                      : kind === "folder" ? Theme.icFolder : ""
 
     Rectangle {
         id: card

@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import ImageBrowser
 
-// ══ 设置项行骨架（**结构只定义一次**）══════════════════════════
+// ══ 设置项行结构（**只定义一次**）══════════════════════════
 //   样式来源：DSH 真实设置弹框 `dsh-client-ui-settings-general/lib/client.js`
 //     · `.row{display:flex; justify-content:space-between; align-items:center; gap:24px;
 //             padding:16px 0; border-bottom:.5px solid var(--dsw-alias-border-l2)}`

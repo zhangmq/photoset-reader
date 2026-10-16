@@ -10,7 +10,7 @@ import ImageBrowser
 //      → 改一个页签**物理上碰不到别的页签**（之前全写在一个 Column 里，切片改代码
 //        曾把"常规页收尾 + 图像页开头"一起删掉，导致图像设置跑进常规）
 //      → 本文件只负责布局，**不放任何设置项**
-//   ★ 设置项的骨架只定义一次：`SettingsRow.qml`（左「标题+描述」、右控件垂直居中、行底 hairline）
+//   ★ 设置项的结构只定义一次：`SettingsRow.qml`（左「标题+描述」、右控件垂直居中、行底 hairline）
 //   ★ 当前阶段：**单纯 UI**，各页的值只存在页面自己的属性里，不接 ViewModel
 //
 //   样式来源：DSH 真实设置弹框 `dsh-client-ui-settings-general/lib/client.js`

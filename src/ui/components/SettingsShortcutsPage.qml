@@ -2,7 +2,7 @@ import QtQuick
 import ImageBrowser
 
 // ══ 设置 · 快捷键页（**本文件自足：改这里不会影响别的页签**）══════
-//   只读帮助表：三列（按键 / 功能 / 适用范围），行骨架见 `SettingsKeyRow.qml`
+//   只读帮助表：三列（按键 / 功能 / 适用范围），行结构见 `SettingsKeyRow.qml`
 //   ★ 只列**应用特定语义**的绑定：`Tab`/`Enter`/`Esc`/方向键/`Home`/`End` 是系统与框架的
 //     通用交互约定，属于共识，不列入（用户 2026-10-11）
 //   ★ 排列顺序 = 适用范围顺序：全局 → 文件浏览 → 图像查看（用户 2026-10-11）
@@ -53,7 +53,6 @@ Item {
         }
 
         SettingsKeyRow { key: "Backspace"; func: "返回";                 scope: "全局" }
-        SettingsKeyRow { key: "F5";        func: "刷新";                 scope: "文件浏览" }
         SettingsKeyRow { key: "Space";     func: "播放 / 暂停幻灯片";    scope: "图像查看" }
         SettingsKeyRow { key: "I";         func: "显示 / 隐藏信息面板";   scope: "图像查看" }
         SettingsKeyRow { key: "+";         func: "放大画面";             scope: "图像查看" }

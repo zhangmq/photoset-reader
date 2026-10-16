@@ -12,7 +12,8 @@ import ImageBrowser
 //       `timeline.pressed` 单独保留：拖动中指针可能移出区域，但必须保持可见
 //   · 用 `HoverHandler` 而非 `MouseArea`：只观察 hover，不吞鼠标事件
 //   · 浮层隐藏时按钮 `enabled: false`（淡出后仍命中测试会误点）
-//   · 左：[上一文件夹] [⏮] [⏯] [⏭（长按连续快进）] [下一文件夹]（**纯图标**，目标名字在 tooltip）
+//   · 左：[上一文件夹] [⏮（长按连续**后退**）] [⏯] [⏭（长按连续**快进**）] [下一文件夹]
+//     （**纯图标**，目标名字在 tooltip；**长按对称** —— 用户 2026-10-12）
 //   · 右：[画面缩放▾] [阅读版面▾] [锁定缩放] [切换速度▾] [循环▾] [全屏窗口] [OSD]
 //   · 进度（序号/总数）在**顶栏**，不在本栏；OSD 面板不随本栏显隐（用户 2026-10-11）
 Item {
@@ -96,11 +97,21 @@ Item {
                 onTriggered: root.prevFolderRequested()
             }
             NavBtn {
+                id: prevBtn
                 anchors.verticalCenter: parent.verticalCenter
                 glyph: Theme.icPrev
-                tooltip: "上一张（←）"
+                tooltip: "上一张（←）；长按 = 连续后退"
                 enabled: root.overlaysVisible
-                onTriggered: root.prevRequested()
+                onTriggered: root.prevRequested()          // 单击 = 一张
+                onPressedChanged: {                        // ★ 长按**对称**：连续后退（用户 2026-10-12）
+                    if (pressed) {
+                        backTimer.held = false
+                        backTimer.interval = Theme.fastFwdDelayMs
+                        backTimer.start()
+                    } else {
+                        backTimer.stop()
+                    }
+                }
             }
             NavBtn {
                 anchors.verticalCenter: parent.verticalCenter
@@ -134,6 +145,16 @@ Item {
                     held = true
                     interval = Theme.fastFwdFastMs
                     root.nextRequested()
+                }
+            }
+            Timer {   // 长按连续**后退**（与快进对称；同样先等 fastFwdDelayMs）
+                id: backTimer
+                property bool held: false
+                repeat: true
+                onTriggered: {
+                    held = true
+                    interval = Theme.fastFwdFastMs
+                    root.prevRequested()
                 }
             }
             NavBtn {   // 下一文件夹（**纯图标**；名字放 tooltip —— 用户 2026-10-11）
@@ -191,7 +212,10 @@ Item {
                     { text: "单幅", icon: Theme.icSinglePage, selected: !root.doublePage },
                     { text: "双幅", icon: Theme.icDoublePage, selected: root.doublePage }
                 ]
-                onItemTriggered: function (i) { root.doublePageSelected(i === 1) }
+                onItemTriggered: function (i) {
+                    console.log("[probe] layoutMenu.itemTriggered i=" + i + " → doublePageSelected(" + (i === 1) + ")")
+                    root.doublePageSelected(i === 1)
+                }
             }
 
             NavBtn {   // 锁定缩放（UI；需求见设计 §3.8）

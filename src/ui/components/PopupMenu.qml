@@ -179,6 +179,7 @@ PopupPanel {
                     onEntered: root.currentIndex = -1      // 鼠标接管 → 清掉键盘高亮
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
+                        console.log("[probe] PopupMenu 鼠标点击 index=" + row.index)
                         root.close()
                         root.itemTriggered(row.index)
                     }

@@ -8,33 +8,30 @@ import ImageBrowser
 //   · **无"打开"能力**（用户明确）—— 打开只在图集库
 //   · 聚焦当前范围内各层级浏览
 //   · 上一级到「打开时的根」即禁用
-// 数据：占位模型 PlaceholderBrowse（roles 与将来 C++ 模型一致）
+// 数据：`ui.browse`（**浏览界面模型**，T2d-1b 从 viewer 里搬出来 —— 只认序列的树 + 缩略图 provider；
+//       role 名与界面既有词表一致：name / sizeText / resText / kind / missing / thumb / depth）
 Item {
     id: root
 
-    property bool gridMode: true
+    // 语义状态一律在 ViewModel（设计 11 §二）；这里只是**绑定**，不存第二份
+    property bool gridMode: ui.browseGrid         // 网格或列表
     property bool favorited: false
     property bool canGoUp: false
-    // 范围指示（设计 §04）：在图集内 → 图集《名》；无痕 → 未收藏 · 本次不记进度
-    property string rangeLabel: "图集《龙珠 第01卷》"
+    // 范围指示（设计 §04）：在图集内 → 图集《名》；直接打开 → 未收藏 · 本次不记进度
+    property string rangeLabel: ui.browse ? ui.browse.rangeLabel : ""
     // 当前路径下的过滤词（**仅用于定位，不改变序列** —— 序列始终是完整的那一份）
     property string filterText: ""
     property bool   debugOpenSettings: false      // 调试：截图时自动打开设置
-    // 面包屑：首段 = **锁死的根**（整体，不拆）；后续 = 根内子层级
-    // 占位：**多段**（长根 + 3 级子层）—— 用于验证锁图标/分隔符/当前段/横向滚动
-    property var crumbs: [
-        { label: "/run/media/zmq/Home/Dragon Ball/[七龙珠完全版][DRAGON BALL][鸟山明][文传][01卷].rar", locked: true },
-        { label: "01", locked: false },
-        { label: "扫描", locked: false },
-        { label: "已修图", locked: false }
-    ]
-    property int currentIndex: 0
+    property int    debugSettingsTab: 0           // 调试：设置弹框开在哪一页（0常规/1图像/2系统/3快捷键）
+    // 面包屑：首段 = **锁死的根**（整体，不拆）；后续 = 当前条目所在的子层级
+    //   —— **派生**自来源（设计 07 §三：能派生的不许存）
+    property var crumbs: ui.browse ? ui.browse.crumbs : []
+    property int currentIndex: ui.browse ? ui.browse.browseRow : 0   // 高亮行 = **派生**（当前条目落在哪一行）
 
     signal libraryRequested()
     signal settingsRequested()
     onSettingsRequested: settingsDialog.open()   // [设置] 按钮 → 打开设置对话框
     signal upRequested()
-    signal refreshRequested()
     signal favoriteToggled()
     signal itemActivated(int index)
     signal itemOpened(int index)
@@ -59,7 +56,7 @@ Item {
                 onSettingsRequested: root.settingsRequested()
             }
 
-            // ══ bar 2：路径条（面包屑 + 过滤 + 上一级/刷新/视图切换）══
+            // ══ bar 2：路径条（面包屑 + 过滤 + 上一级/视图切换）══
             BrowsePathBar {
                 Layout.fillWidth: true
                 Layout.preferredHeight: Theme.barH
@@ -70,8 +67,7 @@ Item {
                 onCrumbClicked: (i) => root.crumbClicked(i)
                 onFilterChanged: (text) => root.filterText = text
                 onUpRequested: root.upRequested()
-                onRefreshRequested: root.refreshRequested()
-                onViewModeSelected: (grid) => root.gridMode = grid
+                onViewModeSelected: (grid) => ui.browseGrid = grid
             }
 
             // ══ 内容 ══
@@ -87,9 +83,10 @@ Item {
     SettingsDialog {
         id: settingsDialog
     }
-    Component.onCompleted: if (root.debugOpenSettings) settingsDialog.open()
-
-    PlaceholderBrowse { id: items }
+    Component.onCompleted: if (root.debugOpenSettings) {
+        settingsDialog.tab = root.debugSettingsTab;
+        settingsDialog.open();
+    }
 
     // ── 网格视图 ──
     Component {
@@ -97,7 +94,7 @@ Item {
         GridView {
             id: grid
             clip: true
-            model: items
+            model: ui.browse ? ui.browse.items : null
             // ★ GridView **自己会把内容居中**（实测：leftMargin=0 时首卡仍在 x=160）。
             //   所以不能自己再算 sidePad（两套居中打架）。
             // ★ 也不能给 cellWidth 加"列间距补偿"——cols 按 168 算、cellWidth 变 178 后，
@@ -143,7 +140,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
-                model: items
+                model: ui.browse ? ui.browse.items : null
                 leftMargin: Theme.colListPad
                 rightMargin: Theme.colListPad
                 topMargin: Theme.spaceMd
@@ -158,6 +155,7 @@ Item {
                     kind: model.kind
                     thumb: model.thumb
                     missing: model.missing
+                    depth: model.depth
                     selected: index === root.currentIndex
                     onActivated: root.itemActivated(index)
                     onOpenRequested: root.itemOpened(index)

@@ -3,7 +3,7 @@ import ImageBrowser
 
 // ══ 浏览界面 · 路径条（bar 2）═════════════════════════════════
 //   左：面包屑（首段 = **锁死的根**，整条路径不拆 segment）
-//   右：过滤框 → 上一级 → 刷新 → 视图切换（用户明确：这三个从 bar 1 移到 filter 之后）
+//   右：过滤框 → 上一级 → 视图切换（用户明确：这两个从 bar 1 移到 filter 之后）
 //   与图集库的「列表标题行」同一套规则：高 `barH`、满宽 + `spaceLg` padding、
 //   **自持 1px 下边框**
 Item {
@@ -17,7 +17,6 @@ Item {
     signal crumbClicked(int index)
     signal filterChanged(string text)
     signal upRequested()
-    signal refreshRequested()
     signal viewModeSelected(bool grid)
 
     implicitHeight: Theme.barH
@@ -44,14 +43,8 @@ Item {
             glyph: Theme.icUp
             tooltip: "上一级"
             enabled: root.canGoUp
-            opacity: enabled ? 1 : Theme.dimOpacity     // DSH 禁用态透明度 0.4
+            // 禁用观感由组件自身负责（IconAction：`Theme.dimOpacity`，单一来源）
             onTriggered: root.upRequested()
-        }
-        IconAction {
-            anchors.verticalCenter: parent.verticalCenter
-            glyph: Theme.icRefresh
-            tooltip: "刷新"
-            onTriggered: root.refreshRequested()
         }
         // 视图切换：标准分段控件（DSH SegmentedControl）；当前项有抬起指示块
         SegmentedControl {

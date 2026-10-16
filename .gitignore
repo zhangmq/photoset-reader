@@ -5,8 +5,9 @@ docs/
 dist/
 build/
 out/
-.testdata/
+.testdata
 .scratch/
+.tmp/
 AGENTS.md
 
 # 构建/编辑器产物

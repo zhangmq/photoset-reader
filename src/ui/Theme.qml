@@ -286,6 +286,7 @@ QtObject {
     readonly property string icPlus:    String.fromCodePoint(0xF0415)
     readonly property string icAlert:   String.fromCodePoint(0xF0026)
     readonly property string icTrash:   String.fromCodePoint(0xF0A7A)
+    readonly property string icScan:    String.fromCodePoint(0xF0969)   // folder-search-outline（扫描 / 重新扫描图集）
     readonly property string icSort:    String.fromCodePoint(0xF04BA)
     readonly property string icSearch:  String.fromCodePoint(0xF0349)   // magnify
     readonly property string icClear:   String.fromCodePoint(0xF0159)   // close-circle
@@ -298,7 +299,6 @@ QtObject {
     // 导航 / 全屏（**全部查表得来，不内联猜**）
     readonly property string icBack:      String.fromCodePoint(0xF004D)   // arrow-left
     readonly property string icUp:        String.fromCodePoint(0xF005D)   // arrow-up
-    readonly property string icRefresh:   String.fromCodePoint(0xF0450)   // refresh
     readonly property string icList:      String.fromCodePoint(0xF0572)   // view-list
     readonly property string icFirst:     String.fromCodePoint(0xF0600)   // page-first
     readonly property string icLast:      String.fromCodePoint(0xF0601)   // page-last

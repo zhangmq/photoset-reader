@@ -53,10 +53,38 @@ inline double sinc(double x)
     return std::sin(px) / px;
 }
 
-inline double lanczos3(double x)
+// Mitchell–Netravali bicubic（B = C = 1/3），支撑 2.0
+inline double mitchell(double x)
 {
-    if (x <= -kLanczosSupport || x >= kLanczosSupport) return 0.0;
-    return sinc(x) * sinc(x / kLanczosSupport);
+    const double a = std::abs(x);
+    if (a < 1.0) return (7.0 * a * a * a - 12.0 * a * a + 16.0 / 3.0) / 6.0;
+    if (a < 2.0) return (-7.0 / 3.0 * a * a * a + 12.0 * a * a - 20.0 * a + 32.0 / 3.0) / 6.0;
+    return 0.0;
+}
+
+inline double lanczosN(double x, int lobes)
+{
+    const double a = double(lobes);
+    if (x <= -a || x >= a) return 0.0;
+    return sinc(x) * sinc(x / a);
+}
+
+// Mitchell–Netravali 通用式（B/C 参数化）
+inline double mitchellBC(double x, double B, double C)
+{
+    const double a = std::abs(x);
+    if (a < 1.0) {
+        return ((12.0 - 9.0 * B - 6.0 * C) * a * a * a
+                + (-18.0 + 12.0 * B + 6.0 * C) * a * a
+                + (6.0 - 2.0 * B)) / 6.0;
+    }
+    if (a < 2.0) {
+        return ((-B - 6.0 * C) * a * a * a
+                + (6.0 * B + 30.0 * C) * a * a
+                + (-12.0 * B - 48.0 * C) * a
+                + (8.0 * B + 24.0 * C)) / 6.0;
+    }
+    return 0.0;
 }
 
 // ── 浮点图像（交错 RGB；单通道时只填 R）─────────────────────
@@ -74,13 +102,21 @@ struct Taps {
 };
 
 // 缩小要按比例加宽核（足支撑，避免走样/摩尔纹）；放大用原支撑
-std::vector<Taps> buildTaps(int srcN, int dstN, Quality q)
+std::vector<Taps> buildTaps(int srcN, int dstN, const Params &p)
 {
     std::vector<Taps> out;
     out.resize(size_t(dstN));   // 注意：写成 out(size_t(dstN)) 会被解析成函数声明
     const double scale = double(srcN) / double(dstN);
     const double fscale = std::max(1.0, scale);
-    const double radius = (q == Quality::Fast ? 0.5 : kLanczosSupport) * fscale;
+
+    // 核的选择：显式 filter 优先；Auto 时按档位（Fast → box，其余 → Lanczos(lobes)）
+    Filter f = p.filter;
+    if (f == Filter::Auto) f = (p.quality == Quality::Fast) ? Filter::Box : Filter::Lanczos;
+    const int lobes = qBound(2, p.lobes, 4);
+    const double support = (f == Filter::Box) ? 0.5
+                         : (f == Filter::Mitchell) ? 2.0
+                                                   : double(lobes);
+    const double radius = support * fscale;
 
     for (int i = 0; i < dstN; ++i) {
         const double center = (i + 0.5) * scale - 0.5;
@@ -97,11 +133,10 @@ std::vector<Taps> buildTaps(int srcN, int dstN, Quality q)
         double sum = 0.0;
         for (int k = 0; k < t.count; ++k) {
             double w;
-            if (q == Quality::Fast) {
-                w = 1.0;                                   // box（面积平均）
-            } else {
-                w = lanczos3((lo + k - center) / fscale);
-            }
+            const double u = (lo + k - center) / fscale;
+            if (f == Filter::Mitchell)    w = mitchellBC(u, p.mitchellB, p.mitchellC);
+            else if (f == Filter::Box)    w = 1.0;          // 面积平均
+            else                          w = lanczosN(u, lobes);
             t.w[size_t(k)] = float(w);
             sum += w;
         }
@@ -113,10 +148,10 @@ std::vector<Taps> buildTaps(int srcN, int dstN, Quality q)
 }
 
 // 水平重采样。wantMinMax 时同时产出每行的 min/max（供 anti-ringing 用）。
-void resampleH(const FImg &in, int outW, Quality q, FImg &out,
+void resampleH(const FImg &in, int outW, const Params &p, FImg &out,
                std::vector<float> *mn = nullptr, std::vector<float> *mx = nullptr)
 {
-    const auto taps = buildTaps(in.w, outW, q);
+    const auto taps = buildTaps(in.w, outW, p);
     out.w = outW;
     out.h = in.h;
     out.gray = in.gray;
@@ -154,11 +189,11 @@ void resampleH(const FImg &in, int outW, Quality q, FImg &out,
 }
 
 // 垂直重采样。antiRing 时把结果夹到源邻域 min/max（抑制 Lanczos 负瓣振铃）。
-void resampleV(const FImg &in, int outH, Quality q, FImg &out,
+void resampleV(const FImg &in, int outH, const Params &p, FImg &out,
                const std::vector<float> *mn = nullptr,
                const std::vector<float> *mx = nullptr, bool antiRing = false)
 {
-    const auto taps = buildTaps(in.h, outH, q);
+    const auto taps = buildTaps(in.h, outH, p);
     out.w = in.w;
     out.h = outH;
     out.gray = in.gray;
@@ -191,7 +226,10 @@ void resampleV(const FImg &in, int outH, Quality q, FImg &out,
             const size_t doff = (size_t(y) * size_t(in.w) + size_t(x)) * 3;
             for (int c = 0; c < 3; ++c) {
                 float v = acc[c];
-                if (antiRing && mn && mx) v = std::clamp(v, lo[c], hi[c]);
+                if (antiRing && mn && mx) {
+                    const float clamped = std::clamp(v, lo[c], hi[c]);
+                    v = float(v + (clamped - v) * p.antiring);   // 强度 0 = 关，1 = 全钳
+                }
                 out.p[doff + size_t(c)] = v;
             }
         }
@@ -261,14 +299,14 @@ QSize fitInside(const QSize &src, const QSize &box)
 
 } // namespace
 
-QImage resize(const QImage &src, const QSize &box, Mode mode, Quality quality)
+QImage resize(const QImage &src, const QSize &box, const Params &p)
 {
     if (src.isNull()) return QImage();
     const QSize target = fitInside(src.size(), box);
     if (!target.isValid() || target.isEmpty()) return src;
-    if (target == src.size() && mode != Mode::QtSmooth) return src;
+    if (target == src.size() && p.mode != Mode::QtSmooth) return src;
 
-    switch (mode) {
+    switch (p.mode) {
     case Mode::QtSmooth:
         // 对照路径：Qt 的缩放（**非线性空间**）—— 仅用于对比验证
         return src.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation);
@@ -283,22 +321,21 @@ QImage resize(const QImage &src, const QSize &box, Mode mode, Quality quality)
     bool gray = false;
     const FImg lin = toLinear(src, gray);
 
-    // 大比例缩小时先做 box 预缩，再 Lanczos 收尾：更快且更少振铃
     FImg h;
     std::vector<float> mn, mx;
-    const bool wantAntiRing = (quality == Quality::Best);
+    const bool wantAntiRing = (p.quality == Quality::Best && p.antiring > 0.0);
 
-    if (quality == Quality::Best) {
-        resampleH(lin, target.width(), quality, h, &mn, &mx);
+    if (p.quality == Quality::Best) {
+        resampleH(lin, target.width(), p, h, &mn, &mx);
     } else {
-        resampleH(lin, target.width(), quality, h);
+        resampleH(lin, target.width(), p, h);
     }
 
     FImg v;
-    if (quality == Quality::Best)
-        resampleV(h, target.height(), quality, v, &mn, &mx, wantAntiRing);
+    if (p.quality == Quality::Best)
+        resampleV(h, target.height(), p, v, &mn, &mx, wantAntiRing);
     else
-        resampleV(h, target.height(), quality, v);
+        resampleV(h, target.height(), p, v);
 
     return toSrgb(v, gray);
 }
@@ -311,6 +348,119 @@ const char *modeName(Mode m)
     case Mode::LinearLight: return "linear-light";
     }
     return "?";
+}
+
+const char *filterName(Filter f)
+{
+    switch (f) {
+    case Filter::Auto:     return "auto";
+    case Filter::Box:      return "box";
+    case Filter::Lanczos:  return "lanczos";
+    case Filter::Mitchell: return "mitchell";
+    }
+    return "?";
+}
+
+// ── 预设（唯一事实源）────────────────────────────────────────
+Params paramsFromStrings(const QString &mode, const QString &quality, const QString &filter,
+                         int lobes, double mitchellB, double mitchellC, double antiring)
+{
+    Params p;
+    p.mode = (mode == QLatin1String("nearest"))  ? Mode::Nearest
+           : (mode == QLatin1String("qt-smooth")) ? Mode::QtSmooth
+                                                  : Mode::LinearLight;
+    p.quality = (quality == QLatin1String("fast")) ? Quality::Fast
+              : (quality == QLatin1String("best")) ? Quality::Best
+                                                   : Quality::Balanced;
+    p.filter = (filter == QLatin1String("box"))      ? Filter::Box
+             : (filter == QLatin1String("lanczos"))  ? Filter::Lanczos
+             : (filter == QLatin1String("mitchell")) ? Filter::Mitchell
+                                                     : Filter::Auto;
+    p.lobes = qBound(2, lobes, 4);
+    p.mitchellB = mitchellB;
+    p.mitchellC = mitchellC;
+    p.antiring = qBound(0.0, antiring, 1.0);
+    return p;
+}
+
+const QVector<Preset> &presets()
+{
+    static const QVector<Preset> P = [] {
+        QVector<Preset> v;
+        {   // 平衡：**出厂默认**（= 旧默认档位：线性光 + Lanczos3，行为不变）
+            Preset x{ "balanced", "平衡（默认）", "线性光 + Lanczos3；通用，行为与旧默认一致", {} };
+            v << x;
+        }
+        {   // 漫画：线稿要锐、网点不能起摩尔纹；放大用抗振铃压住晕
+            Preset x{ "manga", "漫画（+抗振铃）", "线稿锐利、网点不起摩尔纹、放大不振铃", {} };
+            x.params.filter = Filter::Lanczos;
+            x.params.lobes = 3;
+            x.params.quality = Quality::Best;
+            x.params.antiring = 1.0;
+            v << x;
+        }
+        {   // 照片：Mitchell 振铃远比 Lanczos 小，观感自然
+            Preset x{ "photo", "照片", "振铃小、观感自然（Mitchell bicubic）", {} };
+            x.params.filter = Filter::Mitchell;
+            x.params.mitchellB = 1.0 / 3.0;
+            x.params.mitchellC = 1.0 / 3.0;
+            x.params.quality = Quality::Balanced;
+            v << x;
+        }
+        {   // 锐利：Lanczos4 更锐，代价是振铃更多
+            Preset x{ "sharp", "锐利", "Lanczos4：更锐，振铃更多", {} };
+            x.params.filter = Filter::Lanczos;
+            x.params.lobes = 4;
+            x.params.quality = Quality::Best;
+            x.params.antiring = 1.0;
+            v << x;
+        }
+        {   // 柔和：B 样条（B=1,C=0）——无振铃、最柔
+            Preset x{ "soft", "柔和", "B 样条：无振铃、最柔", {} };
+            x.params.filter = Filter::Mitchell;
+            x.params.mitchellB = 1.0;
+            x.params.mitchellC = 0.0;
+            x.params.quality = Quality::Balanced;
+            v << x;
+        }
+        {   // 锐利（Catmull-Rom）：B=0,C=1/2 —— 比 Mitchell 锐，轻微振铃
+            Preset x{ "catmull", "锐利（Catmull-Rom）", "B=0,C=1/2：比 Mitchell 锐、轻微振铃", {} };
+            x.params.filter = Filter::Mitchell;
+            x.params.mitchellB = 0.0;
+            x.params.mitchellC = 0.5;
+            x.params.quality = Quality::Balanced;
+            v << x;
+        }
+        {   // 快速：面积平均
+            Preset x{ "fast", "快速（面积平均）", "大比例缩小时够用且最快", {} };
+            x.params.filter = Filter::Box;
+            x.params.quality = Quality::Fast;
+            v << x;
+        }
+        return v;
+    }();
+    return P;
+}
+
+const Preset *presetByKey(const QString &key)
+{
+    for (const Preset &p : presets())
+        if (key == QLatin1String(p.key)) return &p;
+    return nullptr;
+}
+
+const Preset *presetFor(const Params &q)
+{
+    for (const Preset &p : presets()) {
+        const Params &a = p.params;
+        if (a.mode == q.mode && a.quality == q.quality && a.filter == q.filter
+            && a.lobes == q.lobes
+            && std::abs(a.mitchellB - q.mitchellB) < 1e-9
+            && std::abs(a.mitchellC - q.mitchellC) < 1e-9
+            && std::abs(a.antiring - q.antiring) < 1e-9)
+            return &p;
+    }
+    return nullptr;
 }
 
 const char *qualityName(Quality q)

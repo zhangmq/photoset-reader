@@ -12,13 +12,17 @@ import ImageBrowser
 Item {
     id: root
 
-    property string debugImage: ""          // 调试：直接给图片路径（真机由 ViewModel 供图）
+    property string debugImage: ""          // ⚠️ 已不用（画面换成 GPU 项后不吃路径）——旧调试机架遗留
     property bool   debugForceUi: false     // 调试：强制显示浮层（离屏没有鼠标热区）
     property bool   debugOpenSettings: false   // 调试：截图时自动打开设置
+    property int    debugSettingsTab: 0        // 调试：设置弹框开在哪一页（0常规/1图像/2系统/3快捷键）
     signal libraryRequested()   // home → 图集库
     signal backRequested()      // 返回 → 浏览
     signal settingsRequested()  // 设置
     onSettingsRequested: settingsDialog.open()   // [设置] 按钮 → 打开设置对话框
+
+    // 当前页是不是**跨页**（两个条目 → 并排两张图）。
+    readonly property bool twoUp: ui.viewer ? ui.viewer.keyCount > 1 : false
 
     // ── 浮层显隐：纯函数（照抄 vsr-player main.qml）──
     readonly property bool showUi: root.debugForceUi
@@ -27,7 +31,10 @@ Item {
     onShowUiChanged: ui.overlaysVisible = showUi
     Component.onCompleted: {
         ui.overlaysVisible = showUi          // 启动即按当前状态应用
-        if (root.debugOpenSettings) settingsDialog.open()
+        if (root.debugOpenSettings) {
+            settingsDialog.tab = root.debugSettingsTab
+            settingsDialog.open()
+        }
     }
 
     // ── 设置对话框（三屏同一实现；当前阶段单纯 UI）──
@@ -39,29 +46,153 @@ Item {
         color: Theme.bgBase                 // 画布底（跟随主题；用 DSH alias 令牌）
     }
 
-    // ── 图片：占满整个窗口（浮层不挤压它）──
-    Image {
-        id: img
-        anchors.centerIn: parent
-        source: root.debugImage
-        asynchronous: true
-        smooth: true
-        mipmap: true
-        // 画面缩放模式（用户 2026-10-11）：0=原始大小 1=适应屏幕 2=适应宽度 3=适应高度
-        //   0/2/3 显式算宽高（保持比例），1 交给 PreserveAspectFit
-        readonly property int mode: ui.fitMode
-        readonly property real sw: Math.max(1, sourceSize.width)
-        readonly property real sh: Math.max(1, sourceSize.height)
-        width: mode === 0 ? sw
-             : mode === 2 ? parent.width
-             : mode === 3 ? sw * (parent.height / sh)
-                          : parent.width
-        height: mode === 0 ? sh
-              : mode === 2 ? sh * (parent.width / sw)
-              : mode === 3 ? parent.height
-                           : parent.height
-        fillMode: mode === 1 ? Image.PreserveAspectFit : Image.Stretch
+    // ── 画面：当前屏的**全部条目**并排（跨页 = 两个条目 → 两张图）──
+    //   ★ 版面（几张、怎么摆）是**视图**的事：解码层只按条目出图，**不做任何合成**
+    //     （用户明确否决"让 provider 把两页合成一张"——那是把排版决定塞进解码层与它的缓存：
+    //      放错层、版面一切换缓存即失效、还破坏"一个 id = 一个条目"。
+    //      分界线见 AGENTS.md 铁律区：**资源约束归 provider，排版编排归视图**）
+    //   ★ **渲染走 GPU 缩放**（设计 13 §八：线性光 + anti-ringing；CPU 实现只作测试参照）
+    //   ★ 两张共用**同一套缩放与平移**（整页一个比例，正交于 fit 模式 —— 不给双幅单独配一套）
+    Item {
+        id: canvas
+        anchors.fill: parent
+
+        // 手势态（缩放 / 平移）**归 ui**（`ui.zoom` / `ui.panX` / `ui.panY`）——
+        //   缩放约束只是 uiModel 与 GPU 缩放器之间的事，viewer 不需要知道。
+        //   换画面复位由 `UiModel` 自己做（QML 里不再有那段逻辑）。
+        readonly property real boxW: root.twoUp ? Math.floor(width / 2) : width
+
+        // ── 空库屏守卫（2026-10-14）───────────────────────────────────────────
+        //   `ui.viewer` 为空时（图集库屏 / 还没打开任何来源）**不建** GpuScalerItem：
+        //   否则 `sourceImage: ui.viewer ? … : null` 会把 JS `null` 塞给 QImage 属性
+        //   ⇒ 日志两条 `Unable to assign null to QImage`（实测）。
+        //   ★ 只改"建不建"：`GpuScalerItem` / shader / 缩放路径**一字未动**。
+        //   ★ 包在 `Loader` 里而不是包单个 item —— `autoSize` 时组件用 `setWidth` 设的是
+        //     **显式**尺寸，Loader 只跟 `implicitWidth` ⇒ 逐个包会让两个 item 都停在 0 宽
+        //     （Row 里重叠）；整段包则 Row 自己的 `anchors.centerIn: parent` 照常生效。
+        //   ★ `Loader` 必须 `anchors.centerIn: parent`，**不能** `anchors.fill` ——
+        //     `anchors.fill` 会把 Loader（连带它 load 的 Row）拉成整个画布宽，Row 的
+        //     `anchors.centerIn` 就退化成"在与画布等宽的盒子里居中" ⇒ 内容从 x=0 起、
+        //     贴着左边（实测：内容宽 2839、左边距 0、右边距 161）。居中才让 Loader 跟内容尺寸。
+        Loader {
+            anchors.centerIn: parent
+            active: ui.viewer !== null
+            sourceComponent: canvasComp
+        }
+
+        Component {
+            id: canvasComp
+
+            Row {
+                anchors.centerIn: parent
+                spacing: 0
+
+                GpuScalerItem {
+                    id: imgA
+                    objectName: "imgA"
+                    viewport: Qt.size(canvas.boxW, canvas.height)
+                    sourceImage: ui.viewer ? ui.viewer.imageA : null
+                    fit: ui.fitMode                  // 0 原始 / 1 适应屏幕 / 2 适应宽度 / 3 适应高度
+                    zoom: ui.zoom
+                    panX: ui.panX
+                    panY: ui.panY
+                }
+                GpuScalerItem {
+                    id: imgB
+                    objectName: "imgB"
+                    viewport: Qt.size(canvas.boxW, canvas.height)
+                    sourceImage: ui.viewer ? ui.viewer.imageB : null
+                    fit: ui.fitMode
+                    zoom: ui.zoom
+                    panX: ui.panX
+                    panY: ui.panY
+                    visible: root.twoUp               // 单幅时没有第二个盒子
+                }
+            }
+        }
+
+        // 交互缩放（滚轮）与拖拽平移（设计 08 §1.3 / 01 §3.8）
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.LeftButton
+            cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+            property real lastX: 0
+            property real lastY: 0
+            onPressed: (m) => { lastX = m.x; lastY = m.y }
+            onPositionChanged: (m) => {
+                if (!pressed) return
+                ui.panX += m.x - lastX
+                ui.panY += m.y - lastY
+                lastX = m.x
+                lastY = m.y
+            }
+            onWheel: (w) => {
+                const k = w.angleDelta.y > 0 ? 1.1 : (1 / 1.1)
+                ui.zoom = Math.max(0.1, Math.min(16, ui.zoom * k))
+            }
+        }
     }
+
+    // ── Loading 浮层（新序列 notReady / 前进到扫描边界时显示）─────────────
+    //   设计：**不占位、不重排**（浮层盖在画面之上）；跟随主题；不透明 bgBase；
+    //         转圈用**声明式动画**（RotationAnimator，不是 Timer）
+    //   ★ 只有两种 loading（用户 2026-10-13）：① 序列 notReady（count==0 且没扫完）
+    //     ② 前进到扫描边界。**正常"图还没解码好"不算** ✓
+    Rectangle {
+        id: loadingLayer
+        objectName: "loadingLayer"          // 截图/用例侧靠它定位
+        anchors.fill: parent
+        color: Theme.bgBase
+        visible: ui.viewer ? ui.viewer.loading : false
+        opacity: visible ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: Theme.durMed; easing.type: Easing.OutCubic } }
+
+        Column {
+            anchors.centerIn: parent
+            spacing: Theme.spaceMd
+
+            Item {
+                id: spinner
+                width: 32
+                height: 32
+                anchors.horizontalCenter: parent.horizontalCenter
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: width / 2
+                    color: "transparent"
+                    border.width: 3
+                    border.color: Theme.borderL4
+                }
+                Rectangle {
+                    width: 3
+                    height: 11
+                    radius: 1.5
+                    color: Theme.textPrimary
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: parent.top
+                    anchors.topMargin: 1
+                }
+                RotationAnimator on rotation {
+                    from: 0
+                    to: 360
+                    duration: 900
+                    loops: Animation.Infinite
+                    running: loadingLayer.visible
+                }
+            }
+
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: qsTr("载入中…")
+                color: Theme.textSecondary
+                font.pointSize: Theme.fontSm
+            }
+        }
+    }
+
+    // 切画面复位手势态：**归 `UiModel`**（它连 viewer 的 imageAChanged/imageBChanged 做，
+    //   `zoomLocked` 时保留）—— QML 里不再有这段逻辑。
 
     // ⚠️ 2026-10-11：**移除"点击画面任意位置跳页"** —— 用户指出这不应是最终应用行为
     //    （demo 阶段曾用左右半屏跳页；最终交互待用户定义，见设计 §3.2 待定项）
@@ -76,8 +207,8 @@ Item {
         onLibraryRequested: root.libraryRequested()
         onBackRequested: root.backRequested()
         onSettingsRequested: root.settingsRequested()
-        progressText: (ui.currentPage + 1) + " / " + ui.totalPages
-        relativePath: ui.relativePath
+        progressText: ui.viewer ? ((ui.viewer.currentPage + 1) + " / " + ui.viewer.totalPages) : ""
+        relativePath: ""
     }
 
     // ── 底部类播放器控制条 ──
@@ -86,33 +217,22 @@ Item {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        index: ui.cursor
-        count: ui.count
-        playing: ui.slideshow
-        loopMode: ui.loopMode
-        intervalMs: ui.intervalMs
+        index: ui.viewer ? ui.viewer.cursor : 0
+        count: ui.viewer ? ui.viewer.count : 0
         fitMode: ui.fitMode
-        doublePage: ui.doublePage
         zoomLocked: ui.zoomLocked
         windowFullscreen: ui.windowFullscreen
         osdVisible: ui.osdVisible
-        prevFolderName: ui.prevFolderLabel
-        nextFolderName: ui.nextFolderLabel
+        prevFolderName: ""
+        nextFolderName: ""
         overlaysVisible: ui.overlaysVisible
-        onPrevRequested: ui.stepPage(-1)
-        onNextRequested: ui.stepPage(1)
-        onPlayToggled: ui.toggleSlideshow()
-        onPrevFolderRequested: ui.prevArchive()
-        onNextFolderRequested: ui.nextArchive()
-        onLoopModeSelected: function (m) { ui.loopMode = m }
-        onIntervalSelected: function (ms) { ui.intervalMs = ms }
-        onIntervalStep: function (d) { ui.intervalBy(d) }
+        onPrevRequested: { if (ui.viewer) ui.viewer.stepPage(-1) }
+        onNextRequested: { if (ui.viewer) ui.viewer.stepPage(1) }
         onFitModeSelected: function (m) { ui.fitMode = m }
-        onDoublePageSelected: function (on) { ui.doublePage = on }
         onZoomLockToggled: ui.zoomLocked = !ui.zoomLocked
         onWindowFullscreenToggled: ui.windowFullscreen = !ui.windowFullscreen
         onOsdToggled: ui.toggleOsd()
-        onSeeked: function (i) { ui.cursor = i }
+        onSeeked: function (i) { if (ui.viewer) ui.viewer.cursor = i }
     }
 
     // ── OSD 信息面板：**只被 OSD 开关控制，不随控件条显隐**（用户 2026-10-11）──
@@ -122,12 +242,12 @@ Item {
         anchors.leftMargin: Theme.spaceLg
         anchors.topMargin: Theme.barH + Theme.spaceSm
         osdVisible: ui.osdVisible
-        positionLabel: (ui.currentPage + 1) + " / " + ui.totalPages
-        fileLabel: ui.fileLabel
-        pathLabel: ui.relativePath
-        folderLabel: ui.folderLabelAt(ui.cursor)
-        resolutionLabel: ui.sizeLabel      // 分辨率 = 像素尺寸（尺寸=文件字节大小，待接）
-        kindLabel: ui.pageKindLabel
+        positionLabel: ui.viewer ? ((ui.viewer.currentPage + 1) + " / " + ui.viewer.totalPages) : ""
+        fileLabel: ""
+        pathLabel: ""
+        folderLabel: ""
+        resolutionLabel: ""      // 分辨率 = 像素尺寸（尺寸=文件字节大小，待接）
+        kindLabel: ""
         // 图集 / 分辨率 / EXIF：数据未接入 → 面板显示 "—"（需求见设计 §3.9）
     }
 
@@ -143,19 +263,27 @@ Item {
     }
 
     // ── 键盘（全屏是快捷键面）──
+    //   ★ 方向键**不拦截自动重复**：Qt 的按键自动重复正常打进来，每个重复按键自然就是一次
+    //     `stepPage(∓1)`。
     focus: true
     Keys.onPressed: function (event) {
         switch (event.key) {
         case Qt.Key_Escape:      root.backRequested();       event.accepted = true; break
-        case Qt.Key_Left:        ui.stepPage(-1);            event.accepted = true; break
-        case Qt.Key_Right:       ui.stepPage(1);             event.accepted = true; break
-        case Qt.Key_PageUp:      ui.stepPage(-1);            event.accepted = true; break
-        case Qt.Key_PageDown:    ui.stepPage(1);             event.accepted = true; break
-        case Qt.Key_Home:        ui.firstPage();             event.accepted = true; break
-        case Qt.Key_End:         ui.lastPage();              event.accepted = true; break
-        case Qt.Key_Space:       ui.toggleSlideshow();       event.accepted = true; break
-        case Qt.Key_Up:          ui.prevArchive();           event.accepted = true; break
-        case Qt.Key_Down:        ui.nextArchive();           event.accepted = true; break
+        case Qt.Key_Left:        if (ui.viewer) ui.viewer.stepPage(-1)
+                                 event.accepted = true; break
+        case Qt.Key_Right:       if (ui.viewer) ui.viewer.stepPage(1)
+                                 event.accepted = true; break
+        case Qt.Key_PageUp:      if (ui.viewer) ui.viewer.stepPage(-1)
+                                 event.accepted = true; break
+        case Qt.Key_PageDown:    if (ui.viewer) ui.viewer.stepPage(1)
+                                 event.accepted = true; break
+        // ── 用户已确认的那几个（设计 08 §三）──
+        case Qt.Key_I:           ui.toggleOsd();             event.accepted = true; break
+        case Qt.Key_Plus:
+        case Qt.Key_Equal:       ui.zoom = Math.min(16, ui.zoom * 1.1)
+                                 event.accepted = true; break
+        case Qt.Key_Minus:       ui.zoom = Math.max(0.1, ui.zoom / 1.1)
+                                 event.accepted = true; break
         }
     }
 }

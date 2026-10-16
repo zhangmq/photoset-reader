@@ -7,6 +7,18 @@ import ImageBrowser
 //   进度条是**流式**的（内容区最后一行），宽度与内容同宽 —— 不浮动、不贴底。
 //   原因：QML 的 `clip` 按**矩形**裁剪，圆角容器 + clip 裁不出圆角，"紧贴底部"
 //   会让进度条两端戳出卡片圆角；改成流式后上下 padding 视觉一致。
+//
+//   ── 扫描状态（★ v6：**直接是序列的状态**；★ v8：**没有写入磁盘状态列**）──────
+//   · 状态显示在**卡片上**（不是弹出/独立面板），按钮在**右上角同一簇**（移除左边）
+//   · **扫描中只给文字**，不加转圈/脉冲组件：
+//       空串（没扫过）/ Done → 不显示（正常态，照旧显示阅读进度）
+//       NotReady / ImageFound → `扫描中 · 已发现 N`（core 的活序列正在跑）
+//       ScanStoped            → `已停止 · N 张`
+//   · **失败不写入磁盘**（v8）：根不可用 / 库写失败 / 压缩包打不开 ⇒ **瞬时提示浮层**，
+//     所以卡片上没有"扫描失败"态、也没有 `scan_error` tooltip
+//   · 操作：进行中 → 「取消扫描」（停活序列 ⇒ **不落库**；**落库窗口内**它被禁用，
+//     见 `resetCommitting`）；其余 → 「重新扫描」
+//   · 文案由卡片拼（模型只给 `scanState` / `scannedItems` / `resetCommitting` 三个 role）
 Rectangle {
     id: root
 
@@ -19,14 +31,33 @@ Rectangle {
     property bool   missing: false
     property string cover: ""
 
+    // ── 扫描（roles 与 LibraryModel::roleNames() 同名）──
+    property var    collectionId: -1        // var：集合 id 是 qint64（QML 的 int 只有 32 位）
+    property string scanState: ""           // ★ v6：NotReady | ImageFound | Scaned | ScanStoped
+    property int    scannedItems: 0         // 已发现多少张图（GROUP BY 现算）
+    property bool   resetCommitting: false  // ★ T2c-2b-2：落库窗口（原子替换进行中）
+
     signal activated()
     signal removeRequested()
     signal renameRequested(string newName)
+    // 只**发**动作，不自己调 ViewModel（组件只读属性、只发信号）
+    signal scanRequested()
+    signal cancelScanRequested()
+
+    //   进行中 = 序列的 NotReady / ImageFound（core 的活序列正在跑）
+    readonly property bool scanning: scanState === "NotReady" || scanState === "ImageFound"
+    // 空串 = **不在卡片上显示扫描信息**（Scaned 是正常态）
+    readonly property string scanText: scanning ? "扫描中 · 已发现 " + scannedItems
+                                      : scanState === "ScanStoped"
+                                          ? "已停止 · " + scannedItems + " 张"
+                                      : ""
+    readonly property string scanActionTooltip: scanning ? "取消扫描" : "重新扫描"
+    readonly property string scanActionGlyph: scanning ? Theme.icClose : Theme.icScan
 
     // 键盘可达：Tab 能选中、点击即获焦（弹窗/焦点链都依赖它）
     activeFocusOnTab: true
-    // 右侧动作按钮占位（按钮宽 + 右外边距 + 与文字的间距）
-    readonly property int actionReserve: Theme.controlMd + Theme.spaceMd * 2
+    // 右侧动作按钮簇占位（两个按钮 + 簇内间距 + 右外边距 + 与文字的间距）
+    readonly property int actionReserve: Theme.controlMd * 2 + Theme.spaceXs + Theme.spaceMd * 2
 
     implicitHeight: contentCol.implicitHeight + Theme.cardPadV * 2
     radius: Theme.radiusLg                     // DSH 卡片 radius-lg(16)
@@ -170,14 +201,33 @@ Rectangle {
                         }
                     }
 
-                    // 徽标：进度 / 缺失
+                    // 徽标：进度 / 缺失 / 扫描状态
                     Row {
                         id: badges
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: Theme.rowGap
 
+                        // 扫描状态（**只给文字**：扫描中 / 已停止）
+                        //   ★ v6：失败走**瞬时提示浮层**（不写入磁盘）⇒ 这里没有失败态
+                        Item {
+                            id: scanSlot
+                            visible: root.scanText !== ""
+                            implicitWidth: scanBadge.implicitWidth
+                            implicitHeight: scanBadge.implicitHeight
+
+                            Badge {
+                                id: scanBadge
+                                anchors.fill: parent
+                                label: root.scanText
+                                tone:     Theme.textSecondary
+                                toneBg:   Theme.bgTag
+                                toneLine: Theme.borderL3
+                            }
+                        }
+
+                        // 阅读进度：**非扫描态**才显示（done/idle 是正常态，照旧显示进度）
                         Badge {
-                            visible: !root.missing
+                            visible: !root.missing && root.scanText === ""
                             label: root.progressText      // 用 Badge 默认色（= DSH rowTag）
                         }
                         Badge {
@@ -226,18 +276,38 @@ Rectangle {
     Keys.onEnterPressed: root.activated()
     Keys.onSpacePressed: root.activated()
 
-    // ── 移除（标准图标按钮，右上角；距上/右边框各 spaceMd）──
-    //   声明在 cardMa 之后 → 在上层，点击不被卡片吞掉
-    IconAction {
-        id: trashBtn
+    // ── 右上动作簇（标准图标按钮；距上/右边框各 spaceMd）──
+    //   声明在 cardMa 之后 → 在上层，点击不被卡片吞掉。
+    //   两者都是 IconAction（本身可 Tab 到达 + Enter/Space + 焦点环，见 07 §五.1）。
+    Row {
+        id: actionRow
         anchors.right: parent.right
         anchors.rightMargin: Theme.spaceMd
         anchors.top: parent.top
         anchors.topMargin: Theme.spaceMd
-        glyph: Theme.icTrash
-        danger: true
-        tooltip: "移除"
-        onTriggered: confirmRemove.open()
+        spacing: Theme.spaceXs
+
+        // 扫描 / 重新扫描 / **取消扫描**（扫描中）。文案见 scanActionTooltip。
+        //   ★ T2c-2b-2：**落库窗口内取消被禁用** —— 那时扫描已结束（内容完整），
+        //     正在后台原子替换；`cancelReset` 是静默 no-op（用户 2026-10-15 裁决）。
+        //     ★ 禁用观感 / 点击与键盘守卫由 **`IconAction` 组件自身**负责（单一来源）：
+        //       调用点只写 `enabled:`，不再写 opacity。
+        IconAction {
+            id: scanBtn
+            glyph: root.scanActionGlyph
+            tooltip: root.scanActionTooltip
+            enabled: !(root.scanning && root.resetCommitting)
+            onTriggered: root.scanning ? root.cancelScanRequested() : root.scanRequested()
+        }
+
+        // 移除
+        IconAction {
+            id: trashBtn
+            glyph: Theme.icTrash
+            danger: true
+            tooltip: "移除"
+            onTriggered: confirmRemove.open()
+        }
     }
 
     // ── 移除确认（标准确认对话框）──
