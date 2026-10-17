@@ -8,29 +8,39 @@
 //   ## 术语
 //     · **槽位**：一个"正在等某一条 / 已经备好某一条"的位置。池上限 = `L + 1`。
 //     · **条目**：序列里的一条（`Sequence::Item`）。
-//     · **预取**：在当前位置之外，按份额规则提前把条目取好。
-//     · **上屏**：把某一条的图解出来放进 `imageA`（当前显示的那一条）。
+//     · **屏**：序列按**版面**分好的**位置集合**（单幅 1 条 / 双幅 2 条；宽图、末尾剩一张
+//       ⇒ 1 条）。**位置是序列给的**（`groupAt`），本类不算分组、不做 ±屏 的算术。
+//     · **预取**：在当前屏之外，按份额规则提前把条目取好。
+//     · **上屏**：把本屏各位置的图解出来放进 `imageA` / `imageB`（坏的位置留空图）。
 //     · **loading（界面浮层）**：还没扫完 **且**（还没有条目 **或** 位置已处在已知末尾）；
 //       还没有序列也算 —— 也就是「序列还没就绪 / 扫描中到达边界」。
-//       ★ **正常等图片缓存（当前这条还没解好）不算**（用户 2026-10-17 口径）。
-//     · **位置**：现在要显示的是哪一条（条目下标）。
+//       ★ **正常等图片缓存（当前这一屏还没就位）不算**（用户 2026-10-17 口径）。
+//     · **位置**：现在要显示的是哪一条（条目下标）；**屏 = 位置所在的那一屏**。
 //     · **坏**：这一条拿不出图（**缺失** = 元数据已标 / **不可读** = 解码出来是空图）。
 //       ★ **坏不占长度**：坏因另存一张小表（条目 → 坏因），**不占** `L + 1` 的槽位额度。
 //
 //   ## 份额规则（要哪些条目）
 //     · 一次操作 = **位置真的变了**；只是重判不算。
 //     · `f` = 前向条数，起始 6、限 `[1, L−1]`（`L` = 预取长度，构造参数）。
-//       同向再走一步 ⇒ `f+1`；反向 ⇒ `f−1`；夹在 `[1, L−1]`。
+//       同向再走一屏 ⇒ `f+1`；反向 ⇒ `f−1`；夹在 `[1, L−1]`。
 //     · 最近方向那一侧的条目排在前面。
-//     · 要的条目 = 当前这一条**之外**的那 `L` 条（相对偏移 `+1..+f` 与 `−1..−(L−f)`）
-//       加上当前这一条。跳转（位置不是相邻一条）/ 换来源 ⇒ 回到起始（`f = 6`、方向为正）。
+//     · 要的条目 = **本屏的位置**（永远最先）+ 本屏之外的那 `L` 条
+//       （从**屏外第一条**起数：前向 `+1..+f`、后向 `−1..−(L−f)`）。
+//       跳转 / **换版面** / 换来源 ⇒ 回到起始（`f = 6`、方向为正）。
 //
 //   ## 上屏
-//     · **重判是唯一决定上屏的地方**：当前这一条的槽位备好 ⇒ 上屏；
-//       坏因表里记着这一条 ⇒ 跳过计数 +1、位置往后挪一条（同方向）、再派活再判；
-//       还没结论 ⇒ 等下一个结果回来（浮层由 `updateLoading()` 按上面那条算）。
-//     · 位置一变**不清掉 `imageA`**（不许先显示空图或上一张）；等图片缓存期间画面上
-//       还是上一条，`loading` 为假（浮层不显示）。
+//     · **重判是唯一决定上屏的地方**：本屏每个位置都**有结论**（备好 / 坏）⇒ 上屏 ——
+//       备好的位置画出来，坏的位置**留空图**（双幅留空位）；
+//       本屏**整屏都坏**（单幅就是那一条坏）⇒ 跳过计数 +1、位置挪到下一屏（同方向）、再派活再判；
+//       还有位置没结论 ⇒ 等下一个结果回来。
+//     · 位置一变**不清掉 `imageA` / `imageB`**（不许先显示空图或上一张）；等图片缓存期间画面上
+//       还是上一屏，`loading` 为假（浮层不显示）。
+//
+//   ## 版面（单幅 / 双幅）
+//     · **换版面 = 换个开关**：保留**当前位置**，屏由序列重算（`anchorOf`）⇒ 不重新分组。
+//     · `stepPage(±1)` = **换一屏**：前进量交给序列（`advance`），本类收下游标。
+//     · 按键那条判断按**整屏**算：本屏还有位置没结论（既没备好、也不是坏）⇒ 这次按键丢掉。
+//       **坏算"有结论"** ⇒ 那时按键照常放行（否则"坏到末尾"会卡在末尾出不来）。
 //
 //   ## 退出查看 / 换来源
 //     · **不 join 工作线程**（join 会把退出拖住几百毫秒）：换个记号就走；
@@ -54,13 +64,14 @@ class ViewerModel : public QObject
     Q_OBJECT
 
     Q_PROPERTY(QImage imageA READ imageA NOTIFY currentChanged)
-    Q_PROPERTY(QImage imageB READ imageB NOTIFY currentChanged)            // 单幅：恒空图
-    Q_PROPERTY(int keyCount READ keyCount NOTIFY currentChanged)           // 有屏 = 1，无屏 = 0
+    Q_PROPERTY(QImage imageB READ imageB NOTIFY currentChanged)            // 单幅 / 空位：空图
+    Q_PROPERTY(int keyCount READ keyCount NOTIFY currentChanged)           // 本屏位置数（1 或 2），无屏 = 0
+    Q_PROPERTY(bool doublePage READ doublePage WRITE setDoublePage NOTIFY doublePageChanged)  // 写 = 换版面
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
-    Q_PROPERTY(int cursor READ cursor WRITE setCursor NOTIFY currentChanged)  // 写 = 跳转
+    Q_PROPERTY(int cursor READ cursor WRITE setCursor NOTIFY currentChanged)  // 写 = 跳转；= 本屏起点
     Q_PROPERTY(int count READ itemCount NOTIFY currentChanged)             // 条目总数
-    Q_PROPERTY(int totalPages READ totalPages NOTIFY currentChanged)       // = count（单幅）
-    Q_PROPERTY(int currentPage READ currentPage NOTIFY currentChanged)     // = cursor
+    Q_PROPERTY(int totalPages READ totalPages NOTIFY currentChanged)       // = count（口径不变：按条目）
+    Q_PROPERTY(int currentPage READ currentPage NOTIFY currentChanged)     // = cursor（本屏起点）
 
 public:
     explicit ViewerModel(int prefetchLength, QObject *parent = nullptr);
@@ -71,23 +82,26 @@ public:
 
     void setSequence(const Sequence *seq);   // 来源（非拥有）
     void sequenceChanged();                  // 序列长进了
-    Q_INVOKABLE void stepPage(int delta);    // ±1 张
+    Q_INVOKABLE void stepPage(int delta);    // ±1 屏（前进量由序列按版面算）
     Q_INVOKABLE void jump(int imageIndex);   // 跳到某一条（时间轴拖 / 浏览里选中）
 
     QImage imageA() const { return m_imageA; }
-    QImage imageB() const { return m_imageB; }      // 单幅：恒空图
+    QImage imageB() const { return m_imageB; }      // 单幅 / 坏的空位：空图
     int  keyCount() const { return m_keyCount; }
+    bool doublePage() const { return m_double; }
+    void setDoublePage(bool on);                    // 换版面（保留当前位置，屏重算）
     bool loading() const { return m_loading; }
-    int  cursor() const { return m_cursor; }        // 上屏那一条（写 = 跳转）
+    int  cursor() const { return m_cursor; }        // 上屏那一屏的起点（写 = 跳转）
     void setCursor(int index) { jump(index); }
     int  itemCount() const { return m_seq ? m_seq->count() : 0; }
-    int  totalPages() const { return itemCount(); } // 单幅：页 = 条
+    int  totalPages() const { return itemCount(); } // 口径不变：按条目
     int  currentPage() const { return m_cursor; }
 
 Q_SIGNALS:
     void currentChanged();
     void imageAChanged();
     void imageBChanged();
+    void doublePageChanged();
     void loadingChanged();
 
 private:
@@ -126,20 +140,29 @@ private:
     //   先比记号，再比"这个槽现在还等不等这一条"；任一条不符 ⇒ 直接丢（白干，不算数）。
     void onLoaded(quint64 epoch, int slot, const QImage &image);
 
-    // ── 每个动作（stepPage / jump）：改位置 → 当场判 → 备好就上屏 / 没备好就派活再等
-    void act(int target);
-    //   按"当前这一条 → 份额那串偏移"的顺序逐条派活（当前这一条**永远最先**）。
+    // ── 每个动作（stepPage / jump / 换版面）：改位置 → 当场判 → 就位就上屏 / 没就位就派活再等
+    //   `stepDir` = 这次是"换一屏"（+1 / −1）；0 = 跳转或换版面（份额回到起始）。
+    void act(int target, int stepDir);
+    //   按"本屏位置 → 份额那串偏移"的顺序逐条派活（**本屏永远最先**）。
     void dispatch();
     //   唯一决定上屏的地方。
     void judge();
-    void screen(const QImage &image);
+    void screen(int start, const QVector<int> &items);
     //   浮层的**唯一更新入口**：按当前状态当场算「该不该显示」（见类头 loading 那条）。
     void updateLoading();
-    //   份额规则：位置真的变了才算一次操作；跳转（不是相邻一条）⇒ 回到起始。
-    void observeOperation(int to);
+    //   本屏每个位置的状态：`settled` = 都有结论（备好 / 坏）；`anyReady` = 至少一个备好。
+    void scanScreen(const QVector<int> &items, bool &settled, bool &anyReady) const;
+    //   份额规则：位置真的变了才算一次操作；`dir` = 换屏的方向（±1）。
+    void observeOperation(int dir);
     void resetShare();
 
+    // ── 版面 / 屏 ────────────────────────────────────────────────────────
+    Sequence::Mode mode() const;
+    int  screenStart(int item) const;          // 这一条所在那一屏的起点（序列算）
+    QVector<int> screenItems(int start) const; // 本屏的位置（照抄序列的分组）
+    bool onScreen(int item) const;             // 这一条在不在当前屏上（淘汰时不离手）
     int  slotOf(int item) const;      // 管着这一条的槽（-1 = 没有）
+    QImage imageOf(int item) const;   // 这一条备好时的那张图（坏 / 在飞 ⇒ 空图）
     int  takeSlot(int item);          // 找一个槽给它（池满 ⇒ 淘汰；找不到 ⇒ -1）
     bool isBad(int item) const;       // 坏因表里记着这一条吗（**不占**槽位额度）
     void markBad(int item, Bad why);  // 把坏因写进小表（两个写点的唯一入口）
@@ -160,10 +183,11 @@ private:
     int     m_skipped  = 0;                  // 跳过计数
     quint64 m_epoch    = 0;                  // 换来源记号（单调递增）
 
-    int    m_pos    = 0;                     // 位置：现在要显示的是哪一条
-    int    m_cursor = 0;                     // 上屏那一条（只在 `screen` 里写）
-    QImage m_imageA, m_imageB;               // 上屏内容（`imageB` 单幅恒空）
-    int    m_keyCount = 0;                   // 有屏 = 1，无屏 = 0
+    int    m_pos    = 0;                     // 位置：用户指到的那一条（屏 = 它所在的那一屏）
+    int    m_cursor = 0;                     // 上屏那一屏的起点（只在 `screen` 里写）
+    QImage m_imageA, m_imageB;               // 上屏内容（坏的位置 / 没有第二个位置 = 空图）
+    int    m_keyCount = 0;                   // 本屏位置数（1 或 2），无屏 = 0
+    bool   m_double   = false;               // 版面（写 = 换版面；默认单幅）
     bool   m_loading  = true;                // 界面浮层（只有 `updateLoading()` 会写）
 
     int m_f   = kStartForward;               // 前向条数

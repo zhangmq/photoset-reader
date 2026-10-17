@@ -176,10 +176,12 @@ public:
         int     itemCount = 0;
     };
 
-    // 一次要图的答复（**序列算，调度器只收下**）
+    // 一次要图的答复（**序列算，调用方只收下**）
+    //   ★ **成员 = 本屏的位置**（顺序即显示顺序）——**不看 missing**：
+    //     "这一格上的条目能不能显示"由缓存判（设计 12 §8.9 四），序列只管位置。
     struct Group {
-        QVector<int> members;    // 本组里**存在**的条目下标（顺序即显示顺序）
-        int cursor = -1;         // 本组起点（= 新游标）；-1 = 没有
+        QVector<int> members;    // 本屏的位置（双幅 2 个 / 宽图或末尾 1 个）
+        int cursor = -1;         // 本屏起点（= 新游标）；-1 = 没有
     };
 
     Sequence();
@@ -251,7 +253,10 @@ public:
         return s == State::Scaned || s == State::ScanStoped;
     }
 
-    // ── ② 查询（供调度器；**从头锚定**，序列自己算）──────────────
+    // ── ② 查询（**按版面给屏**；**从头锚定**，序列自己算）──────────
+    //   `groupAt(i, m)` = **i 落在的那一屏**（本屏位置 + 屏起点）；
+    //   `advance(c, m, dir)` = **下一屏 / 上一屏的起点**（前进量按版面算：单幅 +1、双幅 +本屏张数）；
+    //   `anchorOf(i, m)` = i 所在那一屏的起点。
     Group groupAt(int cursor, Mode m, Dir dir = Dir::Next) const;
     int advance(int cursor, Mode m, Dir dir) const;
     int anchorOf(int index, Mode m) const;

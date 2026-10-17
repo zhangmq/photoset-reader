@@ -21,7 +21,8 @@ Item {
     signal settingsRequested()  // 设置
     onSettingsRequested: settingsDialog.open()   // [设置] 按钮 → 打开设置对话框
 
-    // 当前页是不是**跨页**（两个条目 → 并排两张图）。
+    // 本屏是不是**双幅**（两个位置 → 并排两张图）；`keyCount` = 本屏位置数（1 或 2）。
+    //   ★ 坏的位置**留空位**：`keyCount` 仍是 2（两格都占着），那一格只是没图。
     readonly property bool twoUp: ui.viewer ? ui.viewer.keyCount > 1 : false
 
     // ── 浮层显隐：纯函数（照抄 vsr-player main.qml）──
@@ -87,26 +88,46 @@ Item {
                 anchors.centerIn: parent
                 spacing: 0
 
-                GpuScalerItem {
-                    id: imgA
-                    objectName: "imgA"
-                    viewport: Qt.size(canvas.boxW, canvas.height)
-                    sourceImage: ui.viewer ? ui.viewer.imageA : null
-                    fit: ui.fitMode                  // 0 原始 / 1 适应屏幕 / 2 适应宽度 / 3 适应高度
-                    zoom: ui.zoom
-                    panX: ui.panX
-                    panY: ui.panY
+                //   一个**位置**一个盒子：盒子恒为 `canvas.boxW × canvas.height`。
+                //   ⇒ 坏的那一格（空图）**照样占它那一半** ——「双幅留空位」，另一页不失位。
+                //   ⚠️ 盒子必须给**显式**尺寸：`GpuScalerItem` 在 `autoSize` 下自己 `setWidth`，
+                //      空图时那颗不设（尺寸停在 0）⇒ 让它单独摆会缩成 0 宽、两页挤到一起。
+                //   ★ 双幅：两张**贴在一起**（左盒的靠右、右盒的靠左）—— 与"Row 直接摆两张"
+                //      一样；单幅 / 本屏只有一格（宽图、末尾一张）⇒ 盒子 = 整宽，画面居中。
+                Item {
+                    width: canvas.boxW
+                    height: canvas.height
+
+                    GpuScalerItem {
+                        id: imgA
+                        anchors.centerIn: parent
+                        anchors.horizontalCenterOffset: root.twoUp ? (parent.width - width) / 2 : 0
+                        objectName: "imgA"
+                        viewport: Qt.size(canvas.boxW, canvas.height)
+                        sourceImage: ui.viewer ? ui.viewer.imageA : null
+                        fit: ui.fitMode              // 0 原始 / 1 适应屏幕 / 2 适应宽度 / 3 适应高度
+                        zoom: ui.zoom
+                        panX: ui.panX
+                        panY: ui.panY
+                    }
                 }
-                GpuScalerItem {
-                    id: imgB
-                    objectName: "imgB"
-                    viewport: Qt.size(canvas.boxW, canvas.height)
-                    sourceImage: ui.viewer ? ui.viewer.imageB : null
-                    fit: ui.fitMode
-                    zoom: ui.zoom
-                    panX: ui.panX
-                    panY: ui.panY
-                    visible: root.twoUp               // 单幅时没有第二个盒子
+                Item {
+                    width: canvas.boxW
+                    height: canvas.height
+                    visible: root.twoUp              // 单幅 / 只有一格：没有第二个盒子
+
+                    GpuScalerItem {
+                        id: imgB
+                        anchors.centerIn: parent
+                        anchors.horizontalCenterOffset: root.twoUp ? -(parent.width - width) / 2 : 0
+                        objectName: "imgB"
+                        viewport: Qt.size(canvas.boxW, canvas.height)
+                        sourceImage: ui.viewer ? ui.viewer.imageB : null
+                        fit: ui.fitMode
+                        zoom: ui.zoom
+                        panX: ui.panX
+                        panY: ui.panY
+                    }
                 }
             }
         }
@@ -220,6 +241,7 @@ Item {
         index: ui.viewer ? ui.viewer.cursor : 0
         count: ui.viewer ? ui.viewer.count : 0
         fitMode: ui.fitMode
+        doublePage: ui.viewer ? ui.viewer.doublePage : false
         zoomLocked: ui.zoomLocked
         windowFullscreen: ui.windowFullscreen
         osdVisible: ui.osdVisible
@@ -229,6 +251,7 @@ Item {
         onPrevRequested: { if (ui.viewer) ui.viewer.stepPage(-1) }
         onNextRequested: { if (ui.viewer) ui.viewer.stepPage(1) }
         onFitModeSelected: function (m) { ui.fitMode = m }
+        onDoublePageSelected: function (on) { if (ui.viewer) ui.viewer.doublePage = on }
         onZoomLockToggled: ui.zoomLocked = !ui.zoomLocked
         onWindowFullscreenToggled: ui.windowFullscreen = !ui.windowFullscreen
         onOsdToggled: ui.toggleOsd()

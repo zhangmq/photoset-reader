@@ -531,7 +531,7 @@ void Sequence::finalizePageRowNames()
     }
 }
 
-// ══ 查询（供调度器）══════════════════════════════════════════════════
+// ══ 查询（按版面给屏）════════════════════════════════════════════════
 
 int Sequence::anchorOf(int index, Mode m) const
 {
@@ -557,25 +557,22 @@ int Sequence::advance(int cursor, Mode m, Dir dir) const
     return anchorOf(before, m);
 }
 
+//   `i` 落在的那一屏 = [屏起点, +本屏张数)——**从头锚定**算出来的原生划分。
+//   ★ **不给 missing 留任何处理**：这一屏给的是**完整的位置**（双幅 2 个 / 宽图或末尾 1 个），
+//     "哪一格拿不出图"由缓存那条线判（设计 12 §8.9 四：双幅留空位、其余跳过）⇒
+//     序列说位置，缓存说好坏，两边不重复管同一件事。
 Sequence::Group Sequence::groupAt(int cursor, Mode m, Dir dir) const
 {
+    Q_UNUSED(dir);                    // 坏不在这里跳（本屏一律给完整位置）
     Group g;
     if (m_decided <= 0) return g;
 
-    int start = anchorOf(cursor, m);
-    int guard = 0;
-    while (start >= 0 && start < m_decided && (guard += 1) <= m_decided + 2) {
-        QVector<int> members;
-        const int n = (m == Mode::Single) ? 1 : qMax(1, m_gSize.value(start, 1));
-        for (int i = start; i < start + n && i < m_decided; ++i)
-            if (!m_items.at(i).missing) members << i;
-        if (!members.isEmpty()) {
-            g.members = members;
-            g.cursor = start;
-            return g;
-        }
-        start = advance(start, m, dir);
-    }
+    const int start = anchorOf(cursor, m);
+    if (start < 0) return g;
+
+    const int n = (m == Mode::Single) ? 1 : qMax(1, m_gSize.value(start, 1));
+    g.cursor = start;
+    for (int i = start; i < start + n && i < m_decided; ++i) g.members << i;
     return g;
 }
 

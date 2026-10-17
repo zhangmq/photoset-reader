@@ -212,10 +212,7 @@ Item {
                     { text: "单幅", icon: Theme.icSinglePage, selected: !root.doublePage },
                     { text: "双幅", icon: Theme.icDoublePage, selected: root.doublePage }
                 ]
-                onItemTriggered: function (i) {
-                    console.log("[probe] layoutMenu.itemTriggered i=" + i + " → doublePageSelected(" + (i === 1) + ")")
-                    root.doublePageSelected(i === 1)
-                }
+                onItemTriggered: function (i) { root.doublePageSelected(i === 1) }
             }
 
             NavBtn {   // 锁定缩放（UI；需求见设计 §3.8）

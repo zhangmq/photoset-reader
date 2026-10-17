@@ -535,6 +535,9 @@ void UiModel::installViewer(Source s)
     //   全归 viewer 自己。
     const Source old = m_src;
     m_src = s;
+    //   ★ 版面是**会话级**：viewer 随来源建了又毁 ⇒ 换组这一刻把上一组的版面**交接**过来
+    //     （本类不存第二份；读的就是马上要释放的那一组）。
+    if (m_src.vm && old.vm) m_src.vm->setDoublePage(old.vm->doublePage());
     emit viewerChanged();            // ★ 先让 QML 换绑到新 viewer
     if (m_src.vm) m_src.vm->setSequence(m_src.seq);      // ★ 立刻定 loading + 派活
     if (m_browse) {

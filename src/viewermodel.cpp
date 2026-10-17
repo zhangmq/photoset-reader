@@ -107,22 +107,58 @@ void ViewerModel::sequenceChanged()
     judge();
 }
 
-// ══ 每个动作（stepPage / jump）═════════════════════════════════════════════
-//   就三件：改位置 → 当场判 → 备好就上屏、没备好就派活再等。
+// ══ 版面 / 屏 ══════════════════════════════════════════════════════════════
+//   本类**不算分组、不做 ±屏 的算术**：位置 → 屏、屏 → 下一屏，都问序列。
+Sequence::Mode ViewerModel::mode() const
+{
+    return m_double ? Sequence::Mode::Double : Sequence::Mode::Single;
+}
+
+// 这一条所在那一屏的起点（双幅下落在配对第二张 ⇒ 回到它所属的那一组）。
+int ViewerModel::screenStart(int item) const
+{
+    if (!m_seq) return 0;
+    const int s = m_seq->anchorOf(item, mode());
+    return (s < 0) ? 0 : s;
+}
+
+// 本屏的位置（双幅 2 个 / 宽图或末尾 1 个）——**照抄序列的分组**，本类不挑不滤。
+QVector<int> ViewerModel::screenItems(int start) const
+{
+    if (!m_seq) return QVector<int>();
+    return m_seq->groupAt(start, mode()).members;
+}
+
+// 这一条在不在当前屏上（淘汰槽位时不离手）。
+bool ViewerModel::onScreen(int item) const
+{
+    const QVector<int> items = screenItems(screenStart(m_pos));
+    return items.contains(item);
+}
+
+// ══ 每个动作（stepPage / jump / 换版面）═════════════════════════════════════
+//   就三件：改位置 → 当场判 → 就位就上屏、没就位就派活再等。
 //   不做排队：一切走主线程正常的 Qt 事件逻辑，一次按键事件处理一次。
-//   翻页多这一条判断：**当前要显示的那一条还没解好（既没备好、也不是坏）** ⇒ 这次按键作废——
-//   丢弃（不推进位置、不算一次操作），不在之后补上屏。
+//   翻页多这一条判断：**本屏还有位置没结论（既没备好、也不是坏）** ⇒ 这次按键作废——
+//   丢弃（不换屏、不算一次操作），不在之后补上屏。**坏算"有结论"** ⇒ 那时放行。
 //   ★ 这一条**当场算**，不看 `loading`：`loading` 只管界面浮层（等图片缓存时是假），
 //     拿它来挡按键会让等待期间全放行 ⇒ 一路跳着上屏（跳过一整串）。
 void ViewerModel::stepPage(int delta)
 {
     if (!m_seq) return judge();
-    const int n = m_seq->count();
-    if (n <= 0) return judge();
-    const int s = slotOf(m_pos);
-    const bool ready = (s >= 0 && m_slots[s].state == Slot::State::Ready);
-    if (!ready && !isBad(m_pos)) return;   // 当前要显示的那一条还没解好 ⇒ 这次按键丢掉
-    act(qBound(0, m_pos + delta, n - 1));
+    if (m_seq->count() <= 0) return judge();
+    const int start = screenStart(m_pos);
+
+    bool settled = false, anyReady = false;
+    scanScreen(screenItems(start), settled, anyReady);
+    if (!settled) return;                     // 本屏还没结论 ⇒ 这次按键丢掉
+
+    const int dir = (delta > 0) ? +1 : -1;
+    // 前进量按版面算（单幅 +1 / 双幅 +本屏张数）—— **只有序列知道**；到头 ⇒ -1（位置不动）
+    const int next = m_seq->advance(start, mode(),
+                                    dir > 0 ? Sequence::Dir::Next : Sequence::Dir::Prev);
+    if (next < 0) return judge();
+    act(next, dir);
 }
 
 void ViewerModel::jump(int imageIndex)
@@ -130,28 +166,35 @@ void ViewerModel::jump(int imageIndex)
     if (!m_seq) return judge();
     const int n = m_seq->count();
     if (n <= 0) return judge();
-    act(qBound(0, imageIndex, n - 1));
+    act(qBound(0, imageIndex, n - 1), 0);     // 跳转 ⇒ 份额回到起始
 }
 
-void ViewerModel::act(int target)
+//   换版面：**保留当前位置**，屏由序列按新版面重算（不重新分组）⇒ 再判一次。
+//   预取份额回到起始（`f = 6`、方向为正）。
+void ViewerModel::setDoublePage(bool on)
+{
+    if (m_double == on) return;
+    m_double = on;
+    resetShare();
+    emit doublePageChanged();
+    judge();
+}
+
+//   `stepDir` = 这次是"换一屏"（±1）；0 = 跳转 / 换版面。
+void ViewerModel::act(int target, int stepDir)
 {
     if (target != m_pos) {
-        observeOperation(target);    // 位置真的变了 ⇒ 才算一次操作
+        if (stepDir == 0) resetShare();       // 跳转 / 换版面 ⇒ 回到起始
+        else observeOperation(stepDir);       // 位置真的变了 ⇒ 才算一次操作
         m_pos = target;
     }
     judge();
 }
 
 // ══ 份额规则 ═══════════════════════════════════════════════════════════════
-//   同向再走一步 ⇒ `f+1`；反向 ⇒ `f−1`；夹在 `[1, L−1]`。
-//   跳转（位置不是相邻一条）⇒ 回到起始（`f = 6`、方向为正）。
-void ViewerModel::observeOperation(int to)
+//   同向再换一屏 ⇒ `f+1`；反向 ⇒ `f−1`；夹在 `[1, L−1]`。
+void ViewerModel::observeOperation(int dir)
 {
-    const int delta = to - m_pos;
-    if (delta == 0) return;                                     // 只是重判 ⇒ 不算一次操作
-    if (delta != 1 && delta != -1) return resetShare();         // 跳转 ⇒ 回到起始
-
-    const int dir = (delta > 0) ? +1 : -1;
     if (dir != m_dir) m_dir = dir;                              // 反向 ⇒ 新方向挪到前面
     m_f = qBound(1, m_f + ((dir > 0) ? +1 : -1), m_length - 1); // 前向条数只按方向 ±1
 }
@@ -163,29 +206,34 @@ void ViewerModel::resetShare()
 }
 
 // ══ 派活（主线程）══════════════════════════════════════════════════════════
-//   按"当前这一条 → 份额那串偏移"的顺序逐条查：坏因表里已有 ⇒ 跳过（**永不重派 = 不重试**）；
+//   按"本屏位置 → 份额那串偏移"的顺序逐条查：坏因表里已有 ⇒ 跳过（**永不重派 = 不重试**）；
 //   槽位表里已在等 / 已备好 ⇒ 跳过；元数据已标缺失 ⇒ **只写坏因表，不派解码**；
 //   剩下的找一个空槽，记下"这个槽等的是这一条"，在飞计数 +1，起一条工作线程去 `preload`。
-//   ★ **当前这一条永远最先派出去**（备图不许拖慢当前这张）。
+//   ★ **本屏的位置永远最先派出去**（备图不许拖慢当前这一屏）。
 void ViewerModel::dispatch()
 {
     if (!m_seq) return;
     const int n = m_seq->count();
     if (n <= 0) return;
 
-    //   要的条目 = 当前这一条之外的那 L 条（+1..+f 与 −1..−(L−f)）+ 当前这一条；
+    //   要的条目 = **本屏的位置** + 本屏之外的那 L 条（从**屏外第一条**起数：+1..+f 与 −1..−(L−f)）；
     //   最近方向那一侧的条目排在前面。
+    const QVector<int> items = screenItems(screenStart(m_pos));
+    if (items.isEmpty()) return;
+    const int start = items.first();
+    const int size  = qMax(1, items.size());
+
     const int f = m_f;
     const int b = m_length - f;
     QVector<int> want;
-    want.reserve(m_length + 1);
-    want << m_pos;
+    want.reserve(m_length + 2);
+    want << items;                                   // 本屏（1 或 2 个位置）
     if (m_dir > 0) {
-        for (int k = 1; k <= f; ++k) want << m_pos + k;
-        for (int k = 1; k <= b; ++k) want << m_pos - k;
+        for (int k = 0; k < f; ++k) want << start + size + k;
+        for (int k = 1; k <= b; ++k) want << start - k;
     } else {
-        for (int k = 1; k <= b; ++k) want << m_pos - k;
-        for (int k = 1; k <= f; ++k) want << m_pos + k;
+        for (int k = 1; k <= b; ++k) want << start - k;
+        for (int k = 0; k < f; ++k) want << start + size + k;
     }
 
     for (int i : want) {
@@ -207,6 +255,15 @@ void ViewerModel::dispatch()
     }
 }
 
+//   这一条备好时的那张图（坏 / 在飞 / 没槽 ⇒ 空图）。
+QImage ViewerModel::imageOf(int item) const
+{
+    if (item < 0) return QImage();
+    const int s = slotOf(item);
+    if (s < 0 || m_slots[s].state != Slot::State::Ready) return QImage();
+    return m_slots[s].image;
+}
+
 //   管着这一条的槽（-1 = 没有）。
 int ViewerModel::slotOf(int item) const
 {
@@ -218,6 +275,7 @@ int ViewerModel::slotOf(int item) const
 //   找一个槽给这一条：先找空槽；池满（上限 = L + 1）⇒ 丢掉"离当前位置最远、且已备好"的那个槽；
 //   找不到（没有可淘汰的备好槽）⇒ -1。
 //   ★ 池里只有"在飞 / 备好"两种槽 ⇒ 不会再有"不可淘汰的坏槽"把池堵死（坏因不在池里）。
+//   ★ **本屏的哪些条不离手**（双幅 2 条都算）。
 int ViewerModel::takeSlot(int item)
 {
     for (int s = 0; s < m_slots.size(); ++s) {
@@ -235,7 +293,7 @@ int ViewerModel::takeSlot(int item)
     int victim = -1, farthest = -1;
     for (int s = 0; s < m_slots.size(); ++s) {
         if (m_slots[s].state != Slot::State::Ready) continue;
-        if (m_slots[s].item == m_pos) continue;      // 当前这一条（距离 0 = 最近）不离手
+        if (onScreen(m_slots[s].item)) continue;     // 当前屏的那几条不离手
         const int d = qAbs(m_slots[s].item - m_pos);
         if (d > farthest) { farthest = d; victim = s; }
     }
@@ -259,55 +317,76 @@ void ViewerModel::markBad(int item, Bad why)
 }
 
 // ══ 重判：唯一决定上屏的地方 ═══════════════════════════════════════════════
-//   · 当前这一条的槽位是"备好"          ⇒ 上屏；
-//   · 坏因表里记着当前这一条（**查小表**）⇒ 跳过计数 +1，位置往后挪一条（同方向），再派活再判；
-//   · 还没有结论                        ⇒ 等下一个结果回来。
+//   · 本屏每个位置都有结论（备好 / 坏）**且至少一个备好** ⇒ 上屏（坏的位置留空图）；
+//   · 本屏**整屏都坏**（单幅 = 那一条坏）  ⇒ 跳过计数 +1，位置挪到下一屏（同方向），再派活再判；
+//   · 还有位置没结论                      ⇒ 等下一个结果回来。
 //   每一轮开头都更新一次浮层（`updateLoading()`）⇒ 所有返回路径都更新到，没有早退漏掉。
 void ViewerModel::judge()
 {
     for (;;) {
         updateLoading();                       // 浮层按当前状态当场算（唯一更新入口）
         if (!m_seq || m_seq->count() <= 0) return;   // 还没有条目（扫描中 = 浮层显示，扫完 = 不显示）
-        if (isBad(m_pos)) {                   // 当前这一条坏 ⇒ 查小表（不再看槽的状态）
-            ++m_skipped;
-            const int next = m_pos + m_dir;   // 往后挪一条（同方向）
-            if (next < 0 || next >= m_seq->count()) {
-                qInfo().noquote() << QStringLiteral("[viewer] 第 %1 条是坏的，且后面没有了"
-                                                    "（累计跳过 %2）")
-                                         .arg(m_pos).arg(m_skipped);
+
+        const int start = screenStart(m_pos);
+        const QVector<int> items = screenItems(start);
+        if (items.isEmpty()) return;
+
+        bool settled = false, anyReady = false;
+        scanScreen(items, settled, anyReady);
+        if (settled) {
+            if (anyReady) {
+                screen(start, items);
+                dispatch();                    // 上屏之后接着按份额备图
                 return;
             }
-            qInfo().noquote() << QStringLiteral("[viewer] 第 %1 条是坏的 ⇒ 跳过（累计 %2）")
-                                     .arg(m_pos).arg(m_skipped);
-            observeOperation(next);           // 同方向再走一步
+            ++m_skipped;                       // 整屏坏 ⇒ 跳过（按当前方向）
+            const int next = m_seq->advance(start, mode(),
+                                            m_dir > 0 ? Sequence::Dir::Next : Sequence::Dir::Prev);
+            if (next < 0) {
+                qInfo().noquote() << QStringLiteral("[viewer] 本屏（起点 %1）是坏的，且后面没有了"
+                                                    "（累计跳过 %2）")
+                                         .arg(start).arg(m_skipped);
+                return;
+            }
+            qInfo().noquote() << QStringLiteral("[viewer] 本屏（起点 %1）是坏的 ⇒ 跳过（累计 %2）")
+                                     .arg(start).arg(m_skipped);
+            observeOperation(m_dir);           // 同方向再换一屏
             m_pos = next;
-            dispatch();                       // 再派活
-            continue;                         // 再判
+            dispatch();                        // 再派活
+            continue;                          // 再判
         }
-        const int s = slotOf(m_pos);
-        if (s >= 0 && m_slots[s].state == Slot::State::Ready) {
-            screen(m_slots[s].image);
-            dispatch();                       // 上屏之后接着按份额备图
-            return;
-        }
-        //   还没有结论（没有槽位 / 正在等）⇒ 等下一个结果回来；派活当场给出结论
+        //   还没结论（没有槽位 / 正在等）⇒ 等下一个结果回来；派活当场给出结论
         //   （缺失 ⇒ 写坏因）就再判一次
         dispatch();
-        if (isBad(m_pos)) continue;           // 派活当场写出坏因（缺失）⇒ 再判
-        const int again = slotOf(m_pos);
-        if (again >= 0 && m_slots[again].state != Slot::State::InFlight) continue;
+        bool settled2 = false, anyReady2 = false;
+        scanScreen(items, settled2, anyReady2);
+        if (settled2) continue;                // 派活当场写出坏因（缺失）⇒ 再判
         return;
     }
 }
 
-//   上屏：写 `imageA` / `keyCount` / `cursor`，emit 三个信号，再更新一次浮层。
-//   ★ 位置变过、但这一条还没备好时**不清 `imageA`**（不许先显示空图或上一张）。
-void ViewerModel::screen(const QImage &image)
+//   本屏每个位置的状态：`settled` = 都有结论（备好 / 坏）；`anyReady` = 至少一个备好。
+void ViewerModel::scanScreen(const QVector<int> &items, bool &settled, bool &anyReady) const
 {
-    m_imageA = image;
-    m_imageB = QImage();                      // 单幅：恒空图
-    m_keyCount = 1;
-    m_cursor = m_pos;
+    settled  = true;
+    anyReady = false;
+    for (int i : items) {
+        if (isBad(i)) continue;                          // 坏 = 有结论
+        const int s = slotOf(i);
+        if (s >= 0 && m_slots[s].state == Slot::State::Ready) { anyReady = true; continue; }
+        settled = false;                                 // 既没备好、也不是坏 ⇒ 还在等
+    }
+}
+
+//   上屏：按**位置**写 `imageA` / `imageB`（备好 ⇒ 那张图；坏 / 没有第二个位置 ⇒ 空图），
+//   写 `keyCount`（本屏位置数）与 `cursor`（本屏起点），emit 信号，再更新一次浮层。
+//   ★ 位置变过、但这一屏还没就位时**不清 `imageA` / `imageB`**（不许先显示空图或上一张）。
+void ViewerModel::screen(int start, const QVector<int> &items)
+{
+    m_imageA = imageOf(items.value(0, -1));
+    m_imageB = imageOf(items.value(1, -1));
+    m_keyCount = items.size();
+    m_cursor = start;
     updateLoading();                          // 上屏之后也更新一次（浮层与新口径无关，只是不漏路径）
     emit imageAChanged();
     emit imageBChanged();
