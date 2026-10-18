@@ -44,7 +44,7 @@ inline qint64 monotonicNowMs()
 //   · `ord` 在**一个集合内唯一**（节点与叶子共用同一个遍历序，DFS 前序）；
 //   · `parent_ord` = 父行的 ord（根级 = -1）；身份 = 从根往下走的一串 label（+ 页号）；
 //   · 页行：`label` 为**空串**，`page_index` = 页号；容器行 / 普通图：`page_index` = -1；
-//   · 还原（`buildFromRows`）= `ORDER BY ord` 取全部行 → 按 ord 建树 + append 叶子
+//   · 恢复（`restore`）= `ORDER BY ord` 读行 → 按 ord 建树 + append 叶子（**边收边并**）
 //     （与**直接扫描**同一套：扫描线程产出的也是 `Row`）。
 //
 // ## 读图 = **沿链解析**（v5 的真活）
@@ -107,6 +107,8 @@ public:
     //   既有形参的默认；`innerArchiveMaxMb` 这里默认 `512`，与 `AppSettings` 一致）。
     //   §7 以后会往这里加字段（enabled / total / cachePath），所以名字取通用的 `ScanOptions`。
     static constexpr qint64 kDefaultInnerArchiveMaxMb = 512;
+    // 恢复时"一批吃几行"（约 2048 × 138 B ≈ 280 KB；只影响流式批大小，不改语义）
+    static constexpr int kRestoreBatchRows = 2048;
     struct ScanOptions {
         // ⚠️ 用**显式构造函数**给默认值（不用默认成员初始值）：`ScanOptions()` 是外层类
         //    成员函数的默认实参，GCC 不允许在那里依赖嵌套类的默认成员初始值。
@@ -348,15 +350,29 @@ public:
     void buildFromNames(const QString &archivePath, const QStringList &names);
     void buildFromEntries(const QString &rootPath, const QVector<Item> &entries);
 
-    // ── ⑤b **库行 → 序列**（唯一入口）────────────────────────────────
-    //   `rows` = 一个图集已写入磁盘的那些行（**一棵序列的树 + 条目**，含容器节点），按 ord。
-    //   `rootIsArchive` = 来源根本身就是压缩包（collection.kind == archive）。
-    //   `opt` = 扫描参数（**调用方传**；读包内条目时的内层包上限随 `Location` 带走）
-    void buildFromRows(const QString &rootPath, const QVector<Row> &rows,
-                       bool rootIsArchive = false, const QString &rootLabel = QString(),
-                       const ScanOptions &opt = ScanOptions());
+    // ★★ **行的来源**（恢复的输入）：只有"下一批"这一个方法（用户 2026-10-18 的设计）。
+    //   · 行是 **DFS 前序、父行必在子行前** ⇒ **前向流足够**（不回退、不随机访问）；
+    //   · 恢复**边收边并入** ⇒ 不要求把整份行读进内存（库那条用 SQLite 的 forward-only
+    //     游标，见 `library::Store::rowSource`）。
+    class RowSource
+    {
+    public:
+        virtual ~RowSource() = default;
+        // 把最多 `maxRows` 行**追加**到 `out`；返回这一批实际给了几行；0 = 没有更多了。
+        virtual int next(QVector<Row> &out, int maxRows) = 0;
+    };
 
-    // ── ⑤c **行的读取位置**（沿链解析的**唯一实现**；库探针 / 封面 / buildFromRows 共用）──
+    // ── ⑤b **恢复**（行 → 序列）：**唯一的"从磁盘回到内存"入口** ──────────────
+    //   · `src` = 行来源（前向流，见上）；`rootIsArchive` = 来源根本身是容器
+    //     （压缩包 / 多页文件）；`rootLabel` 显示用；`opt` = 扫描参数（读包内条目时用）；
+    //   · ★ **本方法不碰数据库、不碰盘** —— 行从哪来是调用方的事。
+    void restore(const QString &rootPath, RowSource &src, bool rootIsArchive = false,
+                 const QString &rootLabel = QString(), const ScanOptions &opt = ScanOptions());
+    //   便利重载：手里已经有一份行（测试 / 内存里那份）——同一段实现，只是包成一个流。
+    void restore(const QString &rootPath, const QVector<Row> &rows, bool rootIsArchive = false,
+                 const QString &rootLabel = QString(), const ScanOptions &opt = ScanOptions());
+
+    // ── ⑤c **行的读取位置**（沿链解析的**唯一实现**；库探针 / 封面 / 恢复共用）──
     //   `rows` 必须按 ord 升序、父行在前（DFS 前序）。返回与 rows 等长的位置表。
     static QVector<Location> locateRows(const QString &rootPath, bool rootIsArchive,
                                         const QVector<Row> &rows);
@@ -369,7 +385,7 @@ private:
     void appendItem(const Item &it);
     void finishAppend();                     // 扫描结束：把"待定的最后一条"定下来 + 全部扫完
     void resetGrouping();
-    void resetRows();                        // 清空行 / 树 / 记录（startScan / clear / buildFromRows）
+    void resetRows();                        // 清空行 / 树 / 记录（startScan / clear / restore）
     // 合成根节点（0 号）：`hasTree=false` = 单张图（没有树）⇒ 只记"根 = -1"
     void initRoot(bool hasTree, Kind root, const QString &rootLabel);
     void applyRows(const QVector<Row> &rows);                // 行 → 树 + 叶子（消费线程）
@@ -452,7 +468,7 @@ private:
     QVector<int>  m_openStack;
     QVector<int>  m_chainBuf;                // `syncOpenChain` 的复用缓冲（不参与值语义）
     QVector<Row>      m_rows;
-    // ★★ 扫描参数（**调用方经 `startScan` / `buildFromRows` 传入** —— 序列不读设置）
+    // ★★ 扫描参数（**调用方经 `startScan` / `restore` 传入** —— 序列不读设置）
     ScanOptions       m_scanOptions;
     QHash<int, int>   m_rowIndexByOrd;       // 行 ord → 行下标（**沿链解析**用）
     QHash<int, int>   m_nodeIndexByOrd;      // 行 ord → 树节点下标（含 -1 → 根）

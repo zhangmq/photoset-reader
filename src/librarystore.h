@@ -11,6 +11,7 @@
 //   · 列级 UPDATE，**绝不"读整行→改→写回"**（文档 §5.3 硬规则 1）
 
 #include <QByteArray>
+#include <memory>
 #include <QString>
 #include <QVector>
 
@@ -152,6 +153,12 @@ public:
     QVector<Item> items(qint64 collectionId);
     // 同一批行的**序列形态**（恢复的输入）—— 转换只有一份（上面的 `toRow`）
     QVector<Sequence::Row> sequenceRows(qint64 collectionId);
+
+    // ★★ 恢复用的**行流**：SQLite 的 **forward-only 游标**（**不把整份结果集读进内存**）。
+    //   · 顺序 = `ORDER BY ord`，走 `UNIQUE(collection_id, ord)` 索引（不建临时排序表）；
+    //   · 行是 DFS 前序、父行在前 ⇒ **前向流足够**（`Sequence::restore` 边收边并）；
+    //   · 游标没走完就销毁 ⇒ 直接收摊（`QSqlQuery` 析构即结束语句）。
+    std::unique_ptr<Sequence::RowSource> rowSource(qint64 collectionId);
     // ★ v5：**按链 + 页查**（resume 用）—— 沿 `parent_ord` 建树后沿 label 链 walk + 页号命中。
     //   返回**可读序列**（image 行）里的序号；-1 = 没命中。
     int itemIndexOfChain(qint64 collectionId, const QStringList &chain, int page = 0);

@@ -444,6 +444,68 @@ bool Store::replaceItems(qint64 collectionId, const QVector<Item> &rows)
     return true;
 }
 
+namespace {
+// 行读取的**唯一一份**（列顺序 = 下面那条 SELECT 的顺序）
+const char *kItemColumns =
+    "id, ord, parent_ord, kind, label, page_index, size, mtime, width, height,"
+    " first_index, last_index";
+
+Item readItem(const QSqlQuery &q)
+{
+    Item it;
+    it.id         = q.value(0).toLongLong();
+    it.ord        = q.value(1).toInt();
+    it.parentOrd  = q.value(2).toInt();
+    it.kind       = Sequence::Kind(q.value(3).toInt());
+    it.label      = q.value(4).toString();
+    it.pageIndex  = q.value(5).toInt();
+    it.size       = q.value(6).toLongLong();
+    it.mtime      = q.value(7).toLongLong();
+    it.width      = q.value(8).toInt();
+    it.height     = q.value(9).toInt();
+    it.firstIndex = q.value(10).toInt();
+    it.lastIndex  = q.value(11).toInt();
+    return it;
+}
+
+// 恢复的行流（见头文件）：forward-only 游标
+class RowCursor : public Sequence::RowSource
+{
+public:
+    RowCursor(const QString &connName, qint64 collectionId)
+        : m_q(QSqlDatabase::database(connName))
+    {
+        m_q.setForwardOnly(true);                 // ★ 不缓冲整个结果集
+        m_q.prepare(QStringLiteral("SELECT ") + QLatin1String(kItemColumns)
+                    + QLatin1String(" FROM item WHERE collection_id = ? ORDER BY ord"));
+        m_q.addBindValue(collectionId);
+        m_ok = m_q.exec();
+    }
+
+    int next(QVector<Sequence::Row> &out, int maxRows) override
+    {
+        if (!m_ok) return 0;
+        int n = 0;
+        while (n < maxRows && m_q.next()) {
+            out << toRow(readItem(m_q));
+            ++n;
+        }
+        return n;
+    }
+
+    bool ok() const { return m_ok; }
+
+private:
+    QSqlQuery m_q;
+    bool      m_ok = false;
+};
+} // namespace
+
+std::unique_ptr<Sequence::RowSource> Store::rowSource(qint64 collectionId)
+{
+    return std::make_unique<RowCursor>(m_connName, collectionId);
+}
+
 QVector<Sequence::Row> Store::sequenceRows(qint64 collectionId)
 {
     const QVector<Item> rows = items(collectionId);
@@ -457,42 +519,24 @@ QVector<Item> Store::items(qint64 collectionId)
 {
     QVector<Item> out;
     QSqlQuery q(QSqlDatabase::database(m_connName));
-    q.prepare(QStringLiteral(
-        "SELECT id, ord, parent_ord, kind, label, page_index, size, mtime, width, height,"
-        "       first_index, last_index"
-        "  FROM item WHERE collection_id = ? ORDER BY ord"));
+    q.prepare(QStringLiteral("SELECT ") + QLatin1String(kItemColumns)
+              + QLatin1String(" FROM item WHERE collection_id = ? ORDER BY ord"));
     q.addBindValue(collectionId);
     if (!q.exec()) { setError(q.lastError().text()); return out; }
-    while (q.next()) {
-        Item it;
-        it.id = q.value(0).toLongLong();
-        it.ord = q.value(1).toInt();
-        it.parentOrd = q.value(2).toInt();
-        it.kind = Sequence::Kind(q.value(3).toInt());
-        it.label = q.value(4).toString();
-        it.pageIndex = q.value(5).toInt();
-        it.size = q.value(6).toLongLong();
-        it.mtime = q.value(7).toLongLong();
-        it.width = q.value(8).toInt();
-        it.height = q.value(9).toInt();
-        it.firstIndex = q.value(10).toInt();
-        it.lastIndex  = q.value(11).toInt();
-        out << it;
-    }
+    while (q.next()) out << readItem(q);
     return out;
 }
 
 // ★ v5：**按链 + 页查**（resume 用）。
-//   单一事实源：把库行装成**同一条序列**（`Sequence::buildFromRows`，与浏览用的是同一份），
-//   再用序列自己的 `indexOfChain`（沿 label 链 walk 树 + 页号精确命中）。
+//   单一事实源：**走同一条恢复入口**（行流 → 序列），再用序列自己的 `indexOfChain`
+//   （沿 label 链 walk 树 + 页号精确命中）⇒ 不再"另建一条序列"那套私有实现。
 int Store::itemIndexOfChain(qint64 collectionId, const QStringList &chain, int page)
 {
     if (chain.isEmpty()) return -1;
-    const QVector<Sequence::Row> rs = sequenceRows(collectionId);
-    if (rs.isEmpty()) return -1;
-
+    auto src = rowSource(collectionId);          // forward-only 游标（不整份拉进内存）
     Sequence seq;
-    seq.buildFromRows(QString(), rs, false, QString());
+    seq.restore(QString(), *src, false, QString());
+    if (seq.count() <= 0) return -1;
     return seq.indexOfChain(chain, page);
 }
 

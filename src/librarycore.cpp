@@ -489,12 +489,12 @@ bool LibraryCore::buildViewSnapshot(qint64 id, QString *err)
         if (err) *err = QStringLiteral("图集不存在（%1）").arg(id);
         return false;
     }
-    // ★ 恢复的输入 = 库里的行（转换只有一份：`library::toRow`）
-    const QVector<Sequence::Row> srows = m_store->sequenceRows(id);
+    // ★ 恢复的输入 = 库里的行**流**（forward-only 游标；转换只有一份：`library::toRow`）
+    auto rowSource = m_store->rowSource(id);
 
     auto seq = std::make_unique<Sequence>();
     // 已写入磁盘的行 → 一条**静态只读**序列（不再跟随、不再重建，§9.1）
-    seq->buildFromRows(c.rootPath, srows, library::rootIsArchive(c));
+    seq->restore(c.rootPath, *rowSource, library::rootIsArchive(c));
     m_viewSeq = std::move(seq);
     m_viewId = id;
     return true;
@@ -590,7 +590,7 @@ bool LibraryCore::reapSlot(std::unique_ptr<Sequence> &slot)
 }
 
 // ★ 唤醒钩子：只给**要扫描的**序列装（会话 / 重置槽）；
-//   从磁盘读出的只读快照（`buildFromRows`）不扫描 ⇒ 没有批次可发布。
+//   从磁盘读出的只读快照（`restore`）不扫描 ⇒ 没有批次可发布。
 void LibraryCore::installPublishHook(Sequence &seq)
 {
     if (m_publishHook) seq.setPublishHook(m_publishHook);

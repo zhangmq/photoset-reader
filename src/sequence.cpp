@@ -463,7 +463,7 @@ void Sequence::finishAppend()
     }
     m_decided = m_items.size();
     // ★ 行流结束 ⇒ **剩下的打开节点全部扫完**（扫描到底是 Scaned / ScanStoped 都算；
-    //   库快照 `buildFromRows` 走的也是这里 —— 两条来源共用同一份收尾代码路径）。
+    //   库行恢复（`restore`）走的也是这里 —— 两条来源共用同一份收尾代码路径）。
     closeAllOpenNodes();
     finalizePageRowNames();
     m_state.store(State::Scaned, std::memory_order_relaxed);
@@ -788,7 +788,7 @@ QImage Sequence::image(const Item &it)
     return r.read();
 }
 
-// ══ 行 → 位置（静态入口；库探针 / 封面 / buildFromRows 共用）══════════
+// ══ 行 → 位置（静态入口；库探针 / 封面 / 恢复共用）══════════════════
 
 QVector<Sequence::Location> Sequence::locateRows(const QString &rootPath, bool rootIsArchive,
                                                   const QVector<Row> &rows)
@@ -950,8 +950,31 @@ void Sequence::applyRows(const QVector<Row> &rows)
     }
 }
 
-void Sequence::buildFromRows(const QString &rootPath, const QVector<Row> &rows,
-                             bool rootIsArchive, const QString &rootLabel, const ScanOptions &opt)
+// ══ 恢复（行 → 序列；**唯一的"从磁盘回到内存"入口**）══════════════════════
+//   与扫描路**共用同一段并入代码**（`applyRows` / `finishAppend`）——区别只是行从哪来：
+//   扫描是生产者产批，恢复是"流"喂批 ⇒ 两条路不会分叉。
+namespace {
+// 手里已经有一份行时的便利流（恢复的"内存"那一档）
+class VectorRowSource : public Sequence::RowSource
+{
+public:
+    explicit VectorRowSource(const QVector<Sequence::Row> &rows) : m_rows(rows) {}
+    int next(QVector<Sequence::Row> &out, int maxRows) override
+    {
+        const int left = m_rows.size() - m_pos;
+        const int n = qBound(0, maxRows, left);
+        for (int i = 0; i < n; ++i) out << m_rows.at(m_pos + i);
+        m_pos += n;
+        return n;
+    }
+private:
+    const QVector<Sequence::Row> &m_rows;
+    int m_pos = 0;
+};
+} // namespace
+
+void Sequence::restore(const QString &rootPath, RowSource &src, bool rootIsArchive,
+                       const QString &rootLabel, const ScanOptions &opt)
 {
     clear();
     m_scanOptions = opt;                      // ★ 扫描参数**调用方传**（序列不读设置）
@@ -963,8 +986,24 @@ void Sequence::buildFromRows(const QString &rootPath, const QVector<Row> &rows,
     initRoot(true, rootIsArchive ? Kind::Archive : Kind::Folder,
              rootLabel.isEmpty() ? QFileInfo(m_root).fileName() : rootLabel);
     m_rootInit = true;
-    applyRows(rows);
+
+    //   边收边并：一批一批地并入 ⇒ 峰值内存 = "一个批"，不再要求整份行
+    QVector<Row> batch;
+    batch.reserve(kRestoreBatchRows);
+    for (;;) {
+        batch.clear();
+        const int n = src.next(batch, kRestoreBatchRows);
+        if (n <= 0) break;
+        applyRows(batch);
+    }
     finishAppend();
+}
+
+void Sequence::restore(const QString &rootPath, const QVector<Row> &rows, bool rootIsArchive,
+                       const QString &rootLabel, const ScanOptions &opt)
+{
+    VectorRowSource src(rows);
+    restore(rootPath, src, rootIsArchive, rootLabel, opt);
 }
 
 // ══ 会话内扫描 ════════════════════════════════════════════════════════

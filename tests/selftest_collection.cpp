@@ -22,7 +22,7 @@
 
 // ══ 图集来源 → 查看序列 自检（ib-test-collection；原先由 `image-browser --selftest-collection` 跑）══
 //   设计 10 §11.1 / 设计 11 §四。验证"图集来源接进新 VM"的每一环，且**全部不碰盘**：
-//     ① 库行 → 序列（唯一入口 `Sequence::buildFromRows`）
+//     ① 库行 → 序列（唯一入口 `Sequence::restore`）
 //     ② 像素尺寸来自库 ⇒ **素材删掉后**宽窄分组照样成立（证明没读盘）
 //     ③ 图集级阅读版面 ↔ 序列模式（唯一映射）
 //     ④ resume 存 key ⇒ `indexOfKey(key)` 拿回下标
@@ -222,7 +222,7 @@ static int runCollectionSelfTest()
     const QString collLabel = coll.title.isEmpty() ? QFileInfo(coll.rootPath).fileName()
                                                    : coll.title;
     Sequence src;
-    src.buildFromRows(coll.rootPath, store.sequenceRows(cid), library::rootIsArchive(coll),
+    src.restore(coll.rootPath, store.sequenceRows(cid), library::rootIsArchive(coll),
                       collLabel);
     const Sequence &rebuilt = src;
 
@@ -352,7 +352,7 @@ static int runCollectionSelfTest()
     check(QDir(album).removeRecursively(), QStringLiteral("删掉素材目录（此后不许碰盘）"));
     {
         Sequence noDisk;
-        noDisk.buildFromRows(coll.rootPath, store.sequenceRows(cid), library::rootIsArchive(coll),
+        noDisk.restore(coll.rootPath, store.sequenceRows(cid), library::rootIsArchive(coll),
                              collLabel);
         check(noDisk.count() == rebuilt.count(),
               QStringLiteral("① 库行 → 序列条目 %1 条（素材已删）").arg(noDisk.count()));

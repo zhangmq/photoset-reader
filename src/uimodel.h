@@ -316,7 +316,7 @@ private:
     };
 
     void buildViewer();                 // 用 m_path 新建一组；emit viewerChanged；旧组延迟释放
-    // ⚠️ T2c-2b-1：旧的"图集来源：`LibraryItemSource` → 投影 → `buildFromRows`"已删 ——
+    // ⚠️ T2c-2b-1：旧的"图集来源：`LibraryItemSource` → 投影 → 库行建序列"已删 ——
     //   图集查看改走 core 的快照（`buildCollectionView`），不留两条并存的建序列路径。
     void rebuildViewer();               // 设置类变化 ⇒ 换一组（带上会话态：位置）
     void installViewer(Source s);       // 接线 + 换绑 + 旧组延迟释放

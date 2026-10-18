@@ -360,7 +360,7 @@ bool UiModel::openCollection(qint64 collectionId)
 
 // ★★ 建"图集查看"这一组（core 快照 → 收尾 → 落到 chain/page）：
 //   · `core->openCollection` 给的是**静态只读快照**；
-//   · 立刻 `pump()` 一次把快照**收尾**（`buildFromRows` 后 `m_finished` 还是 false ⇒
+//   · 立刻 `pump()` 一次把快照**收尾**（`restore` 后 `m_finished` 还是 false ⇒
 //     `drain()` 会跑一次 `finishAppend()`）。此后 core 的每次 `pump()` 对它是**只读**的
 //     （空队 + `m_finished` ⇒ 不写任何消费者状态）⇒ 只读。
 bool UiModel::buildCollectionView(qint64 collectionId, const QStringList &chain, int page)
