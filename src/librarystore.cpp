@@ -5,6 +5,7 @@
 
 #include <QCoreApplication>
 #include <QDateTime>
+#include <algorithm>
 #include <QDebug>
 #include <QDir>
 #include <QSqlDatabase>
@@ -530,14 +531,127 @@ QVector<Item> Store::items(qint64 collectionId)
 // ★ v5：**按链 + 页查**（resume 用）。
 //   单一事实源：**走同一条恢复入口**（行流 → 序列），再用序列自己的 `indexOfChain`
 //   （沿 label 链 walk 树 + 页号精确命中）⇒ 不再"另建一条序列"那套私有实现。
+// ★★ "存档位置（label 链 + 页号）是第几条图"—— **按深度走几条查询**，不做整份遍历。
+//   语义与 `Sequence::indexOfChain` 逐条对齐（前 n-1 段 = 容器；末段 A) 直接子图 / B) 子容器按页）。
+//   返回 = **图的 index**（0 基：这一行之前有几条图）；-1 = 没有。
 int Store::itemIndexOfChain(qint64 collectionId, const QStringList &chain, int page)
 {
     if (chain.isEmpty()) return -1;
-    auto src = rowSource(collectionId);          // forward-only 游标（不整份拉进内存）
-    Sequence seq;
-    seq.restore(QString(), *src, false, QString());
-    if (seq.count() <= 0) return -1;
-    return seq.indexOfChain(chain, page);
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+
+    // 容器子行：沿 (parent_ord, label) 下钻（kind <> Image ⇒ folder / archive）
+    const auto containerChild = [&](int parentOrd, const QString &label) -> int {
+        QSqlQuery q(db);
+        q.prepare(QStringLiteral("SELECT ord FROM item WHERE collection_id = ? AND parent_ord = ?"
+                                 " AND label = ? AND kind <> ? ORDER BY ord LIMIT 1"));
+        q.addBindValue(collectionId); q.addBindValue(parentOrd); q.addBindValue(label);
+        q.addBindValue(int(Sequence::Kind::Image));
+        return (q.exec() && q.next()) ? q.value(0).toInt() : -1;
+    };
+    // 直接子图（普通图 = 自己的名字；页行 = 空名字 + 页号）
+    const auto imageChild = [&](int parentOrd, const QString &label, bool useLabel,
+                                int wantPage) -> int {
+        QSqlQuery q(db);
+        if (useLabel) {
+            q.prepare(QStringLiteral(
+                "SELECT ord FROM item WHERE collection_id = ? AND parent_ord = ?"
+                " AND label = ? AND kind = ?"
+                " AND (CASE WHEN page_index < 0 THEN 0 ELSE page_index END) = ?"
+                " ORDER BY ord LIMIT 1"));
+            q.addBindValue(collectionId); q.addBindValue(parentOrd); q.addBindValue(label);
+            q.addBindValue(int(Sequence::Kind::Image)); q.addBindValue(wantPage);
+        } else {
+            q.prepare(QStringLiteral(
+                "SELECT ord FROM item WHERE collection_id = ? AND parent_ord = ?"
+                " AND kind = ?"
+                " AND (CASE WHEN page_index < 0 THEN 0 ELSE page_index END) = ?"
+                " ORDER BY ord LIMIT 1"));
+            q.addBindValue(collectionId); q.addBindValue(parentOrd);
+            q.addBindValue(int(Sequence::Kind::Image)); q.addBindValue(wantPage);
+        }
+        return (q.exec() && q.next()) ? q.value(0).toInt() : -1;
+    };
+
+    int parentOrd = -1;                                    // 根（合成节点，ord = -1）
+    for (int s = 0; s + 1 < chain.size(); ++s) {
+        parentOrd = containerChild(parentOrd, chain.at(s));
+        if (parentOrd < 0) return -1;
+    }
+    const QString last = chain.last();
+
+    int ord = imageChild(parentOrd, last, /*useLabel=*/true, page);        // A) 直接子图
+    if (ord < 0) {                                                        // B) 子容器（多页文件）
+        const int child = containerChild(parentOrd, last);
+        if (child < 0) return -1;
+        ord = imageChild(child, QString(), /*useLabel=*/false, page);
+        if (ord < 0) return -1;
+    }
+
+    QSqlQuery q(db);                                       // 图的 index = 这一行之前有几条图
+    q.prepare(QStringLiteral("SELECT COUNT(*) FROM item WHERE collection_id = ? AND kind = ?"
+                             " AND ord < ?"));
+    q.addBindValue(collectionId);
+    q.addBindValue(int(Sequence::Kind::Image));
+    q.addBindValue(ord);
+    if (q.exec() && q.next()) return q.value(0).toInt();
+    return -1;
+}
+
+// ★★ 卡片封面用的那一行 + 它的读图位置（**不做整份遍历**）：
+//   · 候选 = 按 ord 升序、跳过目录、跳过"多页文件的第 > 0 页"；
+//   · 候选的**祖先链里出现压缩包 ⇒ 跳过**（包内成员没有盘上绝对路径，当不了封面）；
+//   · 命中 ⇒ 只把"祖先链 + 它自己"这几行喂给 `locateRows`（沿链解析的唯一实现）。
+bool Store::coverRow(qint64 collectionId, const QString &rootPath, bool rootIsArchive,
+                     Sequence::Row *rowOut, Sequence::Location *locOut) const
+{
+    static constexpr int kAncestorGuard = 64;              // 防畸形环（真实目录不会这么深）
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+
+    QSqlQuery q(db);
+    q.setForwardOnly(true);
+    q.prepare(QStringLiteral("SELECT ") + QLatin1String(kItemColumns)
+              + QLatin1String(" FROM item WHERE collection_id = ? AND kind <> ?"
+                              " AND (kind <> ? OR page_index <= 0) ORDER BY ord"));
+    q.addBindValue(collectionId);
+    q.addBindValue(int(Sequence::Kind::Folder));
+    q.addBindValue(int(Sequence::Kind::Image));
+    if (!q.exec()) return false;
+
+    while (q.next()) {
+        const Item cand = readItem(q);
+        QVector<Sequence::Row> subset;
+        subset << toRow(cand);
+        bool insideArchive = false;
+        int parentOrd = cand.parentOrd;
+        int guard = 0;
+        while (parentOrd >= 0 && (guard += 1) <= kAncestorGuard) {
+            QSqlQuery a(db);
+            a.prepare(QStringLiteral("SELECT ") + QLatin1String(kItemColumns)
+                      + QLatin1String(" FROM item WHERE collection_id = ? AND ord = ? LIMIT 1"));
+            a.addBindValue(collectionId);
+            a.addBindValue(parentOrd);
+            if (!a.exec() || !a.next()) { insideArchive = true; break; }   // 祖先缺失 ⇒ 不可用
+            const Item anc = readItem(a);
+            if (anc.kind == Sequence::Kind::Archive) { insideArchive = true; break; }
+            subset << toRow(anc);
+            parentOrd = anc.parentOrd;
+        }
+        if (insideArchive) continue;
+
+        std::sort(subset.begin(), subset.end(),
+                  [](const Sequence::Row &x, const Sequence::Row &y) { return x.ord < y.ord; });
+        int at = -1;
+        for (int i = 0; i < subset.size(); ++i)
+            if (subset.at(i).ord == cand.ord) { at = i; break; }
+        const QVector<Sequence::Location> locs =
+            Sequence::locateRows(rootPath, rootIsArchive, subset);
+        if (at < 0 || at >= locs.size()) continue;
+        if (locs.at(at).diskPath.isEmpty() || !locs.at(at).members.isEmpty()) continue;
+        if (rowOut) *rowOut = toRow(cand);
+        if (locOut) *locOut = locs.at(at);
+        return true;
+    }
+    return false;
 }
 
 // ★ v6：**总数现算**（一条 GROUP BY 覆盖所有集合；界面要的"多少张图"）

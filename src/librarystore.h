@@ -161,7 +161,17 @@ public:
     std::unique_ptr<Sequence::RowSource> rowSource(qint64 collectionId);
     // ★ v5：**按链 + 页查**（resume 用）—— 沿 `parent_ord` 建树后沿 label 链 walk + 页号命中。
     //   返回**可读序列**（image 行）里的序号；-1 = 没命中。
+    // ★★ "存档位置（label 链 + 页号）是第几条图"—— **按深度走几条查询**，不做整份遍历：
+    //   逐层沿 (parent_ord, label) 找子容器，末层按"直接子图（label+页号）→ 再下钻一层容器"
+    //   命中（与 `Sequence::indexOfChain` 同语义，见那里）；返回**图的 index**（0 基），-1 = 没有。
     int itemIndexOfChain(qint64 collectionId, const QStringList &chain, int page = 0);
+
+    // ★★ 卡片封面用的那一行 + 它的读图位置（**不做整份遍历**）：
+    //   · 候选 = 按 ord 升序、跳过目录、跳过"多页文件的第 >0 页"的那些行；
+    //   · 候选的**祖先链里出现压缩包 ⇒ 跳过**（包内成员没有盘上绝对路径，不能当封面）；
+    //   · 命中 ⇒ 返回它那一行与 `Sequence::Location`（只喂"祖先链 + 它自己"给 locateRows）。
+    bool coverRow(qint64 collectionId, const QString &rootPath, bool rootIsArchive,
+                  Sequence::Row *rowOut, Sequence::Location *locOut) const;
     // ★ v6：**总数现算**（`GROUP BY`；界面要的"多少张图"）——一条查询覆盖所有集合
     QHash<qint64, int> itemCounts();
     int itemCount(qint64 collectionId);
