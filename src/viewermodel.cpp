@@ -108,25 +108,35 @@ void ViewerModel::sequenceChanged()
 }
 
 // ══ 版面 / 屏 ══════════════════════════════════════════════════════════════
-//   本类**不算分组、不做 ±屏 的算术**：位置 → 屏、屏 → 下一屏，都问序列。
-Sequence::Mode ViewerModel::mode() const
-{
-    return m_double ? Sequence::Mode::Double : Sequence::Mode::Single;
-}
-
-// 这一条所在那一屏的起点（双幅下落在配对第二张 ⇒ 回到它所属的那一组）。
+//   版面 = `app::Layout`（一份枚举）：**单幅** ⇒ 一屏就是这一条；**双幅** ⇒ 一屏是"这一对"。
+//   双幅那一对的位置由**序列的配对表**给（`pairStart` / `pairAt`），本类不自己配对、不算张数。
+// 这一条所在那一屏的起点（双幅下落在配对第二张 ⇒ 回到它所属的那一对）。
 int ViewerModel::screenStart(int item) const
 {
     if (!m_seq) return 0;
-    const int s = m_seq->anchorOf(item, mode());
+    if (m_layout == app::Layout::Single) return qBound(0, item, qMax(0, m_seq->count() - 1));
+    const int s = m_seq->pairStart(item);
     return (s < 0) ? 0 : s;
 }
 
-// 本屏的位置（双幅 2 个 / 宽图或末尾 1 个）——**照抄序列的分组**，本类不挑不滤。
+// 本屏的位置（单幅 1 条 / 双幅 = 本对，宽图或末尾也是 1 条）——**照抄序列的配对表**，不挑不滤。
 QVector<int> ViewerModel::screenItems(int start) const
 {
     if (!m_seq) return QVector<int>();
-    return m_seq->groupAt(start, mode()).members;
+    if (m_layout == app::Layout::Single) return QVector<int>{ qBound(0, start, qMax(0, m_seq->count() - 1)) };
+    return m_seq->pairAt(start).members;
+}
+
+//   换一屏（`stepPage` 与"整屏坏 ⇒ 跳过"共用这一处）。
+int ViewerModel::nextScreen(int start, int dir) const
+{
+    if (!m_seq) return -1;
+    const int n = m_seq->count();
+    if (n <= 0) return -1;
+    if (m_layout == app::Layout::Double)
+        return (dir > 0) ? m_seq->nextPairStart(start) : m_seq->prevPairStart(start);
+    if (dir > 0) return (start + 1 < n) ? start + 1 : -1;
+    return (start - 1 >= 0) ? start - 1 : -1;
 }
 
 // 这一条在不在当前屏上（淘汰槽位时不离手）。
@@ -154,9 +164,7 @@ void ViewerModel::stepPage(int delta)
     if (!settled) return;                     // 本屏还没结论 ⇒ 这次按键丢掉
 
     const int dir = (delta > 0) ? +1 : -1;
-    // 前进量按版面算（单幅 +1 / 双幅 +本屏张数）—— **只有序列知道**；到头 ⇒ -1（位置不动）
-    const int next = m_seq->advance(start, mode(),
-                                    dir > 0 ? Sequence::Dir::Next : Sequence::Dir::Prev);
+    const int next = nextScreen(start, dir);      // 到头 ⇒ -1（位置不动）
     if (next < 0) return judge();
     act(next, dir);
 }
@@ -173,8 +181,9 @@ void ViewerModel::jump(int imageIndex)
 //   预取份额回到起始（`f = 6`、方向为正）。
 void ViewerModel::setDoublePage(bool on)
 {
-    if (m_double == on) return;
-    m_double = on;
+    const app::Layout want = on ? app::Layout::Double : app::Layout::Single;
+    if (m_layout == want) return;
+    m_layout = want;
     resetShare();
     emit doublePageChanged();
     judge();
@@ -340,8 +349,7 @@ void ViewerModel::judge()
                 return;
             }
             ++m_skipped;                       // 整屏坏 ⇒ 跳过（按当前方向）
-            const int next = m_seq->advance(start, mode(),
-                                            m_dir > 0 ? Sequence::Dir::Next : Sequence::Dir::Prev);
+            const int next = nextScreen(start, m_dir);      // 跳过也按当前方向换屏（不绕圈）
             if (next < 0) {
                 qInfo().noquote() << QStringLiteral("[viewer] 本屏（起点 %1）是坏的，且后面没有了"
                                                     "（累计跳过 %2）")

@@ -4,6 +4,13 @@
 
 namespace app {
 
+// ★★ **阅读版面**（单幅 / 双幅）—— 这个概念**唯一的一份取值类型**（用户 2026-10-18）：
+//   · 库里的 `collection.reading_layout` 存它的**值**（不再存字符串、不再有翻译函数）；
+//   · 会话态在 `UiModel`，行为在 `ViewerModel`；
+//   · `Sequence` **不带这个概念** —— 它只有"配对表"（谁跟谁配成一对）这份**数据**。
+//   ⚠️ 取值显式写死（库列存的就是它）⇒ 不许重排、不许改既有取值。
+enum class Layout { Single = 0, Double = 1 };
+
 // ══ 应用设置（配置文件）════════════════════════════════════════
 //   设计：docs/design/11-应用ViewModel设计.md §二 / 14 §9.3 / §10
 //
@@ -26,7 +33,7 @@ struct AppSettings
     int  defaultFitMode() const { return m_fitMode; }           // 0 原始 1 适应屏幕 2 适应宽度 3 适应高度
 
     // 图像
-    // 图像 · 缩放（**参数才是真相**；预设只是命名组合，见 scaler::presets()）
+    // 图像 · 缩放（**参数才是真相**；预设只是命名组合，见 gpuscale::presets()）
     QString scalerQuality() const { return m_scalerQuality; }   // fast | balanced | best
     QString scalerMode() const { return m_scalerMode; }         // linear-light | nearest | qt-smooth
     QString scalerFilter() const { return m_scalerFilter; }     // auto | box | lanczos | mitchell

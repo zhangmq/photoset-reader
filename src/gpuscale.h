@@ -3,17 +3,21 @@
 #include <QImage>
 #include <QSize>
 #include <QString>
+#include <QVector>
 
 // QRhi / QShader（Qt 的私有包含路径；QQuickRhiItem 文档同样要求 link Qt6::GuiPrivate）
 #include <QtGui/rhi/qrhi.h>
 #include <QtGui/rhi/qshader.h>
 
-#include "scaler.h"
 
-// ══ GPU 缩放渲染路径（产品路径的算法核心）══════════════════════════════════
+// ══ 缩放：**唯一实现是 GPU 这条**（产品路径的算法核心）══════════════════
 //
-// 与 `src/scaler.cpp`（CPU 参照实现）**逐像素等价**，与实验工具 `src/gpubench.cpp`
-// 的 shader 数学**逐字一致**（见 docs/research/12）：
+//   ★ 2026-10-19：CPU 那条实现（`scaler::resize` 及其线性光 / 重采样内核）**已退休** ——
+//     阅读画质走这条 GPU 管线；缩略图只要"能看"，用 Qt 平滑缩放。
+//     ⇒ **参数与预设（`Mode` / `Quality` / `Filter` / `Params` / `Preset` / `presets()` /
+//       `paramsFromStrings()` / 名称助手）搬到这里**，成为本模块的一部分（一份定义、一处实现）。
+//
+// shader 数学（见 docs/research/12）：
 //
 //     ① 线性化（sRGB8 → 线性 float） → ② 水平趟 → ③ 垂直趟（+ anti-ringing 钳位）→ 线性→sRGB
 //
@@ -33,6 +37,62 @@
 //   `synchronize()`（GUI 线程被阻塞）里取走引用（QImage 隐式共享，零拷贝）。
 namespace gpuscale {
 
+enum class Quality {
+    Fast,       // 线性光 + box（面积平均）：大比例缩小时足够且很快
+    Balanced,   // 线性光 + Lanczos3（默认）
+    Best,       // 线性光 + Lanczos3 + anti-ringing（放大时抑制振铃）
+};
+
+// 滤波器族（与 Quality 正交：Quality 管"档位/是否 anti-ringing"，Filter 管"用哪个核"）
+enum class Filter {
+    Auto,       // 按 Quality 走默认：Fast→box，其余→Lanczos(lobes)
+    Box,        // 面积平均（支撑 0.5）
+    Lanczos,    // Lanczos（支撑 = lobes）
+    Mitchell,   // Mitchell–Netravali bicubic（支撑 2.0，B/C 可调）
+};
+
+enum class Mode {
+    Nearest,    // 像素完美（整数倍时）
+    LinearLight,// 我们的实现
+    QtSmooth,   // 对照用：Qt 的 SmoothTransformation（非线性）
+};
+
+// ── 全部可调参数（**参数才是真相**；预设只是命名组合）──────────
+struct Params {
+    Mode    mode = Mode::LinearLight;    // 色彩空间 / 通路
+    Quality quality = Quality::Balanced; // 档位（Best 时启用 anti-ringing）
+    Filter  filter = Filter::Auto;       // 用哪个核
+    int     lobes = 3;                   // Lanczos 瓣数（2/3/4）：越大越锐、振铃越多
+    double  mitchellB = 1.0 / 3.0;       // Mitchell B/C 参数化
+    double  mitchellC = 1.0 / 3.0;       //   B=C=1/3 → Mitchell；B=0,C=1/2 → Catmull-Rom；B=1,C=0 → B 样条
+    double  antiring = 1.0;              // 振铃抑制强度 0–1（只在 quality==Best 时生效）
+};
+
+// 预设 = 一组参数值的命名组合（**唯一事实源**：UI 与 CLI 都从这里取）
+struct Preset {
+    const char *key;      // 存进设置的值
+    const char *label;    // UI 文案
+    const char *desc;     // UI 说明
+    Params      params;
+};
+// 字符串值域 → Params 的**唯一映射**（main.cpp 读配置用它；UI 侧重构后也用它）
+Params paramsFromStrings(const QString &mode, const QString &quality, const QString &filter,
+                         int lobes, double mitchellB, double mitchellC, double antiring);
+
+// 便捷：只指定 mode/quality（其余取默认）
+inline Params params(Mode m, Quality q) { Params p; p.mode = m; p.quality = q; return p; }
+
+const QVector<Preset> &presets();
+const Preset *presetByKey(const QString &key);
+// 当前参数与哪个预设一致（找不到返回 nullptr → UI 显示"自定义"）
+const Preset *presetFor(const Params &p);
+
+
+// 供 UI 显示的可读名称
+const char *modeName(Mode m);
+const char *qualityName(Quality q);
+const char *filterName(Filter f);
+
 // ── 视口适配：原始 / 适应屏幕 / 适应宽度 / 适应高度（设计 13 §八）────────
 enum class Fit {
     Original,    // 原始大小（100%）
@@ -47,7 +107,7 @@ QSize fitSize(const QSize &src, const QSize &viewport, Fit fit, qreal zoom);
 // ── 一次渲染的参数计划（**唯一事实源**）────────────────────────────────
 //   `full` 决定缩放比与核宽（← pan 不许改变采样），`dst` 是本次真正渲染出来的可见区域。
 struct Plan {
-    scaler::Params params;
+    Params params;
     QSize src;                       // 源图像素尺寸
     QSize full;                      // 完整缩放后尺寸（scale = src/full）
     QSize dst;                       // 本次渲染尺寸 = min(full - off, 视口)
@@ -69,7 +129,7 @@ struct Plan {
 
 // 由「源尺寸 + 视口 + fit/zoom/pan + scaler 参数」算出一次渲染的完整计划
 Plan makePlan(const QSize &src, const QSize &viewport, Fit fit, qreal zoom,
-              qreal panX, qreal panY, const scaler::Params &p);
+              qreal panX, qreal panY, const Params &p);
 
 // ── 每趟的 uniform（**单一事实源**：产品管线与离屏自检都用这一个）──────────
 //   与 shader 的 std140 块一致：p0=(filter,axis,outN,inN) p1=(fscale,radius,encode,lobes)
@@ -96,7 +156,7 @@ PassUniforms passUniformsFor(const Plan &plan, int pass, bool flipY);
 
 // ── 抽头边界（lo/hi）**由 CPU 算好**，GPU 只读 ─────────────────────────────
 //   ★ 为什么不能让 shader 自己算（2026-10-12 真机实测，NVIDIA 615.78.08）：
-//     CPU 参照实现 `scaler::buildTaps` 用 **double**：
+//     （原本与 CPU 参照实现逐字对齐；CPU 那条 2026-10-19 已退休）：
 //       center = (i+0.5)*scale-0.5; lo = max(floor(center-radius+0.5),0);
 //       hi = min(ceil(center+radius-0.5), srcN-1)
 //     GPU 用 **float** 算同一条式子时，**整数倍缩放**会让边界参数恰好落在整数上
@@ -110,7 +170,7 @@ PassUniforms passUniformsFor(const Plan &plan, int pass, bool flipY);
 //   这样纹理尺寸只跟**一屏**有关（放大到 8× 时 full 可能有几万像素，超过最大纹理尺寸）。
 //   返回 count × RGBA32F（每个可见输出索引一个 texel：(lo, hi, 0, 0)）。
 QByteArray tapBoundsBytes(int srcN, int fullN, int startOut, int count,
-                          const scaler::Params &p, bool nearest);
+                          const Params &p, bool nearest);
 
 // ── QRhi 三段管线 ─────────────────────────────────────────────────────
 class Pipeline

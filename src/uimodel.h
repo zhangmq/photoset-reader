@@ -133,7 +133,7 @@ public:
     //   内层压缩包上限（MB）：超过上限的内层压缩包不展开（判定在解压前）
     Q_PROPERTY(int  innerArchiveMaxMb READ innerArchiveMaxMb WRITE setInnerArchiveMaxMb
                                        NOTIFY innerArchiveMaxMbChanged)
-    //   图像（缩放）——**参数才是真相**，预设只是命名组合（`scaler::presets()` 是唯一事实源）
+    //   图像（缩放）——**参数才是真相**，预设只是命名组合（`gpuscale::presets()` 是唯一事实源）
     Q_PROPERTY(QString scalerQuality READ scalerQuality WRITE setScalerQuality
                                       NOTIFY scalerQualityChanged)
     Q_PROPERTY(QString scalerMode READ scalerMode WRITE setScalerMode NOTIFY scalerModeChanged)
@@ -268,7 +268,7 @@ public:
     void    setScalerMitchellC(double v);
     double  scalerAntiring() const;
     void    setScalerAntiring(double v);
-    QString scalerPreset() const;                        // 派生（`scaler::presetFor`）
+    QString scalerPreset() const;                        // 派生（`gpuscale::presetFor`）
     Q_INVOKABLE QVariantList scalerPresetList() const;   // UI 的下拉列表
     Q_INVOKABLE void applyScalerPreset(const QString &key);
 

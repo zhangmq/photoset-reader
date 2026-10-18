@@ -15,26 +15,26 @@ namespace {
 constexpr float kPi = 3.14159265358979323846f;
 
 // 核支撑：Box 0.5 / Mitchell 2.0 / Lanczos = lobes（与 CPU buildTaps 同一规则）
-float supportFor(const scaler::Params &p, int lobes)
+float supportFor(const Params &p, int lobes)
 {
-    scaler::Filter f = p.filter;
-    if (f == scaler::Filter::Auto)
-        f = (p.quality == scaler::Quality::Fast) ? scaler::Filter::Box : scaler::Filter::Lanczos;
+    Filter f = p.filter;
+    if (f == Filter::Auto)
+        f = (p.quality == Quality::Fast) ? Filter::Box : Filter::Lanczos;
     switch (f) {
-    case scaler::Filter::Box:      return 0.5f;
-    case scaler::Filter::Mitchell: return 2.0f;
+    case Filter::Box:      return 0.5f;
+    case Filter::Mitchell: return 2.0f;
     default:                       return float(lobes);
     }
 }
 
-int filterIndexFor(const scaler::Params &p)
+int filterIndexFor(const Params &p)
 {
-    scaler::Filter f = p.filter;
-    if (f == scaler::Filter::Auto)
-        f = (p.quality == scaler::Quality::Fast) ? scaler::Filter::Box : scaler::Filter::Lanczos;
+    Filter f = p.filter;
+    if (f == Filter::Auto)
+        f = (p.quality == Quality::Fast) ? Filter::Box : Filter::Lanczos;
     switch (f) {
-    case scaler::Filter::Box:      return 1;
-    case scaler::Filter::Mitchell: return 2;
+    case Filter::Box:      return 1;
+    case Filter::Mitchell: return 2;
     default:                       return 0;
     }
 }
@@ -88,7 +88,7 @@ QSize fitSize(const QSize &src, const QSize &viewport, Fit fit, qreal zoom)
     case Fit::Original:
         break;
     case Fit::Screen: {
-        // ★ 与 CPU 参照实现**同口径**：scaler::resize 的 fitInside 就是
+        // ★ 视口适配口径（原与 CPU 参照实现同式）：fitInside 就是
         //   `src.scaled(box, Qt::KeepAspectRatio)`，这里直接委托 Qt，避免自己重写取整规则而分叉
         const QSize base = src.scaled(QSize(int(vw), int(vh)), Qt::KeepAspectRatio);
         outW = base.width();
@@ -108,7 +108,7 @@ QSize fitSize(const QSize &src, const QSize &viewport, Fit fit, qreal zoom)
 }
 
 Plan makePlan(const QSize &src, const QSize &viewport, Fit fit, qreal zoom,
-              qreal panX, qreal panY, const scaler::Params &p)
+              qreal panX, qreal panY, const Params &p)
 {
     Plan pl;
     pl.params = p;
@@ -137,9 +137,9 @@ Plan makePlan(const QSize &src, const QSize &viewport, Fit fit, qreal zoom,
     pl.mB = float(p.mitchellB);
     pl.mC = float(p.mitchellC);
     pl.antiring = float(qBound(0.0, p.antiring, 1.0));
-    pl.useAR = (p.quality == scaler::Quality::Best);
+    pl.useAR = (p.quality == Quality::Best);
 
-    if (p.mode == scaler::Mode::Nearest) {
+    if (p.mode == Mode::Nearest) {
         // 像素完美通路：不做线性化、不来回转色彩空间，单抽头取最近像素
         pl.filterIdx = 3;
         pl.fscaleX = pl.fscaleY = 1.0f;
@@ -166,7 +166,7 @@ bool Plan::operator==(const Plan &o) const
 }
 
 QByteArray tapBoundsBytes(int srcN, int fullN, int startOut, int count,
-                          const scaler::Params &p, bool nearest)
+                          const Params &p, bool nearest)
 {
     QByteArray out;
     if (srcN <= 0 || fullN <= 0 || count <= 0)
@@ -174,14 +174,14 @@ QByteArray tapBoundsBytes(int srcN, int fullN, int startOut, int count,
     out.resize(count * 4 * int(sizeof(float)));
     float *f = reinterpret_cast<float *>(out.data());
 
-    // ★ 与 scaler::buildTaps 的边界规则**同式、同精度（double）**
+    // ★ 重采样边界规则（**double** 精度）
     const double scale = double(srcN) / double(fullN);
     const double fscale = std::max(1.0, scale);
-    scaler::Filter filt = p.filter;
-    if (filt == scaler::Filter::Auto)
-        filt = (p.quality == scaler::Quality::Fast) ? scaler::Filter::Box : scaler::Filter::Lanczos;
-    const double support = (filt == scaler::Filter::Box) ? 0.5
-                         : (filt == scaler::Filter::Mitchell) ? 2.0
+    Filter filt = p.filter;
+    if (filt == Filter::Auto)
+        filt = (p.quality == Quality::Fast) ? Filter::Box : Filter::Lanczos;
+    const double support = (filt == Filter::Box) ? 0.5
+                         : (filt == Filter::Mitchell) ? 2.0
                                                               : double(qBound(2, p.lobes, 4));
     const double radius = support * fscale;
 
@@ -284,7 +284,7 @@ Pipeline::Pipeline(QRhi *rhi)
         return;
     }
 
-    // 全屏四边形（triangle strip 4 顶点）——与 gpubench.cpp 的 quad[] 相同顺序
+    // 全屏四边形（triangle strip 4 顶点）——（与早期实验工具同序）
     static const float kQuad[8] = { -1, -1, 1, -1, -1, 1, 1, 1 };
     m_vbuf = m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(kQuad));
     m_vbuf->setName(QByteArrayLiteral("gpuscale.quad"));
@@ -851,6 +851,139 @@ bool Pipeline::render(QRhiCommandBuffer *cb, QRhiResourceUpdateBatch *rub, const
                     .arg(plan.filterIdx)
                     .arg(double(plan.radiusX), 0, 'f', 2);
     return true;
+}
+
+const char *modeName(Mode m)
+{
+    switch (m) {
+    case Mode::Nearest:     return "nearest";
+    case Mode::QtSmooth:    return "qt-smooth";
+    case Mode::LinearLight: return "linear-light";
+    }
+    return "?";
+}
+
+const char *filterName(Filter f)
+{
+    switch (f) {
+    case Filter::Auto:     return "auto";
+    case Filter::Box:      return "box";
+    case Filter::Lanczos:  return "lanczos";
+    case Filter::Mitchell: return "mitchell";
+    }
+    return "?";
+}
+
+// ── 预设（唯一事实源）────────────────────────────────────────
+Params paramsFromStrings(const QString &mode, const QString &quality, const QString &filter,
+                         int lobes, double mitchellB, double mitchellC, double antiring)
+{
+    Params p;
+    p.mode = (mode == QLatin1String("nearest"))  ? Mode::Nearest
+           : (mode == QLatin1String("qt-smooth")) ? Mode::QtSmooth
+                                                  : Mode::LinearLight;
+    p.quality = (quality == QLatin1String("fast")) ? Quality::Fast
+              : (quality == QLatin1String("best")) ? Quality::Best
+                                                   : Quality::Balanced;
+    p.filter = (filter == QLatin1String("box"))      ? Filter::Box
+             : (filter == QLatin1String("lanczos"))  ? Filter::Lanczos
+             : (filter == QLatin1String("mitchell")) ? Filter::Mitchell
+                                                     : Filter::Auto;
+    p.lobes = qBound(2, lobes, 4);
+    p.mitchellB = mitchellB;
+    p.mitchellC = mitchellC;
+    p.antiring = qBound(0.0, antiring, 1.0);
+    return p;
+}
+
+const QVector<Preset> &presets()
+{
+    static const QVector<Preset> P = [] {
+        QVector<Preset> v;
+        {   // 平衡：**出厂默认**（= 旧默认档位：线性光 + Lanczos3，行为不变）
+            Preset x{ "balanced", "平衡（默认）", "线性光 + Lanczos3；通用，行为与旧默认一致", {} };
+            v << x;
+        }
+        {   // 漫画：线稿要锐、网点不能起摩尔纹；放大用抗振铃压住晕
+            Preset x{ "manga", "漫画（+抗振铃）", "线稿锐利、网点不起摩尔纹、放大不振铃", {} };
+            x.params.filter = Filter::Lanczos;
+            x.params.lobes = 3;
+            x.params.quality = Quality::Best;
+            x.params.antiring = 1.0;
+            v << x;
+        }
+        {   // 照片：Mitchell 振铃远比 Lanczos 小，观感自然
+            Preset x{ "photo", "照片", "振铃小、观感自然（Mitchell bicubic）", {} };
+            x.params.filter = Filter::Mitchell;
+            x.params.mitchellB = 1.0 / 3.0;
+            x.params.mitchellC = 1.0 / 3.0;
+            x.params.quality = Quality::Balanced;
+            v << x;
+        }
+        {   // 锐利：Lanczos4 更锐，代价是振铃更多
+            Preset x{ "sharp", "锐利", "Lanczos4：更锐，振铃更多", {} };
+            x.params.filter = Filter::Lanczos;
+            x.params.lobes = 4;
+            x.params.quality = Quality::Best;
+            x.params.antiring = 1.0;
+            v << x;
+        }
+        {   // 柔和：B 样条（B=1,C=0）——无振铃、最柔
+            Preset x{ "soft", "柔和", "B 样条：无振铃、最柔", {} };
+            x.params.filter = Filter::Mitchell;
+            x.params.mitchellB = 1.0;
+            x.params.mitchellC = 0.0;
+            x.params.quality = Quality::Balanced;
+            v << x;
+        }
+        {   // 锐利（Catmull-Rom）：B=0,C=1/2 —— 比 Mitchell 锐，轻微振铃
+            Preset x{ "catmull", "锐利（Catmull-Rom）", "B=0,C=1/2：比 Mitchell 锐、轻微振铃", {} };
+            x.params.filter = Filter::Mitchell;
+            x.params.mitchellB = 0.0;
+            x.params.mitchellC = 0.5;
+            x.params.quality = Quality::Balanced;
+            v << x;
+        }
+        {   // 快速：面积平均
+            Preset x{ "fast", "快速（面积平均）", "大比例缩小时够用且最快", {} };
+            x.params.filter = Filter::Box;
+            x.params.quality = Quality::Fast;
+            v << x;
+        }
+        return v;
+    }();
+    return P;
+}
+
+const Preset *presetByKey(const QString &key)
+{
+    for (const Preset &p : presets())
+        if (key == QLatin1String(p.key)) return &p;
+    return nullptr;
+}
+
+const Preset *presetFor(const Params &q)
+{
+    for (const Preset &p : presets()) {
+        const Params &a = p.params;
+        if (a.mode == q.mode && a.quality == q.quality && a.filter == q.filter
+            && a.lobes == q.lobes
+            && std::abs(a.mitchellB - q.mitchellB) < 1e-9
+            && std::abs(a.mitchellC - q.mitchellC) < 1e-9
+            && std::abs(a.antiring - q.antiring) < 1e-9)
+            return &p;
+    }
+    return nullptr;
+}
+
+const char *qualityName(Quality q)
+{
+    switch (q) {
+    case Quality::Fast:     return "fast";
+    case Quality::Balanced: return "balanced";
+    case Quality::Best:     return "best";
+    }
+    return "?";
 }
 
 } // namespace gpuscale

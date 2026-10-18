@@ -131,7 +131,7 @@ GLuint link(const QString &vsPath, const QString &fsPath, const char *what, QByt
             }
         }
     }
-    // ⚠ 采样器 uniform 必须**在 glUseProgram 之后**设（gpubench.cpp 记下的坑：否则 GL_INVALID_OPERATION）
+    // ⚠ 采样器 uniform 必须**在 glUseProgram 之后**设（早期实验工具记下的坑：否则 GL_INVALID_OPERATION）
     return p;
 }
 
@@ -270,7 +270,7 @@ bool Driver::createProgramsAndBuffers(QString *err)
     }
     glGenVertexArrays(1, &m_vao);
     glBindVertexArray(m_vao);
-    const float quad[8] = { -1, -1, 1, -1, -1, 1, 1, 1 };   // 与 gpubench.cpp 的 quad[] 同序
+    const float quad[8] = { -1, -1, 1, -1, -1, 1, 1, 1 };   // （与早期实验工具同序）
     glGenBuffers(1, &m_vbo);
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
@@ -409,7 +409,7 @@ bool Driver::render(const QImage &src32, const gpuscale::Plan &plan, QImage *out
             glBindBuffer(GL_UNIFORM_BUFFER, m_ubo);
             glBufferSubData(GL_UNIFORM_BUFFER, 0, 64, packed);
         }
-        // ★ glUniform* 必须在 glUseProgram **之后**（gpubench.cpp 的坑）
+        // ★ glUniform* 必须在 glUseProgram **之后**（早期实验工具记下的坑）
         //   **纹理单元 = 绑定号**（与 QRhi 的 GL 后端一致）：1=uIn、2=uBounds、3=uMin、4=uMax
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, inTex);

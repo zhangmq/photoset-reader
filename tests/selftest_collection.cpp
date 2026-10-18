@@ -16,7 +16,6 @@
 #include <QThread>
 #include <QVector>
 
-#include "itemsource.h"
 #include "librarycore.h"
 #include "librarystore.h"
 #include "sequence.h"
@@ -204,7 +203,7 @@ static int runCollectionSelfTest()
     // ── (b) 该目录**入图集（重置）**→ 用库行重建出来的序列 ──
     //   ★ T2c-2b-2：旧 `ScanController` 夹具改成 **`LibraryCore::requestReset` + pump 到 Done**
     //     （与产品同一条路径：跑完 ⇒ 后台 `replaceItems` 原子替换）。
-    const qint64 cid = store.addCollection(album, QStringLiteral("folder"));
+    const qint64 cid = store.addCollection(album, Sequence::Kind::Folder);
     {
         LibraryCore core(&store);
         QString rerr;
@@ -217,10 +216,15 @@ static int runCollectionSelfTest()
         check(store.items(cid).size() >= 6,
               QStringLiteral("库里有 %1 行（树 + 条目）").arg(store.items(cid).size()));
     }
-    app::LibraryItemSource src(&store, cid);
-    Sequence rebuilt;
-    rebuilt.buildFromRows(src.sourcePath(), src.sequenceRows(), src.rootIsArchive(),
-                          src.sourceLabel());
+    // ★ 2026-10-18：`LibraryItemSource` 那一层已删 —— 这里直接用**库里的行**恢复
+    //   （与"打开图集"同一条路；`src` 就是那条恢复出来的序列）
+    const library::Collection coll = store.collection(cid);
+    const QString collLabel = coll.title.isEmpty() ? QFileInfo(coll.rootPath).fileName()
+                                                   : coll.title;
+    Sequence src;
+    src.buildFromRows(coll.rootPath, store.sequenceRows(cid), library::rootIsArchive(coll),
+                      collLabel);
+    const Sequence &rebuilt = src;
 
     // ── ★★ 同构验收（本次核心）：(a) 与 (b) **逐项相等** ──
     //   ★ v5 的比较面：`ord / parent_ord / label / page_index / kind` + 叶子顺序 +
@@ -238,8 +242,8 @@ static int runCollectionSelfTest()
         out << QStringLiteral("nodes=%1").arg(t.size());
         for (int i = 0; i < t.size(); ++i) {
             const Sequence::TreeNode &n = t.at(i);
-            const QString kind = n.kind == Sequence::TreeNode::Kind::Dir ? QStringLiteral("folder")
-                                                                        : QStringLiteral("archive");
+            const QString kind = (n.kind == Sequence::Kind::Folder) ? QStringLiteral("folder")
+                                                                    : QStringLiteral("archive");
             out << QStringLiteral("N%1 kind=%2 label=%3 parent=%4 ord=%5 first=%6 count=%7")
                        .arg(i).arg(kind, n.label).arg(n.parent).arg(n.ord)
                        .arg(n.firstItem).arg(n.itemCount);
@@ -247,12 +251,12 @@ static int runCollectionSelfTest()
         // 双幅分组结果：从头到尾 groupAt 一遍（每组的成员下标）
         QStringList groups;
         for (int c = 0; c >= 0 && c < s.count(); ) {
-            const Sequence::Group g = s.groupAt(c, Sequence::Mode::Double);
+            const Sequence::Group g = s.pairAt(c);
             if (g.cursor < 0 || g.members.isEmpty()) break;
             QStringList m;
             for (int x : g.members) m << QString::number(x);
             groups << QStringLiteral("(%1)").arg(m.join(QLatin1Char(',')));
-            const int nxt = s.advance(c, Sequence::Mode::Double, Sequence::Dir::Next);
+            const int nxt = s.nextPairStart(c);
             if (nxt < 0) break;
             c = nxt;
         }
@@ -279,7 +283,7 @@ static int runCollectionSelfTest()
         bool hasTarNode = false, hasOuter = false, hasInner = false;
         bool hasDeep = false, hasInnerRar = false;              // ★ v7：`deep.tar!/inner.rar!`
         for (const Sequence::TreeNode &n : rebuilt.tree()) {
-            if (n.kind != Sequence::TreeNode::Kind::Archive) continue;
+            if (n.kind != Sequence::Kind::Archive) continue;
             if (n.label == QLatin1String("book.tar")) hasTarNode = true;
             if (n.label == QLatin1String("outer.tar")) hasOuter = true;
             if (n.label == QLatin1String("inner.tar")) hasInner = true;
@@ -347,10 +351,9 @@ static int runCollectionSelfTest()
     // ── ★ 把素材删掉：接下来的分组必须**只靠库里的尺寸**（碰盘就必然失效）──
     check(QDir(album).removeRecursively(), QStringLiteral("删掉素材目录（此后不许碰盘）"));
     {
-        app::LibraryItemSource src2(&store, cid);
         Sequence noDisk;
-        noDisk.buildFromRows(src2.sourcePath(), src2.sequenceRows(), src2.rootIsArchive(),
-                             src2.sourceLabel());
+        noDisk.buildFromRows(coll.rootPath, store.sequenceRows(cid), library::rootIsArchive(coll),
+                             collLabel);
         check(noDisk.count() == rebuilt.count(),
               QStringLiteral("① 库行 → 序列条目 %1 条（素材已删）").arg(noDisk.count()));
         int wide = -1, narrowCount = 0;
@@ -361,25 +364,22 @@ static int runCollectionSelfTest()
               QStringLiteral("② 宽窄判定来自库里的像素尺寸（素材已删）：%1 窄 / 1 宽")
                   .arg(narrowCount));
         // ③ 双幅分组：窄+窄 ⇒ 一屏；宽图自己一屏
-        const Sequence::Group g0 = noDisk.groupAt(0, Sequence::Mode::Double);
+        const Sequence::Group g0 = noDisk.pairAt(0);
         check(g0.members == QVector<int>({ 0, 1 }) && g0.cursor == 0,
               QStringLiteral("③ 双幅：(0,1) 一屏"));
         if (wide >= 0) {
-            const Sequence::Group gw = noDisk.groupAt(wide, Sequence::Mode::Double);
+            const Sequence::Group gw = noDisk.pairAt(wide);
             check(gw.members == QVector<int>({ wide }) && gw.cursor == wide,
                   QStringLiteral("③ 双幅：宽图（%1）自己一屏").arg(wide));
         }
-        const Sequence::Group s0 = noDisk.groupAt(0, Sequence::Mode::Single);
-        check(s0.members == QVector<int>({ 0 }), QStringLiteral("③ 单幅：一屏一条"));
+        // 单幅（一屏一条）是**视图那一层**的事（`ViewerModel` 按版面选），这里只查配对表本身
+        check(noDisk.pairSize(0) == 2 && noDisk.pairStart(1) == 0,
+              QStringLiteral("③ 配对表：第 0 条与第 1 条成对（落在第二张 ⇒ 回到那一对）"));
     }
 
-    // ④ 版面映射 + resume（**label 链 + 页号**，不是下标、不是拼串）
-    check(app::layoutToMode(QStringLiteral("double")) == Sequence::Mode::Double
-              && app::layoutToMode(QStringLiteral("single")) == Sequence::Mode::Single
-              && app::layoutToMode(QString()) == Sequence::Mode::Single,
-          QStringLiteral("④ 默认/单幅 ⇒ Single，double ⇒ Double"));
-    check(app::modeToLayout(Sequence::Mode::Double) == QLatin1String("double"),
-          QStringLiteral("④ 模式 → 写入磁盘串"));
+    // ④ resume（**label 链 + 页号**，不是下标、不是拼串）
+    //   ★ 2026-10-18：阅读版面的"字符串 ↔ 模式"翻译函数已删 —— 版面就是 `app::Layout`
+    //     一份枚举（库里存它的值），这里不再有可测的映射。
     check(src.indexOfChain({ QStringLiteral("p2.png") }, 0) == 2
               && src.indexOfChain({ QStringLiteral("p0.png") }, 0) == 0
               && src.indexOfChain({ QStringLiteral("nope.png") }, 0) == -1,

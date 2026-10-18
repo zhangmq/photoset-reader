@@ -10,12 +10,10 @@
 #include <QEvent>
 
 #include "imageprovider.h"
-#include "scaler.h"
 #include "gpuscaleritem.h"
 #include "archive.h"
 
 #include "natural.h"
-#include "appsettings.h"
 #include "thumburl.h"
 #include "librarystore.h"
 #include "uimodel.h"
@@ -99,46 +97,13 @@ int main(int argc, char *argv[])
                               QStringLiteral("-1"));
     QCommandLineOption immOpt(QStringLiteral("immersive"),
                               QStringLiteral("截图前切到沉浸视图"));
-    QCommandLineOption scalerOpt(QStringLiteral("scaler"),
-                                 QStringLiteral("缩放路径: linear-light | qt-smooth | nearest"),
-                                 QStringLiteral("mode"), QStringLiteral("linear-light"));
-    QCommandLineOption qualityOpt(QStringLiteral("quality"),
-                                  QStringLiteral("画质档位: fast | balanced | best"),
-                                  QStringLiteral("q"), QStringLiteral("balanced"));
     QCommandLineOption pwOpt(QStringLiteral("password"),
                              QStringLiteral("压缩包密码"), QStringLiteral("pw"));
-    QCommandLineOption benchOpt(QStringLiteral("bench-thumbs"),
-                                QStringLiteral("测 N 张缩略图的解码+缩放耗时（隔离渲染）"),
-                                QStringLiteral("n"));
     QCommandLineOption seekOpt(QStringLiteral("seek-test"),
                                QStringLiteral("跳到第 N 页并报告结果（验证进度条点击）"),
                                QStringLiteral("n"), QStringLiteral("-1"));
-    // ── 并行度实验（docs/research/14）：解码 / 解码+缩放 / 只缩放，**排除 I/O** ──
-    QCommandLineOption parOpt(QStringLiteral("bench-parallel"),
-                              QStringLiteral("并行度实验：先把 N 张图的字节读进内存，再测解码/缩放"),
-                              QStringLiteral("n"));
-    QCommandLineOption threadsOpt(QStringLiteral("threads"),
-                                  QStringLiteral("并行度实验的线程数列表（如 1,2,4,6,8）"),
-                                  QStringLiteral("list"), QStringLiteral("1,2,4,6,8,14,20"));
-    QCommandLineOption presetOpt(QStringLiteral("preset"),
-                                 QStringLiteral("缩放预设：manga | photo | sharp | soft | fast"),
-                                 QStringLiteral("key"));
-    QCommandLineOption lobesOpt(QStringLiteral("lobes"),
-                                QStringLiteral("Lanczos 瓣数 2/3/4"), QStringLiteral("n"));
-    QCommandLineOption mbOpt(QStringLiteral("mitchell-b"), QStringLiteral("Mitchell B"), QStringLiteral("f"));
-    QCommandLineOption mcOpt(QStringLiteral("mitchell-c"), QStringLiteral("Mitchell C"), QStringLiteral("f"));
-    QCommandLineOption arOpt(QStringLiteral("antiring"), QStringLiteral("抗振铃强度 0–1"), QStringLiteral("f"));
-    QCommandLineOption filterOpt(QStringLiteral("filter"),
-                                 QStringLiteral("滤波器族：auto | mitchell（照片）"),
-                                 QStringLiteral("name"), QStringLiteral("auto"));
-    QCommandLineOption gpuOpt(QStringLiteral("bench-gpu"),
-                              QStringLiteral("GPU 缩放实验：上传 + 分离式 Lanczos（线性光）vs CPU 缩放器"),
-                              QStringLiteral("n"));
     QCommandLineOption gpuProbeOpt(QStringLiteral("gpuscale-probe"),
                                    QStringLiteral("诊断：8×8 已知图跑 GPU 1:1 直通并逐像素打印（不参与自检）"));
-    QCommandLineOption repeatsOpt(QStringLiteral("repeats"),
-                                  QStringLiteral("并行度实验每组重复次数（取中位数）"),
-                                  QStringLiteral("n"), QStringLiteral("3"));
     // ── 调试：启动即打开设置对话框（仅开发用，不在正式 CLI 范畴）──
     //   ★ 接线（2026-10-14 本批）：值经上下文属性 `devOpenSettings` / `devSettingsTab`
     //     在 **QML 加载之前**注入 `Main.qml`，再由它喂三屏各自的 `debugOpenSettings`
@@ -175,8 +140,6 @@ int main(int argc, char *argv[])
                               QStringLiteral("截图前打开信息面板（验证 #7）"));
     QCommandLineOption popupOpt(QStringLiteral("show-interval-popup"),
                                 QStringLiteral("截图前打开翻页间隔 popup"));
-    QCommandLineOption ppOpt(QStringLiteral("pixel-perfect"),
-                             QStringLiteral("像素完美通路（整数倍 + nearest）"));
     QCommandLineOption recOpt(QStringLiteral("recursive"),
                               QStringLiteral("遍历子目录（默认只当前文件夹）"));
     QCommandLineOption probeArcOpt(QStringLiteral("probe-archive"),
@@ -187,15 +150,6 @@ int main(int argc, char *argv[])
                                   QStringLiteral("路径"));
     // ★ T2c-2b-2：`--scan-run` / `--scan-stop` / `--db-state`（双实例同步验证）**已删** ——
     //   它们建在旧 `ScanController` + `scan_state` 列 + `action` 表之上（整体作废，设计 14 §9.6）。
-    QCommandLineOption boxOpt(QStringLiteral("box"),
-                              QStringLiteral("缩放目标框 WxH（默认 1600x1000）"),
-                              QStringLiteral("WxH"), QStringLiteral("1600x1000"));
-    QCommandLineOption cropOpt(QStringLiteral("crop"),
-                               QStringLiteral("先裁剪再缩放 x,y,w,h（放大对比用）"),
-                               QStringLiteral("rect"));
-    QCommandLineOption dumpOpt(QStringLiteral("dump-scaled"),
-                               QStringLiteral("把第 N 张按当前缩放设置存盘（隔离验证用）"),
-                               QStringLiteral("png"));
     QCommandLineOption shrinkOpt(QStringLiteral("no-shrink"),
                                  QStringLiteral("关闭解码期整数分之一预缩（默认开启；关闭会慢 6 倍）"));
     parser.addOption(dirOpt);
@@ -203,14 +157,11 @@ int main(int argc, char *argv[])
     parser.addOption(delayOpt);
     parser.addOption(idxOpt);
     parser.addOption(immOpt);
-    parser.addOption(scalerOpt);
-    parser.addOption(qualityOpt);
     parser.addOption(shrinkOpt);
     parser.addOption(probeArcOpt);
     parser.addOption(probeLaOpt);
     parser.addOption(pwOpt);
     parser.addOption(recOpt);
-    parser.addOption(ppOpt);
     parser.addOption(popupOpt);
     parser.addOption(osdOpt);
     parser.addOption(seekOpt);
@@ -221,21 +172,7 @@ int main(int argc, char *argv[])
     parser.addOption(devNotifyOpt);
     parser.addOption(debugSettingsOpt);
     parser.addOption(debugSettingsTabOpt);
-    parser.addOption(presetOpt);
-    parser.addOption(lobesOpt);
-    parser.addOption(mbOpt);
-    parser.addOption(mcOpt);
-    parser.addOption(arOpt);
-    parser.addOption(filterOpt);
-    parser.addOption(gpuOpt);
     parser.addOption(gpuProbeOpt);
-    parser.addOption(parOpt);
-    parser.addOption(threadsOpt);
-    parser.addOption(repeatsOpt);
-    parser.addOption(benchOpt);
-    parser.addOption(dumpOpt);
-    parser.addOption(boxOpt);
-    parser.addOption(cropOpt);
     parser.process(app);
 
     if (parser.isSet(probeArcOpt))
@@ -267,59 +204,13 @@ int main(int argc, char *argv[])
     auto *provider = new ImageProvider;      // engine 接管所有权
     provider->setArchivePassword(parser.value(pwOpt));
 
-    // ★ 缩放参数的**来源是配置文件**（用户 2026-10-12："这些参数不如直接指定一个自定义配置文件"）。
-    //   CLI 的这些开关只是 **debug / 实验**用，且**只有显式给出**才覆盖
-    //   （踩过的坑：带默认值的选项会被静默当成"用户指定"，把 --preset 覆盖掉）。
-    //   ⚠️ 这里**与旧序一致**：此刻还没 `load()`（下面的 `UiModel` 构造时才 load）⇒
-    //      provider 拿到的是**默认值**（实测旧代码也是这个行为，本批**不顺手改**）。
-    app::AppSettings settings;                 // 运行期设置的家 = `UiModel`；这里只为 provider 参数
-    const app::AppSettings &st = settings;
-    scaler::Params sp = scaler::paramsFromStrings(st.scalerMode(), st.scalerQuality(),
-                                                  st.scalerFilter(), st.scalerLobes(),
-                                                  st.scalerMitchellB(), st.scalerMitchellC(),
-                                                  st.scalerAntiring());
-    if (const scaler::Preset *pre = parser.isSet(presetOpt) ? scaler::presetByKey(parser.value(presetOpt))
-                                                            : nullptr)
-        sp = pre->params;                                   // 显式 --preset 才打底
-
-    const QString sm = parser.value(scalerOpt);
-    scaler::Mode mode = sp.mode;                            // 默认取配置
-    if (parser.isSet(scalerOpt)) {                          // 只有显式 --scaler 才覆盖
-        if (sm == QLatin1String("qt-smooth"))         mode = scaler::Mode::QtSmooth;
-        else if (sm == QLatin1String("nearest"))      mode = scaler::Mode::Nearest;
-        else if (sm == QLatin1String("linear-light")) mode = scaler::Mode::LinearLight;
-    }
-
-    const QString qn = parser.isSet(qualityOpt) ? parser.value(qualityOpt) : QString();
-    scaler::Filter filt = sp.filter;
-    if (parser.isSet(filterOpt)) {
-        const QString f = parser.value(filterOpt);
-        filt = (f == QLatin1String("box"))      ? scaler::Filter::Box
-             : (f == QLatin1String("lanczos"))  ? scaler::Filter::Lanczos
-             : (f == QLatin1String("mitchell")) ? scaler::Filter::Mitchell
-                                                : scaler::Filter::Auto;
-    }
-    scaler::Quality qual = sp.quality;
-    if (qn == QLatin1String("fast"))        qual = scaler::Quality::Fast;
-    else if (qn == QLatin1String("best"))   qual = scaler::Quality::Best;
-    else if (qn == QLatin1String("balanced")) qual = scaler::Quality::Balanced;
-    // 参数才是真相：显式给出的 CLI 单项参数覆盖
-    sp.mode = mode;
-    sp.quality = qual;
-    sp.filter = filt;
-    if (parser.isSet(lobesOpt)) sp.lobes = parser.value(lobesOpt).toInt();
-    if (parser.isSet(mbOpt))    sp.mitchellB = parser.value(mbOpt).toDouble();
-    if (parser.isSet(mcOpt))    sp.mitchellC = parser.value(mcOpt).toDouble();
-    if (parser.isSet(arOpt))    sp.antiring = parser.value(arOpt).toDouble();
-    provider->setScalerParams(sp);
+    //   ★ 2026-10-19：provider 已经**只服务缩略图** ⇒ 不再有"缩放参数 / pixel-perfect"
+    //     这两个开关（缩略图用 Qt 平滑缩放）；只留解码期的 shrink-on-load。
     provider->setShrinkOnLoad(!parser.isSet(shrinkOpt));   // 默认开启
-    provider->setPixelPerfect(parser.isSet(ppOpt));
 
-    qInfo().noquote() << QStringLiteral("[main] 缩放=%1 档位=%2 滤波=%3 预缩=%4")
-                             .arg(QString::fromLatin1(scaler::modeName(mode)),
-                                  QString::fromLatin1(scaler::qualityName(qual)),
-                                  QString::fromLatin1(scaler::filterName(filt)),
-                                  parser.isSet(shrinkOpt) ? QStringLiteral("off")
+    qInfo().noquote() << QStringLiteral("[main] 解码期预缩 = %1（缩略图用 Qt 平滑缩放；"
+                                        "阅读画质走 GPU 那条）")
+                             .arg(parser.isSet(shrinkOpt) ? QStringLiteral("off")
                                                           : QStringLiteral("on"));
     engine.addImageProvider(QLatin1String(kThumbProviderName), provider);
 
@@ -354,34 +245,13 @@ int main(int argc, char *argv[])
     // ── bench / 探针（**跑完即退**）：解析留在本文件，实现与装配在 `src/devbench.cpp` ──
     //   `main.cpp` 只把 `QCommandLineOption` 的取值装进请求结构（判"给没给"用 `xxxSet`）。
     devbench::Request bench;
-    bench.thumbsSet   = parser.isSet(benchOpt);
-    bench.thumbsN     = parser.value(benchOpt).toInt();
-    bench.gpuSet      = parser.isSet(gpuOpt);
-    bench.gpuN        = parser.value(gpuOpt).toInt();
-    bench.parallelSet = parser.isSet(parOpt);
-    bench.parallelN   = parser.value(parOpt).toInt();
-    bench.gpuProbe    = parser.isSet(gpuProbeOpt);
-    bench.dumpSet     = parser.isSet(dumpOpt);
-    bench.dump        = parser.value(dumpOpt);
-    bench.index       = parser.value(idxOpt).toInt();
-    bench.boxSet      = parser.isSet(boxOpt);
-    bench.box         = parser.value(boxOpt);
-    bench.cropSet     = parser.isSet(cropOpt);
-    bench.crop        = parser.value(cropOpt);
-    bench.threads     = parser.value(threadsOpt);
-    bench.repeats     = parser.value(repeatsOpt).toInt();
-    bench.noShrink    = parser.isSet(shrinkOpt);
-    bench.params      = sp;
+    bench.gpuProbe = parser.isSet(gpuProbeOpt);
 
-    // ── provider 的来源：**只建给"跑完即退"的 bench**（它们仍按条目号取图）──
-    //   ⚠️ 主路径**不再经 provider 取图**（阅读屏的图由 `ui.viewer` 给，phase B 定案）
-    //      ⇒ 不给它扫盘，免得同一目录被扫两遍（大压缩包上很贵）。
-    //     主路径的 `-d` 归 `UiModel::openPath`（见下面的装配处；语义照旧：直接打开 ⇒ 文件浏览屏）。
-    if (parser.isSet(dirOpt) && bench.needsProviderSource())
-        provider->setSource(dir, parser.isSet(recOpt));
-
+    // ── ★ 2026-10-19：**不再给 provider 建来源** —— 那条"provider 自己建一条序列"
+    //   的能力已随"建序列只有扫描"删掉；主路径本来就不经 provider 取图（phase B 定案），
+    //   provider 现在只服务缩略图（按路径的 id，不需要序列）。
     if (bench.wanted())
-        return devbench::runBench(bench, provider);
+        return devbench::runBench(bench);
 
     // ── 全局 VM 装配（放在所有"跑完即退"的路径之后）──────────
     //   库与设置都是**懒装配**：自检 / bench / dump 这些路径不碰用户的真库

@@ -29,8 +29,6 @@ find_path(UNRAR_INCLUDE_DIR NAMES unrar/dll.hpp REQUIRED)
 add_library(ibcore STATIC
     src/imageprovider.cpp
     src/imageprovider.h
-    src/scaler.cpp
-    src/scaler.h
     src/sevenzcheck.cpp
     src/sevenzcheck.h
     src/thumburl.cpp
@@ -46,8 +44,6 @@ add_library(ibcore STATIC
     # ── 应用唯一的全局 VM（`ui`）：三屏状态 / 设置 / UI 形态 / 适配与手势态 ──
     src/uimodel.cpp
     src/uimodel.h
-    src/gpubench.cpp
-    src/gpubench.h
     # ── GPU 缩放渲染路径（产品路径）──
     src/gpuscale.cpp
     src/gpuscale.h
@@ -70,13 +66,10 @@ add_library(ibcore STATIC
     # ── 浏览的一层（`fetch::BrowseLayer` / `browseLayerOf`）：浏览界面直接从序列取 ──
     src/seqwindow.cpp
     src/seqwindow.h
-    src/layout.cpp
-    src/layout.h
     src/appsettings.cpp
     src/appsettings.h
     src/librarystore.cpp
     src/librarymodel.cpp
-    src/itemsource.cpp
     src/volumeinfo.cpp
     # ── T2c-1/T2c-2b（设计 14 §9.3/§9.6）：图库/序列抽象 + 重置队列 ——
     #     图集动作**全部经 `LibraryCore`**（旧 `ScanController` / `libraryprobe` 已删）──
@@ -84,7 +77,6 @@ add_library(ibcore STATIC
     src/resetqueue.cpp
     src/librarystore.h
     src/librarymodel.h
-    src/itemsource.h
     src/volumeinfo.h
     src/librarycore.h
     src/resetqueue.h
@@ -157,8 +149,8 @@ target_compile_definitions(ibcore PUBLIC
 
 # ══ 应用：只剩启动 + 解析 + dispatch（设计 14 §10）═══════════════════════════
 #   实现分四处：`src/devcli.{h,cpp}`（dev CLI：探针 / 预载基准 / 双实例 / `--dev-*`）、
-#               `src/devbench.{h,cpp}`（bench / 探针：`--bench-*` / `--gpuscale-probe` /
-#                 `--dump-scaled`，跑完即退；底层在 `gpubench.cpp` / `gpuscalecheck.cpp`）、
+#               `src/devbench.{h,cpp}`（探针：`--gpuscale-probe`，跑完即退；
+#                 底层在 `gpuscalecheck.cpp`）、
 #               `src/screenshot.{h,cpp}`（`--shot` 截图机制；原名 `debugview.{h,cpp}`，
 #                 随旧调试一屏（`debugview`）删除后改名保留）、
 #               `src/main.cpp`（启动 + 参数解析 + dispatch）。

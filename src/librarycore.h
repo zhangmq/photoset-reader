@@ -83,10 +83,10 @@ public:
 
     // ── 图库管理（薄转调；**自己写库不 bump data_version** ⇒ 成功后显式 collectionsChanged）──
     QVector<library::Collection> collections() const;
-    bool addCollection(const QString &root, const QString &kind, QString *err);
+    bool addCollection(const QString &root, Sequence::Kind kind, QString *err);
     bool removeCollection(qint64 id, QString *err);
     bool renameCollection(qint64 id, const QString &title);
-    bool setReadingLayout(qint64 id, const QString &layout);
+    bool setReadingLayout(qint64 id, app::Layout layout);
     bool setResume(qint64 id, const QString &chainJson, int page);
 
     // ── 重置（串行队列 + 每图集锁，§9.5）─────────────────────────────────────

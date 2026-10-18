@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QAbstractListModel>
+
+#include "sequence.h"     // ★ Sequence::Kind：行种类 = **一份枚举**
 #include <QByteArray>
 #include <QHash>
 #include <QString>
@@ -12,8 +14,9 @@
 //     （2026-10-12 用户定案："浏览界面不再关心真实文件夹情况，完全以文件树索引为准"）。
 //   ★ role 名沿用界面既有词表（`src/ui/browse/**` 是定稿 UI，直接用）：
 //       name / sizeText / resText / kind / missing / thumb / depth
-//   ★ `kind` 只有三个值（QML 认这三个）：`image` / `archive` / `folder`
-//     —— 多页文件也是"容器"⇒ 归 `archive`（同一个容器字形）。
+//   ★ `kind` = `Sequence::Kind`（**一份枚举**，多页文件也是"容器"⇒ 归 `Archive`）；
+//     QML 拿到的是它的**字符串**（`image` / `archive` / `folder`），那份字符串**只在一个地方生成**
+//     （`BrowseModel::kindText`，QML 边界的投影，不是第二份概念定义）。
 //
 //   行 = **当前节点的一个子项**：
 //     · 子**容器**（目录 / 压缩包 / 多页文件）⇒ `nodeIndex >= 0`（可以"进入"）
@@ -39,7 +42,7 @@ public:
         QString name;
         QString sizeText;
         QString resText;
-        QString kind = QStringLiteral("image");
+        Sequence::Kind kind = Sequence::Kind::Image;   // ★ 一份枚举（QML 只认三个字符串）
         QString thumb;                  // 缩略图 URL（暂空 ⇒ 卡片显示占位）
         bool    missing = false;
         int     depth = 0;
@@ -49,6 +52,10 @@ public:
         int     subtreeFirst = 0;
         int     subtreeCount = 0;
     };
+
+    // ★ QML 边界的那一份字符串（`image` / `archive` / `folder`）—— **唯一生成点**：
+    //   它只是把 `Sequence::Kind` 投影成 QML 认的三个词，**不是第二份概念定义**。
+    static QString kindText(Sequence::Kind k);
 
     explicit BrowseModel(QObject *parent = nullptr);
 

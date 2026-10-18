@@ -6,7 +6,7 @@
 #include "librarycore.h"          // ★ T2c-2b-1：图库/序列抽象 + 重置队列（设计 14 §9.3）
 #include "librarymodel.h"
 #include "librarystore.h"
-#include "scaler.h"
+#include "gpuscale.h"
 #include "seqwindow.h"            // 浏览的一层（`fetch::BrowseLayer` / `browseLayerOf`）
 #include "sequence.h"
 #include "viewermodel.h"
@@ -292,7 +292,7 @@ void UiModel::chooseAddCollection()
         nullptr, QStringLiteral("添加图集"), QDir::homePath());
     if (dir.isEmpty()) return;
     // 加入即**自动重置**（构造函数里已接：collectionAdded → core->requestReset）
-    if (m_library) m_library->addCollection(dir, QStringLiteral("folder"));
+    if (m_library) m_library->addCollection(dir, Sequence::Kind::Folder);
 }
 
 void UiModel::chooseOpenFolder()
@@ -919,15 +919,15 @@ void UiModel::setScalerAntiring(double v)
     emit scalerParamsChanged();
 }
 
-// 当前参数匹配哪个预设（空 = 自定义）—— 与旧 VM 同一口径（`scaler::presetFor`）
+// 当前参数匹配哪个预设（空 = 自定义）—— 与旧 VM 同一口径（`gpuscale::presetFor`）
 QString UiModel::scalerPreset() const
 {
     const AppSettings &s = m_settings;
-    const scaler::Params p = scaler::paramsFromStrings(s.scalerMode(), s.scalerQuality(),
+    const gpuscale::Params p = gpuscale::paramsFromStrings(s.scalerMode(), s.scalerQuality(),
                                                        s.scalerFilter(), s.scalerLobes(),
                                                        s.scalerMitchellB(), s.scalerMitchellC(),
                                                        s.scalerAntiring());
-    const scaler::Preset *m = scaler::presetFor(p);
+    const gpuscale::Preset *m = gpuscale::presetFor(p);
     return m ? QString::fromLatin1(m->key) : QString();
 }
 
@@ -935,7 +935,7 @@ QVariantList UiModel::scalerPresetList() const
 {
     const QString cur = scalerPreset();
     QVariantList out;
-    for (const scaler::Preset &p : scaler::presets()) {
+    for (const gpuscale::Preset &p : gpuscale::presets()) {
         QVariantMap m;
         m.insert(QStringLiteral("key"), QString::fromLatin1(p.key));
         m.insert(QStringLiteral("label"), QString::fromUtf8(p.label));
@@ -948,12 +948,12 @@ QVariantList UiModel::scalerPresetList() const
 
 void UiModel::applyScalerPreset(const QString &key)
 {
-    const scaler::Preset *pre = scaler::presetByKey(key);
+    const gpuscale::Preset *pre = gpuscale::presetByKey(key);
     if (!pre) return;
-    const scaler::Params &p = pre->params;
-    m_settings.setScalerParams(QString::fromLatin1(scaler::modeName(p.mode)),
-                               QString::fromLatin1(scaler::qualityName(p.quality)),
-                               QString::fromLatin1(scaler::filterName(p.filter)),
+    const gpuscale::Params &p = pre->params;
+    m_settings.setScalerParams(QString::fromLatin1(gpuscale::modeName(p.mode)),
+                               QString::fromLatin1(gpuscale::qualityName(p.quality)),
+                               QString::fromLatin1(gpuscale::filterName(p.filter)),
                                p.lobes, p.mitchellB, p.mitchellC, p.antiring);
     emit scalerModeChanged();
     emit scalerQualityChanged();

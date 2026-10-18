@@ -63,7 +63,7 @@ library::Item mkRow(int ord, const QString &label)
     library::Item it;
     it.ord = ord;
     it.parentOrd = -1;
-    it.kind = QStringLiteral("image");
+    it.kind = Sequence::Kind::Image;
     it.label = label;
     it.size = 100 + ord;
     it.mtime = 1000 + ord;
@@ -134,7 +134,7 @@ static int runUiCoreSelfTest()
 
     // ══ ① core 接入 + 打开图集 = 从磁盘读出的快照 ═══════════════════════════════════
     const QString album1 = makeAlbum(fx.path(), QStringLiteral("a1"), 5);
-    check(core->addCollection(album1, QStringLiteral("folder"), &err),
+    check(core->addCollection(album1, Sequence::Kind::Folder, &err),
           QStringLiteral("① core 加入图集（err='%1'）").arg(err));
     const qint64 cid1 = idOf(core, album1);
     check(cid1 > 0, QStringLiteral("① 图集 id = %1").arg(cid1));
@@ -175,7 +175,7 @@ static int runUiCoreSelfTest()
 
     // ══ ② 重置走 core：Queued/Running（内存态）⇒ 完成 = 原子替换 ═════════════
     const QString album2 = makeAlbum(fx.path(), QStringLiteral("a2"), 4);
-    check(core->addCollection(album2, QStringLiteral("folder"), &err), QStringLiteral("② 加入第二个图集"));
+    check(core->addCollection(album2, Sequence::Kind::Folder, &err), QStringLiteral("② 加入第二个图集"));
     const qint64 cid2 = idOf(core, album2);
     QVector<library::Item> oldRows;
     for (int i = 0; i < 3; ++i) oldRows << mkRow(i, QStringLiteral("old%1").arg(i));
@@ -218,7 +218,7 @@ static int runUiCoreSelfTest()
         int imgs = 0;
         for (const library::Item &r : after) {
             if (r.label.startsWith(QLatin1String("old"))) noOld = false;
-            if (r.kind == QLatin1String("image")) ++imgs;
+            if (r.kind == Sequence::Kind::Image) ++imgs;
         }
         check(noOld && imgs == 4,
               QStringLiteral("② 库里行被**原子替换**（旧内容不残留；%1 行 / %2 张）")
@@ -275,7 +275,7 @@ static int runUiCoreSelfTest()
     check(liveSequenceCount(core, cid2) <= 2, QStringLiteral("④ 释放后活序列 ≤2"));
 
     const QString album4 = makeAlbum(fx.path(), QStringLiteral("a4"), 3);
-    check(core->addCollection(album4, QStringLiteral("folder"), &err), QStringLiteral("④ 加入 a4"));
+    check(core->addCollection(album4, Sequence::Kind::Folder, &err), QStringLiteral("④ 加入 a4"));
     const qint64 cid4 = idOf(core, album4);
     check(core->requestReset(cid4, LibraryCore::ResetOptions(), &err), QStringLiteral("④ a4 入队重置"));
     check(testsupport::waitFor([&] {
@@ -305,7 +305,7 @@ static int runUiCoreSelfTest()
     const QString album5 = makeAlbum(fx.path(), QStringLiteral("a5"), 0);
     makeAlbum(album5, QStringLiteral("d1"), 600);
     makeAlbum(album5, QStringLiteral("d2"), 600);
-    check(core->addCollection(album5, QStringLiteral("folder"), &err),
+    check(core->addCollection(album5, Sequence::Kind::Folder, &err),
           QStringLiteral("⑤ 加入 a5（2 个子目录 × 600 张）"));
     const qint64 cid5 = idOf(core, album5);
 
@@ -355,7 +355,7 @@ static int runUiCoreSelfTest()
     const QString fifo = fx.filePath(QStringLiteral("stuck.fifo"));
     check(::mkfifo(fifo.toLocal8Bit().constData(), 0600) == 0,
           QStringLiteral("⑥ 前置：造 FIFO 当来源（生产者会阻塞在不可中断的 open 上）"));
-    check(core->addCollection(fifo, QStringLiteral("folder"), &err), QStringLiteral("⑥ 加入 FIFO 图集"));
+    check(core->addCollection(fifo, Sequence::Kind::Folder, &err), QStringLiteral("⑥ 加入 FIFO 图集"));
     const qint64 cid6 = idOf(core, fifo);
     check(core->requestReset(cid6, LibraryCore::ResetOptions(), &err), QStringLiteral("⑥ 入队重置"));
     // ★ **不手动 pump**：卡住的生产者不再发布 ⇒ 没有唤醒钩子；只有 core 那条既有的
@@ -376,7 +376,7 @@ static int runUiCoreSelfTest()
     //   默认 0 ⇒ 生产零影响），让窗口**确定性命中**。
     {
         const QString album7 = makeAlbum(fx.path(), QStringLiteral("a7"), 3);
-        check(core->addCollection(album7, QStringLiteral("folder"), &err),
+        check(core->addCollection(album7, Sequence::Kind::Folder, &err),
               QStringLiteral("⑦ 加入 a7（3 张）"));
         const qint64 cid7 = idOf(core, album7);
         check(cid7 > 0, QStringLiteral("⑦ a7 id = %1").arg(cid7));
@@ -453,7 +453,7 @@ static int runUiCoreSelfTest()
             int imgs = 0;
             for (const library::Item &r : after) {
                 if (r.label.startsWith(QLatin1String("old7"))) noOld = false;
-                if (r.kind == QLatin1String("image")) ++imgs;
+                if (r.kind == Sequence::Kind::Image) ++imgs;
             }
             check(noOld && imgs == 3,
                   QStringLiteral("⑦c 库内容 = **新扫描结果**（旧行不残留；%1 张）").arg(imgs));

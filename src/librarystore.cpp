@@ -1,5 +1,6 @@
 #include "librarystore.h"
 
+#include "archive.h"           // 来源根是不是容器（唯一实现里要探测压缩包）
 #include "sequence.h"          // ★ v5：`itemIndexOfChain` 用**同一条序列**沿链 walk（单一事实源）
 
 #include <QCoreApplication>
@@ -15,11 +16,52 @@
 
 namespace library {
 
+// ── 行形态转换（唯一一份，见头文件）────────────────────────────────
+Item toItem(const Sequence::Row &r)
+{
+    Item x;
+    x.ord = r.ord;
+    x.parentOrd = r.parentOrd;
+    x.kind = r.kind;
+    x.label = r.label;
+    x.pageIndex = r.pageIndex;
+    x.size = r.size;
+    x.mtime = r.mtime;
+    x.width = r.width;
+    x.height = r.height;
+    x.firstIndex = r.firstIndex;
+    x.lastIndex = r.lastIndex;
+    return x;
+}
+
+Sequence::Row toRow(const Item &r)
+{
+    Sequence::Row x;
+    x.ord = r.ord;
+    x.parentOrd = r.parentOrd;
+    x.kind = r.kind;
+    x.label = r.label;
+    x.pageIndex = r.pageIndex;
+    x.size = r.size;
+    x.mtime = r.mtime;
+    x.width = r.width;
+    x.height = r.height;
+    x.firstIndex = r.firstIndex;
+    x.lastIndex = r.lastIndex;
+    return x;
+}
+
+bool rootIsArchive(const Collection &c)
+{
+    if (c.kind == Sequence::Kind::Archive) return true;
+    return QFileInfo(c.rootPath).isFile() && ArchiveSource::isArchive(c.rootPath);
+}
+
 namespace {
 // ★ v8（T2c-2b-2）：删除 `scan_state` / `scan_updated_at` / `content_changed` 三列与
 //   `action` 表 —— 旧"扫描任务"路径（`ScanController`）已整体作废。
 //   版本不符 ⇒ 既有重建路径删库重建（开发期不做迁移，用户 2026-10-13 定案）。
-constexpr int kSchemaVersion = 8;
+constexpr int kSchemaVersion = 10;
 
 // 绑 TEXT 列：把 Qt 的 **null `QString()`** 规范成空串（否则 NOT NULL 列会拒绝写入）
 QVariant textOrEmpty(const QString &s)
@@ -155,14 +197,14 @@ bool Store::openImpl(QString *error)
                 CREATE TABLE IF NOT EXISTS collection (
                   id             INTEGER PRIMARY KEY,
                   root_path      TEXT UNIQUE NOT NULL,
-                  kind           TEXT NOT NULL,
+                  kind           INTEGER NOT NULL,     -- Sequence::Kind 的值
                   title          TEXT,
                   added_at       INTEGER NOT NULL DEFAULT 0,
                   browsed_at     INTEGER NOT NULL DEFAULT 0,
                   resume_key     TEXT,
                   resume_page    INTEGER NOT NULL DEFAULT 0,
                   resume_at      INTEGER NOT NULL DEFAULT 0,
-                  reading_layout  TEXT NOT NULL DEFAULT 'single'
+                  reading_layout INTEGER NOT NULL DEFAULT 0   -- app::Layout 的值
                 ))"),
             QStringLiteral(R"(
                 CREATE TABLE IF NOT EXISTS item (
@@ -170,16 +212,20 @@ bool Store::openImpl(QString *error)
                   collection_id INTEGER NOT NULL REFERENCES collection(id) ON DELETE CASCADE,
                   ord           INTEGER NOT NULL,
                   parent_ord    INTEGER NOT NULL DEFAULT -1,
-                  kind          TEXT NOT NULL,
+                  kind          INTEGER NOT NULL,       -- Sequence::Kind 的值
                   label         TEXT NOT NULL DEFAULT '',
                   page_index    INTEGER NOT NULL DEFAULT -1,
                   size          INTEGER NOT NULL DEFAULT 0,
                   mtime         INTEGER NOT NULL DEFAULT 0,
                   width         INTEGER NOT NULL DEFAULT 0,
                   height        INTEGER NOT NULL DEFAULT 0,
+                  first_index   INTEGER NOT NULL DEFAULT -1,
+                  last_index    INTEGER NOT NULL DEFAULT -1,
                   UNIQUE(collection_id, ord)
                 ))"),
             QStringLiteral("CREATE INDEX IF NOT EXISTS item_parent ON item(collection_id, parent_ord)"),
+            // ★ v9：找"这张图在哪个容器"要用它（覆盖的容器里 first_index 最大的那个）
+            QStringLiteral("CREATE INDEX IF NOT EXISTS item_boundary ON item(collection_id, first_index)"),
             // ★ v8：`action` 表（跨进程 stop）已删 —— 新模型里停止只发生在本进程的内存队列
             // 缩略图缓存（设计 11 §五：进库 + LRU 2000 条，所有档位合计）
             QStringLiteral(R"(
@@ -195,7 +241,7 @@ bool Store::openImpl(QString *error)
                   PRIMARY KEY (collection_id, item_key, size_class)
                 ))"),
             QStringLiteral("CREATE INDEX IF NOT EXISTS thumb_lru ON thumb(used_at)"),
-            QStringLiteral("PRAGMA user_version=8"),
+            QStringLiteral("PRAGMA user_version=10"),
         };
         for (const QString &sql : ddl) {
             if (!exec(sql)) { if (error) *error = m_error; return false; }
@@ -233,13 +279,13 @@ QVector<Collection> Store::collections()
         Collection c;
         c.id = q.value(0).toLongLong();
         c.rootPath = q.value(1).toString();
-        c.kind = q.value(2).toString();
+        c.kind = Sequence::Kind(q.value(2).toInt());
         c.title = q.value(3).toString();
         c.addedAt = q.value(4).toLongLong();
         c.browsedAt = q.value(5).toLongLong();
         c.resumeKey = q.value(6).toString();
         c.resumeAt = q.value(7).toLongLong();
-        c.readingLayout = q.value(8).toString();
+        c.readingLayout = app::Layout(q.value(8).toInt());
         c.resumePage = q.value(9).toInt();
         out << c;
     }
@@ -255,7 +301,7 @@ Collection Store::collection(qint64 id)
 
 // ── 写入 ─────────────────────────────────────────────────────
 
-qint64 Store::addCollection(const QString &rootPath, const QString &kind)
+qint64 Store::addCollection(const QString &rootPath, Sequence::Kind kind)
 {
     QSqlQuery q(QSqlDatabase::database(m_connName));
     // 已存在 → 直接返回既有 id（"重复加入同一目录"当作已在库中，文档 §5.2）
@@ -267,7 +313,7 @@ qint64 Store::addCollection(const QString &rootPath, const QString &kind)
         "INSERT INTO collection (root_path, kind, title, added_at, browsed_at)"
         " VALUES (?, ?, ?, ?, ?)"));           // ★ v8：没有 scan_state 列了
     q.addBindValue(rootPath);
-    q.addBindValue(kind);
+    q.addBindValue(int(kind));                 // ★ 存枚举值（一份表示）
     q.addBindValue(QFileInfo(rootPath).fileName());
     q.addBindValue(nowSecs());
     q.addBindValue(nowSecs());
@@ -319,12 +365,12 @@ bool Store::setResume(qint64 id, const QString &resumeKey, int page)
     return true;
 }
 
-bool Store::setReadingLayout(qint64 id, const QString &layout)
+bool Store::setReadingLayout(qint64 id, app::Layout layout)
 {
     // 图集级唯一设置（设计 10 §11.1）
     QSqlQuery q(QSqlDatabase::database(m_connName));
     q.prepare(QStringLiteral("UPDATE collection SET reading_layout = ? WHERE id = ?"));
-    q.addBindValue(layout);
+    q.addBindValue(int(layout));               // ★ 存枚举值（一份表示）
     q.addBindValue(id);
     if (!q.exec()) { setError(q.lastError().text()); return false; }
     return true;
@@ -360,10 +406,11 @@ bool Store::replaceItems(qint64 collectionId, const QVector<Item> &rows)
         const int n = qMin(kReplaceChunkRows, rows.size() - base);
         QString sql = QStringLiteral(
             "INSERT INTO item (collection_id, ord, parent_ord, kind, label,"
-            "                  page_index, size, mtime, width, height) VALUES ");
+            "                  page_index, size, mtime, width, height,"
+            "                  first_index, last_index) VALUES ");
         for (int i = 0; i < n; ++i)
-            sql += (i == 0 ? QStringLiteral("(?,?,?,?,?,?,?,?,?,?)")
-                           : QStringLiteral(",(?,?,?,?,?,?,?,?,?,?)"));
+            sql += (i == 0 ? QStringLiteral("(?,?,?,?,?,?,?,?,?,?,?,?)")
+                           : QStringLiteral(",(?,?,?,?,?,?,?,?,?,?,?,?)"));
         QSqlQuery q(db);
         q.prepare(sql);
         for (int i = 0; i < n; ++i) {
@@ -371,13 +418,15 @@ bool Store::replaceItems(qint64 collectionId, const QVector<Item> &rows)
             q.addBindValue(collectionId);
             q.addBindValue(it.ord);
             q.addBindValue(it.parentOrd);
-            q.addBindValue(textOrEmpty(it.kind));
+            q.addBindValue(int(it.kind));         // ★ 存枚举值（一份表示）
             q.addBindValue(textOrEmpty(it.label));
             q.addBindValue(it.pageIndex);
             q.addBindValue(it.size);
             q.addBindValue(it.mtime);
             q.addBindValue(it.width);
             q.addBindValue(it.height);
+            q.addBindValue(it.firstIndex);
+            q.addBindValue(it.lastIndex);
         }
         if (!q.exec()) {
             setError(QStringLiteral("替换条目失败（第 %1 块 / 共 %2 块）：%3")
@@ -395,12 +444,22 @@ bool Store::replaceItems(qint64 collectionId, const QVector<Item> &rows)
     return true;
 }
 
+QVector<Sequence::Row> Store::sequenceRows(qint64 collectionId)
+{
+    const QVector<Item> rows = items(collectionId);
+    QVector<Sequence::Row> out;
+    out.reserve(rows.size());
+    for (const Item &r : rows) out << toRow(r);
+    return out;
+}
+
 QVector<Item> Store::items(qint64 collectionId)
 {
     QVector<Item> out;
     QSqlQuery q(QSqlDatabase::database(m_connName));
     q.prepare(QStringLiteral(
-        "SELECT id, ord, parent_ord, kind, label, page_index, size, mtime, width, height"
+        "SELECT id, ord, parent_ord, kind, label, page_index, size, mtime, width, height,"
+        "       first_index, last_index"
         "  FROM item WHERE collection_id = ? ORDER BY ord"));
     q.addBindValue(collectionId);
     if (!q.exec()) { setError(q.lastError().text()); return out; }
@@ -409,13 +468,15 @@ QVector<Item> Store::items(qint64 collectionId)
         it.id = q.value(0).toLongLong();
         it.ord = q.value(1).toInt();
         it.parentOrd = q.value(2).toInt();
-        it.kind = q.value(3).toString();
+        it.kind = Sequence::Kind(q.value(3).toInt());
         it.label = q.value(4).toString();
         it.pageIndex = q.value(5).toInt();
         it.size = q.value(6).toLongLong();
         it.mtime = q.value(7).toLongLong();
         it.width = q.value(8).toInt();
         it.height = q.value(9).toInt();
+        it.firstIndex = q.value(10).toInt();
+        it.lastIndex  = q.value(11).toInt();
         out << it;
     }
     return out;
@@ -427,24 +488,9 @@ QVector<Item> Store::items(qint64 collectionId)
 int Store::itemIndexOfChain(qint64 collectionId, const QStringList &chain, int page)
 {
     if (chain.isEmpty()) return -1;
-    const QVector<Item> rows = items(collectionId);
-    if (rows.isEmpty()) return -1;
+    const QVector<Sequence::Row> rs = sequenceRows(collectionId);
+    if (rs.isEmpty()) return -1;
 
-    QVector<Sequence::Row> rs;
-    rs.reserve(rows.size());
-    for (const Item &r : rows) {
-        Sequence::Row x;
-        x.ord = r.ord;
-        x.parentOrd = r.parentOrd;
-        x.kind = r.kind;
-        x.label = r.label;
-        x.pageIndex = r.pageIndex;
-        x.size = r.size;
-        x.mtime = r.mtime;
-        x.width = r.width;
-        x.height = r.height;
-        rs << x;
-    }
     Sequence seq;
     seq.buildFromRows(QString(), rs, false, QString());
     return seq.indexOfChain(chain, page);
@@ -455,8 +501,10 @@ QHash<qint64, int> Store::itemCounts()
 {
     QHash<qint64, int> out;
     QSqlQuery q(QSqlDatabase::database(m_connName));
-    if (!q.exec(QStringLiteral("SELECT collection_id, COUNT(*) FROM item"
-                               " WHERE kind = 'image' GROUP BY collection_id"))) {
+    q.prepare(QStringLiteral("SELECT collection_id, COUNT(*) FROM item"
+                             " WHERE kind = ? GROUP BY collection_id"));
+    q.addBindValue(int(Sequence::Kind::Image));
+    if (!q.exec()) {
         setError(q.lastError().text());
         return out;
     }
@@ -467,8 +515,9 @@ QHash<qint64, int> Store::itemCounts()
 int Store::itemCount(qint64 collectionId)
 {
     QSqlQuery q(QSqlDatabase::database(m_connName));
-    q.prepare(QStringLiteral("SELECT COUNT(*) FROM item WHERE collection_id = ? AND kind = 'image'"));
+    q.prepare(QStringLiteral("SELECT COUNT(*) FROM item WHERE collection_id = ? AND kind = ?"));
     q.addBindValue(collectionId);
+    q.addBindValue(int(Sequence::Kind::Image));
     if (q.exec() && q.next()) return q.value(0).toInt();
     setError(q.lastError().text());
     return -1;

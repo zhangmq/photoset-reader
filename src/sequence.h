@@ -91,15 +91,16 @@ inline qint64 monotonicNowMs()
 class Sequence
 {
 public:
-    enum class Kind { Image, Archive, FolderBoundary };
+    // ★★ 行 / 容器的种类 = **一份枚举**（用户 2026-10-18）：库里 `item.kind` / `collection.kind`
+    //   存的就是它的**值**；多页文件也算 `Archive`。取值显式写死（不许重排）。
+    enum class Kind { Image = 0, Archive = 1, Folder = 2 };
 
     // 信息完备度（单调）
     enum class State { NotReady, ImageFound, Scaned, ScanStoped };
 
-    // 翻页模式（**会话级**，不进设置；界面只有"单幅/双幅"）
-    enum class Mode { Single, Double };
-
-    enum class Dir { Next, Prev };
+    //   ★ **序列不带"版面"这个概念**（用户 2026-10-18）：单幅 / 双幅是**设置**
+    //     （`app::Layout`，落在 `appsettings.h`），序列这边只有**配对表**这份**数据**
+    //     （谁跟谁配成一对，由尺寸**从头锚定**算出来）。
 
     // ★★ 设计 14 §9.3：**序列不读设置** —— 扫描要的参数由调用方在这一组里传入。
     //   默认值 = 旧设置项的默认值（`recurseDepth=5` / `scanHidden=false` 是 `startScan`
@@ -119,16 +120,23 @@ public:
     //   · `label`     = 它在**容器里的名字**（页行 = 空串）
     //   · `kind`      = folder | archive | image
     //   · `pageIndex` = 页行 = 页号；容器行 / 普通图 = -1
+    //   · `firstIndex`/`lastIndex` = ★★ **边界索引**（只对容器行有意义；图行 = -1）
     struct Row {
         int     ord = 0;
         int     parentOrd = -1;
-        QString kind;                 // folder | archive | image
+        Kind    kind = Kind::Image;   // ★ 一份枚举（库里存它的值）
         QString label;
         int     pageIndex = -1;
         qint64  size = 0;             // 盘上文件的事实（包内成员 = 0）
         qint64  mtime = 0;
         int     width = 0;
         int     height = 0;
+        // ★★ 这个容器**子树**（含子容器）覆盖的**图的 index 区间**，闭区间 `[firstIndex, lastIndex]`：
+        //   · "图的 index" = 恢复后 `m_items` 的下标（**容器不占这个空间**）；
+        //   · **扫描时算好、随行写盘** ⇒ 恢复时不用再算（用户 2026-10-18 定案）；
+        //   · 找"这张图在哪个容器" = 覆盖它的容器里 `firstIndex` **最大**（并列取 `ord` 更大的）。
+        int     firstIndex = -1;
+        int     lastIndex = -1;
     };
 
     // ★★ v5：条目携带的**读取位置**（沿链解析）
@@ -166,8 +174,9 @@ public:
     // 文件树索引（浏览界面的层级 = 它）
     //   ★ v5：节点只有 `label` + `parent`（身份 = 沿 label 链走）——没有 key / path。
     struct TreeNode {
-        enum class Kind { Dir, Archive };     // ★ 多页文件也归 Archive（库表的 kind 只有三种）
-        Kind    kind = Kind::Dir;
+        //   ★ 节点种类用**同一个** `Sequence::Kind`（`Folder` / `Archive`）——
+        //     多页文件也算 `Archive`；不再另立一套 `TreeNode::Kind`（用户 2026-10-18）。
+        Kind    kind = Kind::Folder;
         QString label;           // 它在容器里的名字
         int     parent = -1;     // 父节点下标（-1 = 根）
         int     level = 0;
@@ -180,8 +189,8 @@ public:
     //   ★ **成员 = 本屏的位置**（顺序即显示顺序）——**不看 missing**：
     //     "这一格上的条目能不能显示"由缓存判（设计 12 §8.9 四），序列只管位置。
     struct Group {
-        QVector<int> members;    // 本屏的位置（双幅 2 个 / 宽图或末尾 1 个）
-        int cursor = -1;         // 本屏起点（= 新游标）；-1 = 没有
+        QVector<int> members;    // 本对的位置（双幅 2 个 / 宽图或末尾 1 个）
+        int cursor = -1;         // 本对起点；-1 = 没有
     };
 
     Sequence();
@@ -253,13 +262,17 @@ public:
         return s == State::Scaned || s == State::ScanStoped;
     }
 
-    // ── ② 查询（**按版面给屏**；**从头锚定**，序列自己算）──────────
-    //   `groupAt(i, m)` = **i 落在的那一屏**（本屏位置 + 屏起点）；
-    //   `advance(c, m, dir)` = **下一屏 / 上一屏的起点**（前进量按版面算：单幅 +1、双幅 +本屏张数）；
-    //   `anchorOf(i, m)` = i 所在那一屏的起点。
-    Group groupAt(int cursor, Mode m, Dir dir = Dir::Next) const;
-    int advance(int cursor, Mode m, Dir dir) const;
-    int anchorOf(int index, Mode m) const;
+    // ── ② 查询（**配对表**；**从头锚定**，序列自己算）──────────────────
+    //   ★ 全部**不带版面**（单幅 / 双幅由持有该设置的那一层选）：这里只回答"配对"这份数据。
+    //   · `pairAt(i)`      = i 落在的那一对（本对的位置串 + 起点）；
+    //   · `pairStart(i)`   = i 所在那一对的起点；
+    //   · `pairSize(i)`    = 这一对几张（1 或 2）；
+    //   · `nextPairStart(i)` / `prevPairStart(i)` = 下一对 / 上一对的起点（到头 = -1）。
+    Group pairAt(int index) const;
+    int   pairStart(int index) const;
+    int   pairSize(int index) const;
+    int   nextPairStart(int index) const;
+    int   prevPairStart(int index) const;
 
     // ── ②b 容器（文件树节点）查询 ──
     int containerOf(int index) const;
@@ -290,8 +303,6 @@ public:
     //      供 `containerOf` / `prev·nextContainerFirst` 这类**内部查询**用（扫描期间 OSD 就能用）。
     bool isElement(int node) const;
     QPair<int, int> containerRange(int index) const;
-    int screenCount(Mode m) const;
-    int screenOf(int index, Mode m) const;
 
     // ── ②c **身份链**（v5 resume 用）─────────────────────────────
     //   链 = 从根往下、每层容器在它容器里的名字；**页行不含自己的名字**（label 为空）
@@ -359,7 +370,8 @@ private:
     void finishAppend();                     // 扫描结束：把"待定的最后一条"定下来 + 全部扫完
     void resetGrouping();
     void resetRows();                        // 清空行 / 树 / 记录（startScan / clear / buildFromRows）
-    void initRoot(int rootKind, const QString &rootLabel);   // 合成根节点（0 号）
+    // 合成根节点（0 号）：`hasTree=false` = 单张图（没有树）⇒ 只记"根 = -1"
+    void initRoot(bool hasTree, Kind root, const QString &rootLabel);
     void applyRows(const QVector<Row> &rows);                // 行 → 树 + 叶子（消费线程）
     void finalizePageRowNames();             // 页行（label 空）的显示名（用**直接** itemCount）
     // ★★ **扫完 + 子树记录**（L40/L41；见公开的 `subtreeFirst/Count` 与 `isElement` 注释）：
@@ -371,6 +383,11 @@ private:
     int  addTreeNode(const TreeNode &n);     // 建节点：记录 / 扫完标志 / 并行数组一起长出来
     void syncOpenChain(int parentNode);      // 扫完：不在 `parentNode` 祖先链上的打开节点
     void closeAllOpenNodes();                // 扫完：行流结束
+    // ★★ 容器扫完那一刻，把它的**图的 index 区间**写回它那一行（`Row::firstIndex/lastIndex`）：
+    //   · 区间 = 子树（含子容器）覆盖的图 index —— `m_subFirst/m_subCount` 早已沿祖先链维护好；
+    //   · 只对**行流路径**有意义（`m_rows` 由 `applyRows` 填；静态构建器没有行 ⇒ 直接跳过）；
+    //   · 这就是"**扫描产生所有信息**"里那份**边界索引**，随行写盘 ⇒ 恢复零计算。
+    void writeBoundaryRange(int node);
     void resetNodeRecords();                 // 清记录（重排 ⇒ 重新沿链累加）
     int  parentNodeOfItem(int index) const;
     int  childNodeWithLabel(int parent, const QString &label) const;
@@ -412,9 +429,11 @@ private:
     //   `Batch` **不可变**：一旦入队，生产者不再碰它（消费者出锁后再处理）。
     struct Batch {
         QVector<Row> rows;
-        int          rootKind = -1;          // 根描述（只有第一批发；<0 = 无树）
+        // 根描述（只有第一批发）：`rootSet` = 这一批带根描述；`rootHasTree=false` = 单张图（没有树）
+        bool         rootSet     = false;
+        bool         rootHasTree = false;
+        Kind         rootKind    = Kind::Folder;
         QString      rootLabel;
-        bool         rootSet  = false;
     };
 
     QVector<Item>     m_items;

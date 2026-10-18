@@ -55,6 +55,7 @@
 #include <memory>
 #include <thread>
 
+#include "appsettings.h"   // ★ app::Layout：阅读版面 = 一份枚举（本类只"持有并投影"，不定义）
 #include "sequence.h"
 
 namespace fetch {
@@ -66,6 +67,8 @@ class ViewerModel : public QObject
     Q_PROPERTY(QImage imageA READ imageA NOTIFY currentChanged)
     Q_PROPERTY(QImage imageB READ imageB NOTIFY currentChanged)            // 单幅 / 空位：空图
     Q_PROPERTY(int keyCount READ keyCount NOTIFY currentChanged)           // 本屏位置数（1 或 2），无屏 = 0
+    //   ★ QML 边界的那一份**投影**（界面只要"是不是双幅"这一个布尔）：
+    //     概念本身 = `app::Layout`（`appsettings.h`）＝ 库里 `reading_layout` 存的那份。
     Q_PROPERTY(bool doublePage READ doublePage WRITE setDoublePage NOTIFY doublePageChanged)  // 写 = 换版面
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
     Q_PROPERTY(int cursor READ cursor WRITE setCursor NOTIFY currentChanged)  // 写 = 跳转；= 本屏起点
@@ -88,7 +91,7 @@ public:
     QImage imageA() const { return m_imageA; }
     QImage imageB() const { return m_imageB; }      // 单幅 / 坏的空位：空图
     int  keyCount() const { return m_keyCount; }
-    bool doublePage() const { return m_double; }
+    bool doublePage() const { return m_layout == app::Layout::Double; }
     void setDoublePage(bool on);                    // 换版面（保留当前位置，屏重算）
     bool loading() const { return m_loading; }
     int  cursor() const { return m_cursor; }        // 上屏那一屏的起点（写 = 跳转）
@@ -157,9 +160,13 @@ private:
     void resetShare();
 
     // ── 版面 / 屏 ────────────────────────────────────────────────────────
-    Sequence::Mode mode() const;
-    int  screenStart(int item) const;          // 这一条所在那一屏的起点（序列算）
-    QVector<int> screenItems(int start) const; // 本屏的位置（照抄序列的分组）
+    //   本屏 = 单幅的"这一条" / 双幅的"这一对"（**屏是视图的说法**，由版面选）；
+    //   双幅那一对的位置由序列的**配对表**给（`pairStart` / `pairAt`），本类不自己算。
+    int  screenStart(int item) const;
+    QVector<int> screenItems(int start) const;
+    //   换一屏：**单幅** = 相邻一条；**双幅** = 问序列的配对表（+本对张数）。到头 ⇒ -1。
+    //   ⇒ "±本对张数"的算术在序列的配对表里，本类只做"这次用一条还是用一对"的选择。
+    int  nextScreen(int start, int dir) const;
     bool onScreen(int item) const;             // 这一条在不在当前屏上（淘汰时不离手）
     int  slotOf(int item) const;      // 管着这一条的槽（-1 = 没有）
     QImage imageOf(int item) const;   // 这一条备好时的那张图（坏 / 在飞 ⇒ 空图）
@@ -187,7 +194,7 @@ private:
     int    m_cursor = 0;                     // 上屏那一屏的起点（只在 `screen` 里写）
     QImage m_imageA, m_imageB;               // 上屏内容（坏的位置 / 没有第二个位置 = 空图）
     int    m_keyCount = 0;                   // 本屏位置数（1 或 2），无屏 = 0
-    bool   m_double   = false;               // 版面（写 = 换版面；默认单幅）
+    app::Layout m_layout = app::Layout::Single;   // ★ 版面 = 一份枚举（默认单幅）
     bool   m_loading  = true;                // 界面浮层（只有 `updateLoading()` 会写）
 
     int m_f   = kStartForward;               // 前向条数

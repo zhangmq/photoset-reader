@@ -247,7 +247,7 @@ Sequence::Location locateOne(const QString &rootPath, bool rootIsArchive,
 
     int firstContainer = -1;
     for (int c = 0; c < chain.size(); ++c)
-        if (rows.at(chain.at(c)).kind != QLatin1String("folder")) { firstContainer = c; break; }
+        if (rows.at(chain.at(c)).kind != Sequence::Kind::Folder) { firstContainer = c; break; }
 
     QString cur;      // 当前层里累积的路径段
     int start = 0;
@@ -271,8 +271,8 @@ Sequence::Location locateOne(const QString &rootPath, bool rootIsArchive,
     for (int c = start; c < chain.size(); ++c) {
         const Sequence::Row &r = rows.at(chain.at(c));
         cur = joinRel(cur, r.label);
-        if (r.kind == QLatin1String("folder")) continue;
-        if (r.kind == QLatin1String("image")) continue;      // 叶子：最后统一推入
+        if (r.kind == Sequence::Kind::Folder) continue;
+        if (r.kind == Sequence::Kind::Image) continue;       // 叶子：最后统一推入
         if (!cur.isEmpty()) { loc.members << cur; cur.clear(); }   // 嵌套容器：下钻一层
     }
     if (!cur.isEmpty()) loc.members << cur;
@@ -497,16 +497,41 @@ void Sequence::syncOpenChain(int parentNode)
     while (keep < m_chainBuf.size() && keep < m_openStack.size()
            && m_chainBuf.at(keep) == m_openStack.at(keep))
         ++keep;
-    for (int i = keep; i < m_openStack.size(); ++i) m_nodeClosed[m_openStack.at(i)] = 1;
+    for (int i = keep; i < m_openStack.size(); ++i) {
+        m_nodeClosed[m_openStack.at(i)] = 1;
+        writeBoundaryRange(m_openStack.at(i));          // ★ 扫完 ⇒ 它的图 index 区间已定
+    }
     m_openStack = m_chainBuf;
 }
 
 // 行流结束 ⇒ 打开链上剩下的节点**全部扫完**（"收尾"是唯一一次批量扫完）
 void Sequence::closeAllOpenNodes()
 {
-    for (int x : m_openStack)
+    for (int x : m_openStack) {
         if (x >= 0 && x < m_nodeClosed.size()) m_nodeClosed[x] = 1;
+        writeBoundaryRange(x);
+    }
     m_openStack.clear();
+}
+
+// ★★ 把容器**子树覆盖的图的 index 区间**写回它那一行（`Row::firstIndex/lastIndex`）。
+//   · `m_subFirst/m_subCount` = 并入条目时沿祖先链维护的**子树记录**（这里是只读）；
+//   · 只在**行流路径**上写：静态构建器（`buildFromFolder` 那几条）没有 `m_rows`，
+//     `m_rowIndexByOrd` 里查不到 ⇒ 直接返回（那种路径本来也不落库）；
+//   · 空容器（子树里没有图）不写（它也不会成为元素，见 `isElement`）。
+void Sequence::writeBoundaryRange(int node)
+{
+    if (node < 0 || node >= m_tree.size()) return;
+    if (node >= m_subFirst.size() || node >= m_subCount.size()) return;
+    const int first = m_subFirst.at(node);
+    const int cnt   = m_subCount.at(node);
+    if (first < 0 || cnt <= 0) return;
+    const auto it = m_rowIndexByOrd.constFind(m_tree.at(node).ord);
+    if (it == m_rowIndexByOrd.constEnd()) return;
+    if (*it < 0 || *it >= m_rows.size()) return;
+    Row &r = m_rows[*it];
+    r.firstIndex = first;
+    r.lastIndex  = first + cnt - 1;
 }
 
 // 清记录（**只有"重排同一批条目"才用**：`sortNaturally` 会把 `m_items` 整个重并一遍 ⇒
@@ -531,46 +556,57 @@ void Sequence::finalizePageRowNames()
     }
 }
 
-// ══ 查询（按版面给屏）════════════════════════════════════════════════
+// ══ 查询（配对表）════════════════════════════════════════════════════
+//   ★ 全部**不带版面**：单幅 / 双幅是设置（`app::Layout`），由持有它的那一层去选；
+//     序列这里只回答**配对**这份数据（从头锚定算出来的原生划分）。
 
-int Sequence::anchorOf(int index, Mode m) const
+int Sequence::pairStart(int index) const
 {
     if (m_decided <= 0) return -1;
     const int i = qBound(0, index, m_decided - 1);
-    if (m == Mode::Single) return i;
     return qBound(0, m_gStart.value(i, i), m_decided - 1);
 }
 
-int Sequence::advance(int cursor, Mode m, Dir dir) const
+int Sequence::pairSize(int index) const
 {
-    if (m_decided <= 0) return -1;
-    const int start = anchorOf(cursor, m);
-    if (start < 0) return -1;
-
-    if (dir == Dir::Next) {
-        const int n = (m == Mode::Single) ? 1 : qMax(1, m_gSize.value(start, 1));
-        const int next = start + n;
-        return (next < m_decided) ? next : -1;
-    }
-    const int before = start - 1;
-    if (before < 0) return -1;
-    return anchorOf(before, m);
+    if (m_decided <= 0) return 0;
+    const int start = pairStart(index);
+    if (start < 0) return 0;
+    return qBound(1, m_gSize.value(start, 1), m_decided - start);
 }
 
-//   `i` 落在的那一屏 = [屏起点, +本屏张数)——**从头锚定**算出来的原生划分。
-//   ★ **不给 missing 留任何处理**：这一屏给的是**完整的位置**（双幅 2 个 / 宽图或末尾 1 个），
+int Sequence::nextPairStart(int index) const
+{
+    if (m_decided <= 0) return -1;
+    const int start = pairStart(index);
+    if (start < 0) return -1;
+    const int next = start + pairSize(start);       // 前进量 = 本对张数（1 或 2）
+    return (next < m_decided) ? next : -1;
+}
+
+int Sequence::prevPairStart(int index) const
+{
+    if (m_decided <= 0) return -1;
+    const int start = pairStart(index);
+    if (start < 0) return -1;
+    const int before = start - 1;
+    if (before < 0) return -1;
+    return pairStart(before);                      // 上一对的起点（完全对称）
+}
+
+//   本对 = [本对起点, +本对张数)——**从头锚定**算出来的原生划分。
+//   ★ **不给 missing 留任何处理**：这一对给的是**完整的位置**（双幅 2 个 / 宽图或末尾 1 个），
 //     "哪一格拿不出图"由缓存那条线判（设计 12 §8.9 四：双幅留空位、其余跳过）⇒
 //     序列说位置，缓存说好坏，两边不重复管同一件事。
-Sequence::Group Sequence::groupAt(int cursor, Mode m, Dir dir) const
+Sequence::Group Sequence::pairAt(int index) const
 {
-    Q_UNUSED(dir);                    // 坏不在这里跳（本屏一律给完整位置）
     Group g;
     if (m_decided <= 0) return g;
 
-    const int start = anchorOf(cursor, m);
+    const int start = pairStart(index);
     if (start < 0) return g;
 
-    const int n = (m == Mode::Single) ? 1 : qMax(1, m_gSize.value(start, 1));
+    const int n = pairSize(start);
     g.cursor = start;
     for (int i = start; i < start + n && i < m_decided; ++i) g.members << i;
     return g;
@@ -645,25 +681,6 @@ int Sequence::prevContainerFirst(int index) const
         if (first > best) best = first;
     }
     return best;
-}
-
-int Sequence::screenCount(Mode m) const
-{
-    if (m_decided <= 0) return 0;
-    if (m == Mode::Single) return m_decided;
-    int n = 0;
-    for (int i = 0; i < m_decided; i += qMax(1, m_gSize.value(i, 1))) ++n;
-    return n;
-}
-
-int Sequence::screenOf(int index, Mode m) const
-{
-    if (m_decided <= 0) return -1;
-    if (m == Mode::Single) return qBound(0, index, m_decided - 1);
-    const int start = anchorOf(index, m);
-    int n = 0;
-    for (int i = 0; i < start; i += qMax(1, m_gSize.value(i, 1))) ++n;
-    return n;
 }
 
 // ══ 身份链（v5 resume）════════════════════════════════════════════════
@@ -807,7 +824,7 @@ bool Sequence::drain()
     bool changed = !local.empty();
     for (Batch &b : local) {
         if (b.rootSet && !m_rootInit) {      // 根描述到了才有树 / 或无树
-            initRoot(b.rootKind, b.rootLabel);
+            initRoot(b.rootHasTree, b.rootKind, b.rootLabel);
             m_rootInit = true;
         }
         if (!b.rows.isEmpty()) applyRows(b.rows);   // 传 const 引用，不拷贝
@@ -868,20 +885,20 @@ void Sequence::resetRows()
     resetGrouping();
 }
 
-void Sequence::initRoot(int rootKind, const QString &rootLabel)
+void Sequence::initRoot(bool hasTree, Kind root, const QString &rootLabel)
 {
-    if (rootKind < 0) {                       // 没有树（单张图）
+    if (!hasTree) {                           // 没有树（单张图）
         m_openStack.clear();                  // 没有节点 ⇒ 也没有任何"打开"的节点
         m_nodeIndexByOrd.insert(-1, -1);
         return;
     }
-    TreeNode root;
-    root.kind = (rootKind == 0) ? TreeNode::Kind::Dir : TreeNode::Kind::Archive;
-    root.label = rootLabel;
-    root.parent = -1;
-    root.level = 0;
-    root.ord = -1;
-    const int ri = addTreeNode(root);
+    TreeNode rootNode;
+    rootNode.kind = root;                     // 根也是容器（文件夹 / 压缩包 / 多页文件）
+    rootNode.label = rootLabel;
+    rootNode.parent = -1;
+    rootNode.level = 0;
+    rootNode.ord = -1;
+    const int ri = addTreeNode(rootNode);
     // ★ 根是**第一行所属节点的祖先**（其实是它自己）⇒ 它就是那条打开链的链首。
     //   根到扫描结束才扫完（L40：根也是目录 / 压缩包，按同一条判定条件走）。
     m_openStack.clear();
@@ -898,12 +915,11 @@ void Sequence::applyRows(const QVector<Row> &rows)
         const int rowIndex = m_rows.size() - 1;
         m_rowIndexByOrd.insert(r.ord, rowIndex);
 
-        if (r.kind != QLatin1String("image")) {
+        if (r.kind != Kind::Image) {
             const int p = m_nodeIndexByOrd.value(r.parentOrd, m_nodeIndexByOrd.value(-1, -1));
             syncOpenChain(p);                     // ★ 先扫完：新节点不在它们子树里了
             TreeNode n;
-            n.kind = (r.kind == QLatin1String("folder")) ? TreeNode::Kind::Dir
-                                                         : TreeNode::Kind::Archive;
+            n.kind = (r.kind == Kind::Folder) ? Kind::Folder : Kind::Archive;
             n.label = r.label;
             n.ord = r.ord;
             n.parent = p;
@@ -944,7 +960,7 @@ void Sequence::buildFromRows(const QString &rootPath, const QVector<Row> &rows,
     m_archivePages = rootIsArchive;
     m_rootIsArchive = rootIsArchive;
     m_markMissingBySize = false;              // 库行路径：尺寸未知 ≠ 缺失（库里没有 missing）
-    initRoot(rootIsArchive ? 1 : 0,
+    initRoot(true, rootIsArchive ? Kind::Archive : Kind::Folder,
              rootLabel.isEmpty() ? QFileInfo(m_root).fileName() : rootLabel);
     m_rootInit = true;
     applyRows(rows);
@@ -1100,7 +1116,7 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
         r.ord = ordSeq++;
         localRows << r;
         localIdx.insert(r.ord, localRows.size() - 1);
-        if (r.kind == QLatin1String("image")) {
+        if (r.kind == Kind::Image) {
             const Location loc = locateOne(m_root, rootIsArchive, localIdx, localRows,
                                            localRows.size() - 1,
                                            m_scanOptions.innerArchiveMaxMb);
@@ -1119,7 +1135,7 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
         flush(false);
         return r.ord;
     };
-    auto emitNode = [&](const QString &kind, const QString &label, int parentOrd) -> int {
+    auto emitNode = [&](Kind kind, const QString &label, int parentOrd) -> int {
         Row r;
         r.kind = kind;
         r.label = label;
@@ -1130,7 +1146,7 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
     auto emitImage = [&](const QString &label, int parentOrd, int pageIndex,
                          const QString &diskPath, const QStringList &members) -> int {
         Row r;
-        r.kind = QStringLiteral("image");
+        r.kind = Kind::Image;
         r.label = label;
         r.parentOrd = parentOrd;
         r.pageIndex = pageIndex;
@@ -1218,7 +1234,7 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
                 }
                 QStringList members = cMembers;
                 members << n;
-                const int nodeOrd = emitNode(QStringLiteral("archive"),
+                const int nodeOrd = emitNode(Kind::Archive,
                                              QFileInfo(n).fileName(), parentOrd);
                 expandArchive(inner, members, nodeOrd, level + 1);
             }
@@ -1226,7 +1242,7 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
             sortNatural(entry.subs);                         // ③ 子目录
             for (const QString &sub : entry.subs) {
                 if (stopRequested()) return;
-                const int nodeOrd = emitNode(QStringLiteral("folder"),
+                const int nodeOrd = emitNode(Kind::Folder,
                                              QFileInfo(sub).fileName(), parentOrd);
                 walk(sub, nodeOrd);
             }
@@ -1239,14 +1255,16 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
     //   · 压缩包 / 多页文件 ⇒ Archive 根（**文件本身就是那个容器**；页/成员挂在根上）
     //   · 单张图          ⇒ 没有树（`m_root` 改成所在目录 ⇒ 盘上路径仍可派生）
     const bool rootIsDir = rootInfo.isDir();
-    int rootKind = rootIsDir ? 0 : (rootIsArchive || rootIsMultiPage) ? 1 : -1;
-    if (rootKind < 0) m_root = rootInfo.absolutePath();
+    const bool rootHasTree = rootIsDir || rootIsArchive || rootIsMultiPage;
+    const Kind rootKind    = rootIsDir ? Kind::Folder : Kind::Archive;
+    if (!rootHasTree) m_root = rootInfo.absolutePath();
     bumpProgress();                              // ★ 每批放批**之前**写进度
     {                                            // 第一片：**空行 + 根描述**（今天那次 pushBatch 就是它）
         Batch b;
-        b.rootKind  = rootKind;
-        b.rootLabel = rootKind < 0 ? QString() : rootInfo.fileName();
-        b.rootSet   = true;
+        b.rootHasTree = rootHasTree;
+        b.rootKind    = rootKind;
+        b.rootLabel   = rootHasTree ? rootInfo.fileName() : QString();
+        b.rootSet     = true;
         post(std::move(b));
     }
     if (stopRequested()) {                       // 首片之后也一样：看到停就走
@@ -1264,7 +1282,7 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
                                       : nodeOfRel.value(parentRelOf(b.relFolder), -1);
             int nodeOrd = parentOrd;
             if (!b.relFolder.isEmpty()) {
-                nodeOrd = emitNode(QStringLiteral("folder"), QFileInfo(b.dirPath).fileName(),
+                nodeOrd = emitNode(Kind::Folder, QFileInfo(b.dirPath).fileName(),
                                    parentOrd);
                 nodeOfRel.insert(b.relFolder, nodeOrd);
             }
@@ -1275,7 +1293,7 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
                 const int pages = pageCountOf(fi.absoluteFilePath());
                 if (stopRequested()) break;          // ★ 阻塞调用返回后第一件事
                 if (pages > 1) {                     // 多页文件 = 容器（页 = 叶子）
-                    const int mp = emitNode(QStringLiteral("archive"), fi.fileName(), nodeOrd);
+                    const int mp = emitNode(Kind::Archive, fi.fileName(), nodeOrd);
                     for (int p = 0; p < pages; ++p) {
                         if (stopRequested()) break;
                         emitImage(QString(), mp, p, fi.absoluteFilePath(), QStringList());
@@ -1298,7 +1316,7 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
                                                 .arg(fi.absoluteFilePath());
                     continue;
                 }
-                const int arcOrd = emitNode(QStringLiteral("archive"), fi.fileName(), nodeOrd);
+                const int arcOrd = emitNode(Kind::Archive, fi.fileName(), nodeOrd);
                 expandArchive(a, QStringList(), arcOrd, 0);
             }
         }
@@ -1377,7 +1395,7 @@ void Sequence::buildFromFolder(const QString &dir, bool recursive)
     m_recursive = recursive;
     m_rootIsArchive = false;
     m_markMissingBySize = false;
-    initRoot(0, QFileInfo(m_root).fileName());
+    initRoot(true, Kind::Folder, QFileInfo(m_root).fileName());
     m_rootInit = true;
 
     QMap<QString, QVector<Item>> groups;
@@ -1420,15 +1438,6 @@ void Sequence::buildFromFolder(const QString &dir, bool recursive)
         std::sort(v.begin(), v.end(), [](const Item &a, const Item &b) {
             return naturalCompare(a.displayName, b.displayName) < 0;
         });
-        if (recursive && folder != m_root) {
-            Item b;
-            b.kind = Kind::FolderBoundary;
-            b.displayName = QDir(folder).dirName();
-            b.loc.diskPath = folder;
-            b.folderLabel = QDir(m_root).relativeFilePath(folder);
-            b.folderDepth = QDir(m_root).relativeFilePath(folder).count(QLatin1Char('/'));
-            out << b;
-        }
         for (Item &x : v) {
             if (recursive && folder != m_root)
                 x.folderDepth = QDir(m_root).relativeFilePath(folder).count(QLatin1Char('/'));
@@ -1482,7 +1491,7 @@ void Sequence::buildFromNames(const QString &archivePath, const QStringList &nam
     m_archivePages = true;
     m_rootIsArchive = true;
     m_markMissingBySize = false;
-    initRoot(1, QFileInfo(m_root).fileName());
+    initRoot(true, Kind::Archive, QFileInfo(m_root).fileName());
     m_rootInit = true;
 
     QStringList sorted = names;
@@ -1517,7 +1526,6 @@ int Sequence::markMissing()
     if (m_archivePages) return 0;
     int n = 0;
     for (Item &it : m_items) {
-        if (it.kind == Kind::FolderBoundary) continue;
         if (!it.loc.members.isEmpty()) continue;      // 包内条目不做文件系统校验
         const bool exists = QFileInfo::exists(it.loc.diskPath);
         if (!exists && !it.missing) { it.missing = true; ++n; }

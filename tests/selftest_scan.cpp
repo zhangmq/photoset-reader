@@ -149,10 +149,10 @@ static int runScanSelfTest()
         const library::Collection c = store.collection(cid);
         const QVector<library::Item> rows = store.items(cid);
         const QVector<Sequence::Location> locs =
-            Sequence::locateRows(c.rootPath, c.kind == QLatin1String("archive"), seqRowsOf(cid));
+            Sequence::locateRows(c.rootPath, c.kind == Sequence::Kind::Archive, seqRowsOf(cid));
         QStringList out;
         for (int i = 0; i < rows.size() && i < locs.size(); ++i) {
-            if (rows.at(i).kind != QLatin1String("image")) continue;
+            if (rows.at(i).kind != Sequence::Kind::Image) continue;
             const Sequence::Location &l = locs.at(i);
             if (l.members.isEmpty()) out << QDir(c.rootPath).relativeFilePath(l.diskPath);
             else out << (QFileInfo(l.diskPath).fileName() + QStringLiteral("!/")
@@ -163,16 +163,16 @@ static int runScanSelfTest()
     auto nodeCountOf = [&store](qint64 cid) {
         int n = 0;
         for (const library::Item &it : store.items(cid))
-            if (it.kind != QLatin1String("image")) ++n;
+            if (it.kind != Sequence::Kind::Image) ++n;
         return n;
     };
-    // 按**派生的相对路径**取那个 image 行（找不到 ⇒ kind 为空的哨兵）
+    // 按**派生的相对路径**取那个 image 行（找不到 ⇒ `id < 0` 的哨兵；枚举没有"空值"）
     auto rowOf = [&store, &pathsOf](qint64 cid, const QString &rel) {
         const QStringList paths = pathsOf(cid);
         const QVector<library::Item> rows = store.items(cid);
         int k = 0;
         for (const library::Item &it : rows) {
-            if (it.kind != QLatin1String("image")) continue;
+            if (it.kind != Sequence::Kind::Image) continue;
             if (k < paths.size() && paths.at(k) == rel) return it;
             ++k;
         }
@@ -180,7 +180,7 @@ static int runScanSelfTest()
     };
 
     // ══ ① 小树 S：条目数 / 一次遍历顺序 / 容器节点 / 符号链接环 / 隐藏 / 深度 / 假 zip ══
-    const qint64 cidS = store.addCollection(rootS, QStringLiteral("folder"));
+    const qint64 cidS = store.addCollection(rootS, Sequence::Kind::Folder);
     check(cidS > 0, QStringLiteral("加入集合（小树 S）"));
     QElapsedTimer clock;
     clock.start();
@@ -227,14 +227,14 @@ static int runScanSelfTest()
           QStringLiteral("③ recurseDepth=1：本轮只扫根 + 一层（%1 条，一层以外不进去）")
               .arg(ks.size()));
     // ★ v8：重置 = **原子替换**（`replaceItems`）⇒ 没见到的旧行被删掉（库里没有 missing 概念）
-    check(rowOf(cidS, QStringLiteral("deep/l1/l2/l3/deep.png")).kind.isEmpty(),
+    check(rowOf(cidS, QStringLiteral("deep/l1/l2/l3/deep.png")).id < 0,
           QStringLiteral("③ 上一轮见到的深层条目（不在本棵树里）**被删除**（replaceItems）"));
     check(store.items(cidS).size() == 10 && nodeCountOf(cidS) == 4,
           QStringLiteral("③ 本轮 6 条图 + 4 个目录节点 = 10 行（实际 %1 / %2）")
               .arg(store.items(cidS).size()).arg(nodeCountOf(cidS)));
 
     // ══ ④ 树 M：note.txt 不算条目；删文件重扫 ⇒ 消失的行被删，其余正常 ═══════════
-    const qint64 cidM = store.addCollection(rootM, QStringLiteral("folder"));
+    const qint64 cidM = store.addCollection(rootM, Sequence::Kind::Folder);
     const bool mFirst = (cidM > 0) && runReset(cidM, 5, false);
     const int  mCount1 = pathsOf(cidM).size();
     check(mFirst && mCount1 == 3,
@@ -243,13 +243,13 @@ static int runScanSelfTest()
     const bool mAgain = removed && runReset(cidM, 5, false);
     const int  mCount2 = pathsOf(cidM).size();
     check(mAgain && mCount2 == 2
-              && rowOf(cidM, QStringLiteral("sub/m3.png")).kind.isEmpty()
-              && !rowOf(cidM, QStringLiteral("m1.png")).kind.isEmpty(),
+              && rowOf(cidM, QStringLiteral("sub/m3.png")).id < 0
+              && rowOf(cidM, QStringLiteral("m1.png")).id >= 0,
           QStringLiteral("④ 删掉 sub/m3.png 后重扫：消失的条目被**删除**（replaceItems 原子替换），"
                          "其余仍正常（%1 条）").arg(mCount2));
 
     // ══ ⑤ 根目录无图：照常结束 + **第一批从子目录拿到**（扫完前）+ 最终条数正确 ══
-    const qint64 cidN = store.addCollection(rootN, QStringLiteral("folder"));
+    const qint64 cidN = store.addCollection(rootN, Sequence::Kind::Folder);
     int  firstProgress = -1;
     bool firstBeforeFinish = false;
     {
@@ -275,7 +275,7 @@ static int runScanSelfTest()
 
     // ══ ⑥ 根不可用：空跑完 Scaned + 0 条 + 原因只走提示 / 日志（**不写入磁盘**）═══════
     const QString rootGone = tmp.filePath(QStringLiteral("scanGone"));   // 刻意不创建
-    const qint64 cidGone = store.addCollection(rootGone, QStringLiteral("folder"));
+    const qint64 cidGone = store.addCollection(rootGone, Sequence::Kind::Folder);
     {
         QString e;
         check(cidGone > 0 && core.requestReset(cidGone, opts(5, false), &e),

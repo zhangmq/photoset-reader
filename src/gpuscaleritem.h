@@ -4,13 +4,13 @@
 #include <QQuickRhiItem>
 
 #include "gpuscale.h"
-#include "scaler.h"
+#include "gpuscale.h"
 
 // ══ GPU 缩放渲染组件（QML 可用）════════════════════════════════════════════
 //
-// 一个 Item = **一张图按 scaler::Params 缩放后的画面**。它自己就是「渲染器」这一角色
+// 一个 Item = **一张图按 gpuscale::Params 缩放后的画面**。它自己就是「渲染器」这一角色
 // （设计 13 §八）：fit 模式 / 交互缩放 / 平移 / 画质参数**全在这里**，
-// 与 CPU 参照实现（`scaler::resize`）逐像素等价（见 `--selftest-gpuscale`）。
+// 与 CPU 参照实现（`gpuscale::resize`）逐像素等价（见 `--selftest-gpuscale`）。
 //
 // ## 为什么是 QQuickRhiItem（而不是自定义 QSGMaterial）
 //   · 我们的算法是**三段 FBO**（线性化 → H → V(+anti-ringing)），需要
@@ -25,7 +25,7 @@
 // ## 与 CPU 的对应关系
 //   `viewport`（逻辑像素）+ `fit` + `zoom` + `pan` ⇒ `gpuscale::Plan`（`makePlan`）
 //   ⇒ 三段 shader；`mode/quality/filter/lobes/mitchellB/mitchellC/antiring` 与
-//   `scaler::Params` 一一对应（`params()` / `setParams()`）。
+//   `gpuscale::Params` 一一对应（`params()` / `setParams()`）。
 //
 // ## 不缓存缩放结果（设计 13 §八）
 //   每次重绘都重跑 shader；中间纹理只是**一帧内**的工作区（尺寸不变才复用）。
@@ -45,7 +45,7 @@ class GpuScalerItem : public QQuickRhiItem
     Q_PROPERTY(qreal panY READ panY WRITE setPanY NOTIFY panChanged)
     Q_PROPERTY(bool autoSize READ autoSize WRITE setAutoSize NOTIFY autoSizeChanged)
 
-    // ── scaler::Params 的逐项暴露（QML 友好；枚举值与 scaler 的枚举一一对应）──
+    // ── gpuscale::Params 的逐项暴露（QML 友好；枚举值与 scaler 的枚举一一对应）──
     Q_PROPERTY(int mode READ mode WRITE setMode NOTIFY paramsChanged)
     Q_PROPERTY(int quality READ quality WRITE setQuality NOTIFY paramsChanged)
     Q_PROPERTY(int filter READ filter WRITE setFilter NOTIFY paramsChanged)
@@ -91,8 +91,8 @@ public:
     void setAutoSize(bool on);
 
     // ── 画质参数 ──
-    scaler::Params params() const;
-    void setParams(const scaler::Params &p);
+    gpuscale::Params params() const;
+    void setParams(const gpuscale::Params &p);
     int mode() const { return int(m_params.mode); }
     void setMode(int m);
     int quality() const { return int(m_params.quality); }
@@ -154,7 +154,7 @@ private:
     qreal m_panY = 0.0;
     bool m_autoSize = true;
 
-    scaler::Params m_params;
+    gpuscale::Params m_params;
     gpuscale::Plan m_plan;
     QString m_status;
     bool m_inUpdate = false;

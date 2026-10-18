@@ -105,42 +105,11 @@ QString volumeKindName(volume::Kind k)
     return QStringLiteral("Unknown");
 }
 
-// 库行 ↔ 序列行（字段一一对应；`ord` 是**遍历序号**，节点与叶子共用）
-library::Item toLibraryRow(const Sequence::Row &r)
-{
-    library::Item x;
-    x.ord = r.ord;
-    x.parentOrd = r.parentOrd;
-    x.kind = r.kind;
-    x.label = r.label;
-    x.pageIndex = r.pageIndex;
-    x.size = r.size;
-    x.mtime = r.mtime;
-    x.width = r.width;
-    x.height = r.height;
-    return x;
-}
-
-Sequence::Row fromLibraryRow(const library::Item &r)
-{
-    Sequence::Row x;
-    x.ord = r.ord;
-    x.parentOrd = r.parentOrd;
-    x.kind = r.kind;
-    x.label = r.label;
-    x.pageIndex = r.pageIndex;
-    x.size = r.size;
-    x.mtime = r.mtime;
-    x.width = r.width;
-    x.height = r.height;
-    return x;
-}
-
 int imageCountOf(const QVector<Sequence::Row> &rows)
 {
     int n = 0;
     for (const Sequence::Row &r : rows)
-        if (r.kind == QLatin1String("image")) ++n;
+        if (r.kind == Sequence::Kind::Image) ++n;
     return n;
 }
 
@@ -244,7 +213,7 @@ QVector<library::Collection> LibraryCore::collections() const
     return m_store ? m_store->collections() : QVector<library::Collection>();
 }
 
-bool LibraryCore::addCollection(const QString &root, const QString &kind, QString *err)
+bool LibraryCore::addCollection(const QString &root, Sequence::Kind kind, QString *err)
 {
     if (!libraryUsable()) {
         if (err) *err = unusableReason();
@@ -283,7 +252,7 @@ bool LibraryCore::renameCollection(qint64 id, const QString &title)
     return true;
 }
 
-bool LibraryCore::setReadingLayout(qint64 id, const QString &layout)
+bool LibraryCore::setReadingLayout(qint64 id, app::Layout layout)
 {
     if (!libraryUsable()) return false;
     if (!m_store->setReadingLayout(id, layout)) return false;
@@ -411,7 +380,7 @@ void LibraryCore::startCommit(qint64 id)
     const QVector<Sequence::Row> &src = m_resetSeq->rows();
     auto rows = std::make_shared<QVector<library::Item>>();
     rows->reserve(src.size());
-    for (const Sequence::Row &r : src) rows->push_back(toLibraryRow(r));
+    for (const Sequence::Row &r : src) rows->push_back(library::toItem(r));
     const int total  = rows->size();
     const int images = imageCountOf(src);
 
@@ -520,14 +489,12 @@ bool LibraryCore::buildViewSnapshot(qint64 id, QString *err)
         if (err) *err = QStringLiteral("图集不存在（%1）").arg(id);
         return false;
     }
-    const QVector<library::Item> rows = m_store->items(id);
-    QVector<Sequence::Row> srows;
-    srows.reserve(rows.size());
-    for (const library::Item &r : rows) srows << fromLibraryRow(r);
+    // ★ 恢复的输入 = 库里的行（转换只有一份：`library::toRow`）
+    const QVector<Sequence::Row> srows = m_store->sequenceRows(id);
 
     auto seq = std::make_unique<Sequence>();
     // 已写入磁盘的行 → 一条**静态只读**序列（不再跟随、不再重建，§9.1）
-    seq->buildFromRows(c.rootPath, srows, c.kind == QLatin1String("archive"));
+    seq->buildFromRows(c.rootPath, srows, library::rootIsArchive(c));
     m_viewSeq = std::move(seq);
     m_viewId = id;
     return true;

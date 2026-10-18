@@ -7,6 +7,18 @@ int BrowseModel::rowCount(const QModelIndex &parent) const
     return parent.isValid() ? 0 : m_rows.size();
 }
 
+// ★ QML 边界的那一份字符串（`image` / `archive` / `folder`）—— **唯一生成点**：
+//   它只是把 `Sequence::Kind` 投影成 QML 认的三个词，**不是第二份概念定义**。
+QString BrowseModel::kindText(Sequence::Kind k)
+{
+    switch (k) {
+    case Sequence::Kind::Archive: return QStringLiteral("archive");
+    case Sequence::Kind::Folder:  return QStringLiteral("folder");
+    case Sequence::Kind::Image:   break;
+    }
+    return QStringLiteral("image");
+}
+
 QVariant BrowseModel::data(const QModelIndex &index, int role) const
 {
     if (!index.isValid() || index.row() < 0 || index.row() >= m_rows.size())
@@ -16,7 +28,7 @@ QVariant BrowseModel::data(const QModelIndex &index, int role) const
     case NameRole:      return r.name;
     case SizeTextRole:  return r.sizeText;
     case ResTextRole:   return r.resText;
-    case KindRole:      return r.kind;
+    case KindRole:      return BrowseModel::kindText(r.kind);
     case MissingRole:   return r.missing;
     case ThumbRole:     return r.thumb;
     case DepthRole:     return r.depth;

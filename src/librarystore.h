@@ -14,6 +14,9 @@
 #include <QString>
 #include <QVector>
 
+#include "appsettings.h"   // ★ app::Layout：阅读版面 = **一份枚举**（库列存它的值）
+#include "sequence.h"       // ★ Sequence::Kind：行 / 容器种类 = **一份枚举**
+
 namespace library {
 
 // 集合（一个图集库 = 一个目录或一个压缩包）
@@ -33,15 +36,15 @@ namespace library {
 struct Collection {
     qint64  id = -1;
     QString rootPath;
-    QString kind;          // folder | archive
+    Sequence::Kind kind = Sequence::Kind::Folder;   // ★ 一份枚举（库列存它的值）
     QString title;
     qint64  addedAt = 0;
     qint64  browsedAt = 0;
     qint64  resumeAt = 0;  // 仅更新不同步：进度最后写入时间
     QString resumeKey;     // 仅更新不同步：阅读位置 = **label 链的 JSON 数组**
     int     resumePage = 0;   // 多页文件停在第 k 页（普通图 = 0）
-    // ★ v3：图集级唯一设置 = 阅读版面（single | double）—— 它影响"阅读进度怎么判读"（设计 10 §11.1）
-    QString readingLayout;
+    // ★ v3：图集级唯一设置 = 阅读版面 —— 它影响"阅读进度怎么判读"（设计 10 §11.1）
+    app::Layout readingLayout = app::Layout::Single;
 };
 
 // 条目（**v5**：库 = **已写入磁盘的序列** —— 身份 = 沿 `parent_ord` 上溯的 label 序列）
@@ -64,14 +67,27 @@ struct Item {
     qint64  id = -1;
     int     ord = 0;          // 遍历序号（节点与叶子共用）
     int     parentOrd = -1;   // 父行的 ord（根级 = -1）
-    QString kind;             // folder | archive | image
+    Sequence::Kind kind = Sequence::Kind::Image;   // ★ 一份枚举（库列存它的值）
     QString label;            // 容器里的名字（页行 = 空串）
     int     pageIndex = -1;   // 页行的页号；容器行 / 普通图 = -1
     qint64  size = 0;
     qint64  mtime = 0;
     int     width = 0;   // ★ v3：像素宽（0 = 未知）
     int     height = 0;  // ★ v3：像素高（0 = 未知）
+    // ★ v9：**边界索引**（只对容器行有意义；图行 = -1）= 该容器**子树**覆盖的**图的 index 区间**。
+    //   扫描时算好写盘（`Sequence::Row::firstIndex/lastIndex`）⇒ 恢复时不用再算。
+    int     firstIndex = -1;
+    int     lastIndex = -1;
 };
+
+// ★★ 行形态转换 —— **唯一一份**（用户 2026-10-18："一个概念只留一份"）：
+//   库行（`Item`）与序列行（`Sequence::Row`）是**同一个东西的两侧**，字段一一对应。
+Item         toItem(const Sequence::Row &r);
+Sequence::Row toRow(const Item &r);
+
+// ★ 来源根本身是不是容器（压缩包 / 多页文件）—— **唯一实现**：
+//   · 库里记的 `kind = Archive`；或 · 盘上那个路径本身就是压缩包（老库行可能没跟上）。
+bool rootIsArchive(const Collection &c);
 
 // 缩略图缓存（设计 11 §五：进库 + 按条数 LRU）
 //   · `collection_id` < 0 表示"直接打开"的来源（库里存 NULL）
@@ -114,7 +130,7 @@ public:
 
     // ── 写入：集合 ──
     // 已存在则返回既有 id（root_path UNIQUE + ON CONFLICT DO NOTHING）
-    qint64 addCollection(const QString &rootPath, const QString &kind);
+    qint64 addCollection(const QString &rootPath, Sequence::Kind kind);
     bool   removeCollection(qint64 id);
     bool   renameCollection(qint64 id, const QString &title);
     // 浏览时间：参与"按浏览时间倒序"排序（同步一律走 `data_version`）
@@ -122,7 +138,7 @@ public:
     // 阅读进度：仅更新不同步（`resumeKey` = **label 链的 JSON 数组**；`page` = 页号）
     bool   setResume(qint64 id, const QString &resumeKey, int page = 0);
     // 阅读版面（图集级唯一设置，设计 10 §11.1）
-    bool   setReadingLayout(qint64 id, const QString &layout);
+    bool   setReadingLayout(qint64 id, app::Layout layout);
 
     // ── 写入：条目（**唯一写入路径 = 原子替换**）──────────────────────────────
     // ★★ 设计 14 §9.1：图集重置**正常跑完**时的那一次落库：
@@ -134,6 +150,8 @@ public:
     //     它们只服务旧的"扫描任务"路径（边扫边写入磁盘 ⇒ 失败留半截），新模型不再需要。
     bool replaceItems(qint64 collectionId, const QVector<Item> &rows);
     QVector<Item> items(qint64 collectionId);
+    // 同一批行的**序列形态**（恢复的输入）—— 转换只有一份（上面的 `toRow`）
+    QVector<Sequence::Row> sequenceRows(qint64 collectionId);
     // ★ v5：**按链 + 页查**（resume 用）—— 沿 `parent_ord` 建树后沿 label 链 walk + 页号命中。
     //   返回**可读序列**（image 行）里的序号；-1 = 没命中。
     int itemIndexOfChain(qint64 collectionId, const QStringList &chain, int page = 0);

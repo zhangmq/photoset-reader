@@ -12,6 +12,7 @@
 #include <QString>
 #include <QTemporaryDir>
 
+#include "archive.h"
 #include "imageprovider.h"
 #include "librarystore.h"
 

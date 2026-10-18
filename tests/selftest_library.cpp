@@ -36,9 +36,9 @@ static int runLibrarySelfTest()
 
     // data_version：自己写**不变**（文档 §二 的核心语义）
     const int v0 = store.dataVersion();
-    const qint64 cid = store.addCollection(tmp.path() + "/album", QStringLiteral("folder"));
+    const qint64 cid = store.addCollection(tmp.path() + "/album", Sequence::Kind::Folder);
     check(cid > 0, QStringLiteral("加入集合"));
-    check(store.addCollection(tmp.path() + "/album", QStringLiteral("folder")) == cid,
+    check(store.addCollection(tmp.path() + "/album", Sequence::Kind::Folder) == cid,
           QStringLiteral("重复加入同一目录 → 返回既有 id"));
     check(store.dataVersion() == v0, QStringLiteral("自己写库 → data_version 不变"));
 
@@ -57,7 +57,7 @@ static int runLibrarySelfTest()
     //   **没有 key / rel_path** —— 身份 = 沿 parent_ord 上溯的 label 序列）
     //   ★ v8：**唯一写入路径 = `Store::replaceItems`（一个事务原子替换）**；
     //     `upsertItems` / `clearItems` 已随旧"扫描任务"路径删除。
-    auto mkItem = [](int ord, int parentOrd, const QString &kind, const QString &label,
+    auto mkItem = [](int ord, int parentOrd, Sequence::Kind kind, const QString &label,
                      int page = -1) {
         library::Item it;
         it.ord = ord;
@@ -68,9 +68,9 @@ static int runLibrarySelfTest()
         return it;
     };
     QVector<library::Item> items;
-    items << mkItem(0, -1, QStringLiteral("folder"), QStringLiteral("edge"));
+    items << mkItem(0, -1, Sequence::Kind::Folder, QStringLiteral("edge"));
     for (int i = 0; i < 3; ++i)                           // 节点与叶子共用同一个序
-        items << mkItem(i + 1, 0, QStringLiteral("image"), QStringLiteral("p%1.png").arg(i));
+        items << mkItem(i + 1, 0, Sequence::Kind::Image, QStringLiteral("p%1.png").arg(i));
 
     // ── ① 原子替换（空集 → 4 行）：唯一的写入路径 ──
     check(store.replaceItems(cid, items), QStringLiteral("① 替换条目：空集 → 4 行（唯一写入路径）"));
@@ -86,10 +86,10 @@ static int runLibrarySelfTest()
                   && sized[2].width == 2400 && sized[2].height == 1600 && sized[3].width == 0,
               QStringLiteral("① 像素宽/高往返（未知 = 0）"));
     }
-    check(store.collection(cid).readingLayout == QLatin1String("single"),
+    check(store.collection(cid).readingLayout == app::Layout::Single,
           QStringLiteral("① 新图集默认阅读版面 = 单幅"));
-    check(store.setReadingLayout(cid, QStringLiteral("double")), QStringLiteral("① 写阅读版面"));
-    check(store.collection(cid).readingLayout == QLatin1String("double"),
+    check(store.setReadingLayout(cid, app::Layout::Double), QStringLiteral("① 写阅读版面"));
+    check(store.collection(cid).readingLayout == app::Layout::Double,
           QStringLiteral("① 阅读版面写入磁盘（图集级唯一设置）"));
     // ★ v6：**没有 item_count 列** —— "多少张图"用 `GROUP BY` 现算
     check(store.itemCount(cid) == 3, QStringLiteral("① itemCount() = **可读序列** 3 行（不含容器节点）"));
@@ -120,12 +120,12 @@ static int runLibrarySelfTest()
     // ── ⑤ 字段往返：archive 容器 / 多页页行 / 尺寸 / 时间 ──
     {
         QVector<library::Item> multi;
-        multi << mkItem(0, -1, QStringLiteral("archive"), QStringLiteral("vol01.cbz"));
+        multi << mkItem(0, -1, Sequence::Kind::Archive, QStringLiteral("vol01.cbz"));
         multi[0].size = 12345;
         multi[0].mtime = 67890;
         for (int p = 0; p < 2; ++p) {
             //   页行 = **label 空串**（这里刻意用 **null `QString()`**，验 NOT NULL 列的规范化）
-            multi << mkItem(p + 1, 0, QStringLiteral("image"), QString(), p);
+            multi << mkItem(p + 1, 0, Sequence::Kind::Image, QString(), p);
             multi.last().size = 100 + p;
             multi.last().mtime = 200 + p;
             multi.last().width = 800;
@@ -133,7 +133,7 @@ static int runLibrarySelfTest()
         }
         check(store.replaceItems(cid, multi), QStringLiteral("⑤ 替换成多页容器 3 行"));
         const QVector<library::Item> got = store.items(cid);
-        check(got.size() == 3 && got[0].kind == QLatin1String("archive")
+        check(got.size() == 3 && got[0].kind == Sequence::Kind::Archive
                   && got[0].label == QLatin1String("vol01.cbz") && got[0].size == 12345
                   && got[0].mtime == 67890,
               QStringLiteral("⑤ 容器行字段往返（kind/label/size/mtime）"));
@@ -179,7 +179,7 @@ static int runLibrarySelfTest()
     {
         QVector<library::Item> exact;
         for (int i = 0; i < chunk; ++i)
-            exact << mkItem(i, -1, QStringLiteral("image"), QStringLiteral("e%1").arg(i));
+            exact << mkItem(i, -1, Sequence::Kind::Image, QStringLiteral("e%1").arg(i));
         check(store.replaceItems(cid, exact),
               QStringLiteral("⑧ 恰好 %1 行（= 1 块）替换成功").arg(chunk));
         check(store.items(cid).size() == chunk,
@@ -188,7 +188,7 @@ static int runLibrarySelfTest()
     {
         QVector<library::Item> over;
         for (int i = 0; i < chunk + 1; ++i)
-            over << mkItem(i, -1, QStringLiteral("image"), QStringLiteral("o%1").arg(i));
+            over << mkItem(i, -1, Sequence::Kind::Image, QStringLiteral("o%1").arg(i));
         check(store.replaceItems(cid, over),
               QStringLiteral("⑧ %1 行（= 2 块）替换成功").arg(chunk + 1));
         const QVector<library::Item> got = store.items(cid);
@@ -200,7 +200,7 @@ static int runLibrarySelfTest()
     {
         QVector<library::Item> bad;
         for (int i = 0; i < chunk + 1; ++i)
-            bad << mkItem(i, -1, QStringLiteral("image"), QStringLiteral("x%1").arg(i));
+            bad << mkItem(i, -1, Sequence::Kind::Image, QStringLiteral("x%1").arg(i));
         bad[chunk].ord = bad[3].ord;                 // 第 2 块撞第 1 块
         check(!store.replaceItems(cid, bad),
               QStringLiteral("⑧ 跨块失败（第二块撞第一块）⇒ false"));
@@ -212,9 +212,9 @@ static int runLibrarySelfTest()
 
     // ── ⑨ 替换只影响该集合 + 不存在集合 ⇒ 失败（外键）──
     const qint64 cid2 = store.addCollection(tmp.path() + QStringLiteral("/album2"),
-                                            QStringLiteral("folder"));
+                                            Sequence::Kind::Folder);
     check(cid2 > 0, QStringLiteral("⑨ 加入第二个集合（%1）").arg(cid2));
-    check(store.replaceItems(cid2, { mkItem(0, -1, QStringLiteral("image"),
+    check(store.replaceItems(cid2, { mkItem(0, -1, Sequence::Kind::Image,
                                             QStringLiteral("other")) }),
           QStringLiteral("⑨ 第二个集合落 1 行"));
     check(store.replaceItems(cid, items), QStringLiteral("⑨ 再替换第一个集合"));
@@ -223,7 +223,7 @@ static int runLibrarySelfTest()
           QStringLiteral("⑨ 替换第一个集合**不影响**第二个（它仍是 1 行）"));
     check(store.itemCounts().value(cid, -1) == 3 && store.itemCounts().value(cid2, -1) == 1,
           QStringLiteral("⑨ itemCounts() 覆盖两个集合（3 / 1）"));
-    check(!store.replaceItems(999999, { mkItem(0, -1, QStringLiteral("image"),
+    check(!store.replaceItems(999999, { mkItem(0, -1, Sequence::Kind::Image,
                                                QStringLiteral("ghost")) }),
           QStringLiteral("⑨ 替换**不存在的集合** ⇒ 失败（外键约束，不写孤儿行）"));
 
@@ -238,10 +238,10 @@ static int runLibrarySelfTest()
     // ── ⑪ 同 ord 但 kind 不同 ⇒ **被替换**（不是 upsert 合并）──
     {
         QVector<library::Item> one;
-        one << mkItem(1, -1, QStringLiteral("folder"), QStringLiteral("now-a-folder"));
+        one << mkItem(1, -1, Sequence::Kind::Folder, QStringLiteral("now-a-folder"));
         check(store.replaceItems(cid, one), QStringLiteral("⑪ 用同 ord、不同 kind 的 1 行替换"));
         const QVector<library::Item> got = store.items(cid);
-        check(got.size() == 1 && got[0].kind == QLatin1String("folder")
+        check(got.size() == 1 && got[0].kind == Sequence::Kind::Folder
                   && got[0].label == QLatin1String("now-a-folder"),
               QStringLiteral("⑪ 旧 image 行被**替换**掉（旧模型 upsert 会合并成 2 行）"));
         check(store.itemCount(cid) == 0, QStringLiteral("⑪ 全被换成 folder ⇒ 图数 0"));
@@ -323,12 +323,14 @@ static int runLibrarySelfTest()
         qWarning().noquote() << QStringLiteral("[libselftest] 夹具写盘失败: %1/%2")
                                     .arg(thumbDir, QStringLiteral("src.png"));
 
+    //   ★ 2026-10-19：provider 已**只服务按路径的缩略图**（`thumbpath/` / `thumbzip/`）——
+    //     按序号的 `thumb/<n>` 随"provider 自建序列"一起删了。
     ImageProvider provider;
-    provider.setSource(thumbDir);
     QSize thumbSize;
     // 请求尺寸 168（≠ kThumbSize）：返回图必须仍是 384 级 + 源图宽高比
     //   裁切 → 384×384；按请求尺寸 → 168 级。两种错法都过不了这一条。
-    const QImage th = provider.requestImage(QStringLiteral("thumb/0"), &thumbSize, QSize(168, 168));
+    const QImage th = provider.requestImage(
+        ImageProvider::thumbPathId(thumbDir + QStringLiteral("/src.png")), &thumbSize, QSize(168, 168));
     const int longest = qMax(th.width(), th.height());
     check(!th.isNull()
               && longest == library::Store::kThumbSize

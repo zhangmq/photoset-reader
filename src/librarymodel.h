@@ -55,7 +55,7 @@ public:
     Q_INVOKABLE void reload();
 
     // 界面动作（**走 core 的转发**）
-    Q_INVOKABLE void addCollection(const QString &path, const QString &kind);
+    Q_INVOKABLE void addCollection(const QString &path, Sequence::Kind kind);
     Q_INVOKABLE void removeCollection(int row);
     Q_INVOKABLE void renameCollection(int row, const QString &title);
 

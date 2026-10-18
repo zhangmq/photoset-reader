@@ -106,7 +106,7 @@ void GpuScalerItem::setSourceImage(const QImage &img)
         updatePlan();
         return;
     }
-    // 上传口径：RGBA8888（与 CPU 侧 scaler::resize 的 RGB32 同像素；alpha 一律不透明）
+    // 上传口径：RGBA8888（与 CPU 侧 gpuscale::resize 的 RGB32 同像素；alpha 一律不透明）
     m_source = (img.format() == QImage::Format_RGBA8888) ? img : img.convertToFormat(QImage::Format_RGBA8888);
     ++m_sourceGen;
     setStatus(QStringLiteral("源 %1×%2").arg(m_source.width()).arg(m_source.height()));
@@ -170,12 +170,12 @@ void GpuScalerItem::setAutoSize(bool on)
     updatePlan();
 }
 
-scaler::Params GpuScalerItem::params() const
+gpuscale::Params GpuScalerItem::params() const
 {
     return m_params;
 }
 
-void GpuScalerItem::setParams(const scaler::Params &p)
+void GpuScalerItem::setParams(const gpuscale::Params &p)
 {
     m_params = p;
     emit paramsChanged();
@@ -184,10 +184,10 @@ void GpuScalerItem::setParams(const scaler::Params &p)
 
 void GpuScalerItem::setMode(int m)
 {
-    const auto v = scaler::Mode(qBound(0, m, 2));
+    const auto v = gpuscale::Mode(qBound(0, m, 2));
     if (v == m_params.mode)
         return;
-    if (v == scaler::Mode::QtSmooth && !m_warnedQtSmooth) {
+    if (v == gpuscale::Mode::QtSmooth && !m_warnedQtSmooth) {
         // Qt 的 SmoothTransformation 是**非线性**的对照路径（AGENTS.md 立场 #1），GPU 路径不实现它
         m_warnedQtSmooth = true;
         qWarning().noquote() << QStringLiteral("[GpuScalerItem] mode=qt-smooth 是 CPU 对照路径，"
@@ -200,7 +200,7 @@ void GpuScalerItem::setMode(int m)
 
 void GpuScalerItem::setQuality(int q)
 {
-    const auto v = scaler::Quality(qBound(0, q, 2));
+    const auto v = gpuscale::Quality(qBound(0, q, 2));
     if (v == m_params.quality)
         return;
     m_params.quality = v;
@@ -210,7 +210,7 @@ void GpuScalerItem::setQuality(int q)
 
 void GpuScalerItem::setFilter(int f)
 {
-    const auto v = scaler::Filter(qBound(0, f, 3));
+    const auto v = gpuscale::Filter(qBound(0, f, 3));
     if (v == m_params.filter)
         return;
     m_params.filter = v;
@@ -258,13 +258,13 @@ void GpuScalerItem::setAntiring(qreal a)
 
 QString GpuScalerItem::presetKey() const
 {
-    const scaler::Preset *p = scaler::presetFor(m_params);
+    const gpuscale::Preset *p = gpuscale::presetFor(m_params);
     return p ? QLatin1String(p->key) : QStringLiteral("custom");
 }
 
 bool GpuScalerItem::applyPreset(const QString &key)
 {
-    const scaler::Preset *p = scaler::presetByKey(key);
+    const gpuscale::Preset *p = gpuscale::presetByKey(key);
     if (!p)
         return false;
     setParams(p->params);

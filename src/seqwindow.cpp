@@ -38,7 +38,7 @@ BrowseLayer browseLayerOf(const Sequence &seq, int node, int cursor)
         const Sequence::Item &it = seq.at(itemIndex);
         BrowseModel::Row r;
         r.name = it.displayName.isEmpty() ? it.label : it.displayName;
-        r.kind = QStringLiteral("image");
+        r.kind = Sequence::Kind::Image;
         r.missing = it.missing;
         r.itemIndex = itemIndex;
         r.resText = it.size.isValid()
@@ -59,15 +59,14 @@ BrowseLayer browseLayerOf(const Sequence &seq, int node, int cursor)
         const Sequence::TreeNode &n = tree.at(nodeIndex);
         BrowseModel::Row r;
         r.name = n.label;
-        r.kind = (n.kind == Sequence::TreeNode::Kind::Dir) ? QStringLiteral("folder")
-                                                           : QStringLiteral("archive");
+        r.kind = n.kind;                       // 节点种类 = 同一个枚举
         r.nodeIndex = nodeIndex;
         r.subtreeFirst = seq.subtreeFirst(nodeIndex);
         r.subtreeCount = seq.subtreeCount(nodeIndex);
         r.sizeText = QStringLiteral("%1 张").arg(r.subtreeCount);
         //   压缩包容器：封面 = **包内第 0 页**（`thumbzip` 不带成员就是第 0 页，设计 11 §5.2）；
         //   文件夹没有"封面"这回事 ⇒ 保持空（界面显示文件夹字形）。
-        if (n.kind == Sequence::TreeNode::Kind::Archive && n.itemCount > 0) {
+        if (n.kind == Sequence::Kind::Archive && n.itemCount > 0) {
             const Sequence::Item &first = seq.at(n.firstItem);
             if (first.loc.members.isEmpty())
                 r.thumb = thumbUrlForFile(first.loc.diskPath);

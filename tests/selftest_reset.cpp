@@ -98,7 +98,7 @@ void useLibraryDbIn(const QString &dir)
             QDir(dir).filePath(QStringLiteral("library.db")).toLocal8Bit());
 }
 
-library::Item mkRow(int ord, const QString &label, const QString &kind = QStringLiteral("image"))
+library::Item mkRow(int ord, const QString &label, Sequence::Kind kind = Sequence::Kind::Image)
 {
     library::Item it;
     it.ord = ord;
@@ -155,7 +155,7 @@ void groupReplaceAtomic(Check &check)
         return;
     }
     const qint64 cid = store.addCollection(tmp.filePath(QStringLiteral("album")),
-                                           QStringLiteral("folder"));
+                                           Sequence::Kind::Folder);
 
     QVector<library::Item> oldRows;
     for (int i = 0; i < 3; ++i) oldRows << mkRow(i, QStringLiteral("old%1").arg(i));
@@ -392,7 +392,7 @@ void groupCoreEndToEnd(Check &check)
     LibraryCore core(&store);
     check(core.libraryUsable(), QStringLiteral("⑥ 库目录闸门通过"));
 
-    check(core.addCollection(album, QStringLiteral("folder"), &err),
+    check(core.addCollection(album, Sequence::Kind::Folder, &err),
           QStringLiteral("⑥ addCollection 转调成功"));
     const QVector<library::Collection> cs = core.collections();
     check(cs.size() == 1, QStringLiteral("⑥ collections() 里有 1 个（%1）").arg(cs.size()));
@@ -426,7 +426,7 @@ void groupCoreEndToEnd(Check &check)
     QImage img(8, 12, QImage::Format_RGB32);
     img.fill(Qt::green);
     img.save(QDir(album2).filePath(QStringLiteral("q0.png")));
-    check(core.addCollection(album2, QStringLiteral("folder"), &err), QStringLiteral("⑥ 加第二个图集"));
+    check(core.addCollection(album2, Sequence::Kind::Folder, &err), QStringLiteral("⑥ 加第二个图集"));
     qint64 cid2 = -1;
     for (const library::Collection &c : core.collections())
         if (c.rootPath.endsWith(QStringLiteral("album2"))) cid2 = c.id;
@@ -453,7 +453,7 @@ void groupCoreEndToEnd(Check &check)
         const QVector<library::Item> rows = store.items(cid);
         int images = 0;
         for (const library::Item &r : rows)
-            if (r.kind == QLatin1String("image")) ++images;
+            if (r.kind == Sequence::Kind::Image) ++images;
         check(images == 3 && store.itemCount(cid) == 3,
               QStringLiteral("⑥ **原子替换真的落库**：%1 张图 / itemCount=%2")
                   .arg(images).arg(store.itemCount(cid)));
@@ -720,7 +720,7 @@ void groupBackgroundCommit(Check &check)
           QStringLiteral("⑨ 前置：造出 %1 个子目录（= %1 行）").arg(kRows));
 
     LibraryCore core(&store);
-    check(core.addCollection(big, QStringLiteral("folder"), &err), QStringLiteral("⑨ addCollection"));
+    check(core.addCollection(big, Sequence::Kind::Folder, &err), QStringLiteral("⑨ addCollection"));
     const qint64 cid = core.collections().isEmpty() ? -1 : core.collections().first().id;
     check(cid > 0, QStringLiteral("⑨ 图集 id=%1").arg(cid));
 
@@ -795,7 +795,7 @@ void groupBackgroundCommit(Check &check)
         img.fill(QColor(200, 60 + i * 40, 60));
         img.save(QDir(album2).filePath(QStringLiteral("q%1.png").arg(i)));
     }
-    check(core.addCollection(album2, QStringLiteral("folder"), &err), QStringLiteral("⑨b 加第二个图集"));
+    check(core.addCollection(album2, Sequence::Kind::Folder, &err), QStringLiteral("⑨b 加第二个图集"));
     qint64 cid2 = -1;
     for (const library::Collection &c : core.collections())
         if (c.rootPath.endsWith(QStringLiteral("album2"))) cid2 = c.id;
@@ -893,7 +893,7 @@ void groupCommitWindow(Check &check)
         img.save(QDir(album).filePath(QStringLiteral("p%1.png").arg(i)));
     }
     LibraryCore core(&store);
-    check(core.addCollection(album, QStringLiteral("folder"), &err),
+    check(core.addCollection(album, Sequence::Kind::Folder, &err),
           QStringLiteral("⑩ addCollection（err='%1'）").arg(err));
     const qint64 cid = core.collections().isEmpty() ? -1 : core.collections().first().id;
     check(cid > 0, QStringLiteral("⑩ 图集 id=%1").arg(cid));
@@ -947,7 +947,7 @@ void groupCommitWindow(Check &check)
         int imgs = 0;
         for (const library::Item &r : after) {
             if (r.label.startsWith(QLatin1String("old"))) noOld = false;
-            if (r.kind == QLatin1String("image")) ++imgs;
+            if (r.kind == Sequence::Kind::Image) ++imgs;
         }
         check(noOld && imgs == 3,
               QStringLiteral("⑩ 库内容 = **新扫描结果**（旧行不残留；%1 张）").arg(imgs));

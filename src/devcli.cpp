@@ -207,7 +207,7 @@ void runDevCommands(const DevRequest &req, app::UiModel *ui, library::Store *sto
             for (const library::Collection &c : store->collections())
                 if (c.rootPath == QFileInfo(d).absoluteFilePath())
                     qInfo().noquote() << QStringLiteral("[dev] 集合已存在 id=%1（会重扫）").arg(c.id);
-            ui->library()->addCollection(d, QStringLiteral("folder"));
+            ui->library()->addCollection(d, Sequence::Kind::Folder);
         }
         // 等这次自动重置"扫完"（有超时；语义同旧代码：等状态离开扫描中）
         devClock.restart();

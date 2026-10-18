@@ -174,47 +174,27 @@ void LibraryModel::reload()
 namespace {
 
 // 库行 → 序列行（同一个形态；位置派生用）
-QVector<Sequence::Row> toSeqRows(const QVector<library::Item> &rows)
-{
-    QVector<Sequence::Row> rs;
-    rs.reserve(rows.size());
-    for (const library::Item &r : rows) {
-        Sequence::Row x;
-        x.ord = r.ord;
-        x.parentOrd = r.parentOrd;
-        x.kind = r.kind;
-        x.label = r.label;
-        x.pageIndex = r.pageIndex;
-        x.size = r.size;
-        x.mtime = r.mtime;
-        x.width = r.width;
-        x.height = r.height;
-        rs << x;
-    }
-    return rs;
-}
-
 } // namespace
 
 QString LibraryModel::coverFor(const library::Collection &c) const
 {
     const QVector<library::Item> rows = m_store->items(c.id);
     // ★ v5：读图位置**派生**（磁盘路径 + 容器成员链）——写入磁盘不存路径
-    const bool rootIsArchive = c.kind == QLatin1String("archive")
-                               || (QFileInfo(c.rootPath).isFile()
-                                   && ArchiveSource::isArchive(c.rootPath));
+    QVector<Sequence::Row> seqRows;
+    seqRows.reserve(rows.size());
+    for (const library::Item &r : rows) seqRows << library::toRow(r);
     const QVector<Sequence::Location> locs =
-        Sequence::locateRows(c.rootPath, rootIsArchive, toSeqRows(rows));
+        Sequence::locateRows(c.rootPath, library::rootIsArchive(c), seqRows);
 
     for (int i = 0; i < rows.size(); ++i) {
         const library::Item &it = rows.at(i);
-        if (it.kind == QLatin1String("folder")) continue;      // 目录节点不是封面
+        if (it.kind == Sequence::Kind::Folder) continue;      // 目录节点不是封面
         const Sequence::Location &loc = locs.at(i);
         if (!loc.members.isEmpty()) continue;                  // 包内成员：没有盘上绝对路径
         if (loc.diskPath.isEmpty()) continue;
-        if (it.kind == QLatin1String("archive"))
+        if (it.kind == Sequence::Kind::Archive)
             return QStringLiteral("image://img/") + ImageProvider::thumbZipId(loc.diskPath);
-        if (it.kind != QLatin1String("image")) continue;
+        if (it.kind != Sequence::Kind::Image) continue;
         if (loc.page <= 0)                                     // 普通图 / 多页的第 0 页
             return QStringLiteral("image://img/") + ImageProvider::thumbPathId(loc.diskPath);
     }
@@ -327,14 +307,13 @@ void LibraryModel::refresh(bool force)
         emit changed();
 }
 
-void LibraryModel::addCollection(const QString &path, const QString &kind)
+void LibraryModel::addCollection(const QString &path, Sequence::Kind kind)
 {
-    const QString k = kind.isEmpty() ? QStringLiteral("folder") : kind;
     // ★ T2c-2b-1：增删改**走 core 的转发**（core 自己写库不 bump data_version ⇒
     //   成功后它显式发 `collectionsChanged()`，上面那个连接会 `reload()`）。
     //   ★ T2c-2b-2：`m_core == nullptr` 的旧调试分支已删（core 必需）。
     QString err;
-    if (!m_core->addCollection(path, k, &err)) {
+    if (!m_core->addCollection(path, kind, &err)) {
         const QString why = QStringLiteral("加入图集失败：%1")
                                 .arg(err.isEmpty() ? QStringLiteral("未知原因") : err);
         qWarning().noquote() << QStringLiteral("[library] %1").arg(why);
