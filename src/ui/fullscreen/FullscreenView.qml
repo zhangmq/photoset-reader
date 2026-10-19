@@ -242,16 +242,20 @@ Item {
         count: ui.viewer ? ui.viewer.count : 0
         fitMode: ui.fitMode
         doublePage: ui.viewer ? ui.viewer.doublePage : false
+        loopMode: ui.viewer ? ui.viewer.loopMode : 0
+        prevFolderName: ui.viewer ? ui.viewer.prevFolderName : ""
+        nextFolderName: ui.viewer ? ui.viewer.nextFolderName : ""
         zoomLocked: ui.zoomLocked
         windowFullscreen: ui.windowFullscreen
         osdVisible: ui.osdVisible
-        prevFolderName: ""
-        nextFolderName: ""
         overlaysVisible: ui.overlaysVisible
         onPrevRequested: { if (ui.viewer) ui.viewer.stepPage(-1) }
         onNextRequested: { if (ui.viewer) ui.viewer.stepPage(1) }
         onFitModeSelected: function (m) { ui.fitMode = m }
         onDoublePageSelected: function (on) { if (ui.viewer) ui.viewer.doublePage = on }
+        onLoopModeSelected: function (m) { if (ui.viewer) ui.viewer.loopMode = m }
+        onPrevFolderRequested: { if (ui.viewer) ui.viewer.stepFolder(-1) }
+        onNextFolderRequested: { if (ui.viewer) ui.viewer.stepFolder(1) }
         onZoomLockToggled: ui.zoomLocked = !ui.zoomLocked
         onWindowFullscreenToggled: ui.windowFullscreen = !ui.windowFullscreen
         onOsdToggled: ui.toggleOsd()

@@ -305,6 +305,11 @@ public:
     //      供 `containerOf` / `prev·nextContainerFirst` 这类**内部查询**用（扫描期间 OSD 就能用）。
     bool isElement(int node) const;
     QPair<int, int> containerRange(int index) const;
+    // ★★ **这一条所在容器的子树区间** = {第一条图的 index, 图条数}，**O(1)**：
+    //   条目并入时就记下了它**直接所属**的那一层容器（`Item::parentNode`），
+    //   该节点的子树区间是并入时沿祖先链维护的 ⇒ 两者都是查表。
+    //   ⇒ 循环（文件夹循环）的区间用它，**不搜全树**；直接挂在根上 ⇒ 整条序列。
+    QPair<int, int> ownerRange(int index) const;
 
     // ── ②c **身份链**（v5 resume 用）─────────────────────────────
     //   链 = 从根往下、每层容器在它容器里的名字；**页行不含自己的名字**（label 为空）

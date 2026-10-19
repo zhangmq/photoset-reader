@@ -659,6 +659,17 @@ QPair<int, int> Sequence::containerRange(int index) const
     return { subtreeFirst(node), subtreeCount(node) };
 }
 
+QPair<int, int> Sequence::ownerRange(int index) const
+{
+    if (index < 0 || index >= m_items.size()) return { 0, count() };
+    const int node = m_items.at(index).parentNode;
+    if (node < 0 || node >= m_tree.size()) return { 0, count() };
+    const int first = subtreeFirst(node);
+    const int cnt   = subtreeCount(node);
+    if (first < 0 || cnt <= 0) return { 0, count() };     // 记录还没长出来 ⇒ 当作整条序列
+    return { first, cnt };
+}
+
 int Sequence::nextContainerFirst(int index) const
 {
     int best = -1, bestFirst = INT_MAX;

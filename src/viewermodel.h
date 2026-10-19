@@ -70,6 +70,12 @@ class ViewerModel : public QObject
     //   ★ QML 边界的那一份**投影**（界面只要"是不是双幅"这一个布尔）：
     //     概念本身 = `app::Layout`（`appsettings.h`）＝ 库里 `reading_layout` 存的那份。
     Q_PROPERTY(bool doublePage READ doublePage WRITE setDoublePage NOTIFY doublePageChanged)  // 写 = 换版面
+    //   循环（到头怎么办）＝ 会话级、不写盘：0 不循环 / 1 全部循环 / 2 文件夹循环
+    //   （**值就是界面的菜单下标**，一份表示）
+    Q_PROPERTY(int loopMode READ loopMode WRITE setLoopMode NOTIFY loopModeChanged)
+    //   上一 / 下一文件夹的**目标名字**（空 ⇒ 界面把按钮灰掉）
+    Q_PROPERTY(QString prevFolderName READ prevFolderName NOTIFY currentChanged)
+    Q_PROPERTY(QString nextFolderName READ nextFolderName NOTIFY currentChanged)
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
     Q_PROPERTY(int cursor READ cursor WRITE setCursor NOTIFY currentChanged)  // 写 = 跳转；= 本屏起点
     Q_PROPERTY(int count READ itemCount NOTIFY currentChanged)             // 条目总数
@@ -87,12 +93,17 @@ public:
     void sequenceChanged();                  // 序列长进了
     Q_INVOKABLE void stepPage(int delta);    // ±1 屏（前进量由序列按版面算）
     Q_INVOKABLE void jump(int imageIndex);   // 跳到某一条（时间轴拖 / 浏览里选中）
+    Q_INVOKABLE void stepFolder(int delta);  // ★ 给 QML 的同一件事（`delta` = ±1）
 
     QImage imageA() const { return m_imageA; }
     QImage imageB() const { return m_imageB; }      // 单幅 / 坏的空位：空图
     int  keyCount() const { return m_keyCount; }
     bool doublePage() const { return m_layout == app::Layout::Double; }
     void setDoublePage(bool on);                    // 换版面（保留当前位置，屏重算）
+    int  loopMode() const { return int(m_loop); }
+    void setLoopMode(int mode);                     // 写 = 换循环模式（不写盘；进沉浸视图回默认）
+    QString prevFolderName() const;
+    QString nextFolderName() const;
     bool loading() const { return m_loading; }
     int  cursor() const { return m_cursor; }        // 上屏那一屏的起点（写 = 跳转）
     void setCursor(int index) { jump(index); }
@@ -105,6 +116,7 @@ Q_SIGNALS:
     void imageAChanged();
     void imageBChanged();
     void doublePageChanged();
+    void loopModeChanged();
     void loadingChanged();
 
 private:
@@ -164,6 +176,16 @@ private:
     //   双幅那一对的位置由序列的**配对表**给（`pairStart` / `pairAt`），本类不自己算。
     int  screenStart(int item) const;
     QVector<int> screenItems(int start) const;
+    // ── 循环（到头怎么办）────────────────────────────────────────────────
+    //   三个值：**不循环**（到头就是到头）/ **全部循环**（末尾回开头）/ **文件夹循环**
+    //   （只在**当前这一条所在容器**的区间里环绕）。
+    //   ★ 循环**归本类**（`Sequence` 只描述序列）；判定**只看当前 index**（不按屏讨论）。
+    enum class Loop { None = 0, All = 1, Folder = 2 };
+    QPair<int, int> loopScope() const;          // 当前 index 所在容器的区间（O(1)，序列给）
+    bool inLoopScope(int item) const;           // 这一条在不在本次循环的区间里
+    int  lastScreenStart() const;               // 最后一屏的起点
+    int  wrapTarget(int dir) const;             // 文件夹循环的回绕目标（区间两端所在那屏）
+    QString folderNameAt(int target) const;     // 目标那一条所属容器的名字（空 = 没有）
     //   换一屏：**单幅** = 相邻一条；**双幅** = 问序列的配对表（+本对张数）。到头 ⇒ -1。
     //   ⇒ "±本对张数"的算术在序列的配对表里，本类只做"这次用一条还是用一对"的选择。
     int  nextScreen(int start, int dir) const;
@@ -195,6 +217,7 @@ private:
     QImage m_imageA, m_imageB;               // 上屏内容（坏的位置 / 没有第二个位置 = 空图）
     int    m_keyCount = 0;                   // 本屏位置数（1 或 2），无屏 = 0
     app::Layout m_layout = app::Layout::Single;   // ★ 版面 = 一份枚举（默认单幅）
+    Loop   m_loop = Loop::None;                   // ★ 循环模式（会话级；进沉浸视图回默认）
     bool   m_loading  = true;                // 界面浮层（只有 `updateLoading()` 会写）
 
     int m_f   = kStartForward;               // 前向条数

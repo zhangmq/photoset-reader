@@ -127,16 +127,120 @@ QVector<int> ViewerModel::screenItems(int start) const
     return m_seq->pairAt(start).members;
 }
 
-//   换一屏（`stepPage` 与"整屏坏 ⇒ 跳过"共用这一处）。
+// ★★ **换一屏 = 唯一的"换屏算术"**（`stepPage` 与"整屏坏 ⇒ 跳过"共用这一处）：
+//   先问序列要"相邻的那一屏"；到头（序列尽头 **或** 目标 index 出了本次循环的区间）
+//   再按循环模式回绕。判定**只看 index**（用户 2026-10-18："不需要按屏讨论问题，
+//   当前 index 是谁就以谁为准"）。
 int ViewerModel::nextScreen(int start, int dir) const
 {
     if (!m_seq) return -1;
     const int n = m_seq->count();
     if (n <= 0) return -1;
-    if (m_layout == app::Layout::Double)
-        return (dir > 0) ? m_seq->nextPairStart(start) : m_seq->prevPairStart(start);
-    if (dir > 0) return (start + 1 < n) ? start + 1 : -1;
-    return (start - 1 >= 0) ? start - 1 : -1;
+
+    int next = (m_layout == app::Layout::Double)
+                   ? ((dir > 0) ? m_seq->nextPairStart(start) : m_seq->prevPairStart(start))
+                   : ((dir > 0) ? ((start + 1 < n) ? start + 1 : -1)
+                                : ((start - 1 >= 0) ? start - 1 : -1));
+    //   文件夹循环：目标出了区间也算到头
+    if (next >= 0 && !inLoopScope(next)) next = -1;
+    if (next >= 0) return next;
+    if (m_loop == Loop::None) return -1;
+
+    const int target = (m_loop == Loop::All)
+                           ? ((dir > 0) ? 0 : lastScreenStart())
+                           : wrapTarget(dir);
+    if (target < 0 || screenStart(target) == start) return -1;   // 回绕到同一屏 ⇒ 当到头
+    return target;
+}
+
+//   ★ 循环的区间 = **当前那一条所在容器**的子树区间（O(1)，序列的 `ownerRange` 给）。
+QPair<int, int> ViewerModel::loopScope() const
+{
+    const int n = m_seq ? m_seq->count() : 0;
+    if (!m_seq || n <= 0) return { 0, 0 };
+    return m_seq->ownerRange(qBound(0, m_pos, n - 1));
+}
+
+bool ViewerModel::inLoopScope(int item) const
+{
+    if (m_loop != Loop::Folder) return true;        // 不循环 / 全部循环：整个序列都是区间
+    const QPair<int, int> r = loopScope();
+    return item >= r.first && item < r.first + r.second;
+}
+
+int ViewerModel::lastScreenStart() const
+{
+    const int n = m_seq ? m_seq->count() : 0;
+    if (n <= 0) return -1;
+    return screenStart(n - 1);
+}
+
+//   文件夹循环的回绕目标 = **区间里那一条**（第一条 / 最后一条）。
+//   ★ 回的是**条目**而不是屏起点：跨边界那一屏的起点可能落在区间外，
+//     若把 m_pos 落在那里，下一次"当前 index 所在容器"就会算到隔壁文件夹去。
+//     屏照旧由它派生（`screenStart(m_pos)`），区间外那一格留空。
+int ViewerModel::wrapTarget(int dir) const
+{
+    const QPair<int, int> r = loopScope();
+    if (r.second <= 0) return -1;
+    return (dir > 0) ? r.first : (r.first + r.second - 1);
+}
+
+QString ViewerModel::folderNameAt(int target) const
+{
+    if (!m_seq || target < 0 || target >= m_seq->count()) return QString();
+    return m_seq->at(target).folderLabel;           // 空 = "没有那个文件夹"（界面据此灰按钮）
+}
+
+QString ViewerModel::prevFolderName() const
+{
+    if (!m_seq || m_seq->count() <= 0) return QString();
+    const int cur = qBound(0, m_pos, m_seq->count() - 1);
+    int target = m_seq->prevContainerFirst(cur);
+    if (target < 0) {                               // 到头 ⇒ 按循环模式
+        if (m_loop == Loop::All)       target = qMax(0, m_seq->count() - 1);
+        else if (m_loop == Loop::Folder) target = loopScope().first;
+    }
+    return (target == cur) ? QString() : folderNameAt(target);
+}
+
+QString ViewerModel::nextFolderName() const
+{
+    if (!m_seq || m_seq->count() <= 0) return QString();
+    const int cur = qBound(0, m_pos, m_seq->count() - 1);
+    int target = m_seq->nextContainerFirst(cur);
+    if (target < 0) {
+        if (m_loop == Loop::All)       target = 0;
+        else if (m_loop == Loop::Folder) target = loopScope().first;
+    }
+    return (target == cur) ? QString() : folderNameAt(target);
+}
+
+//   跳相邻容器的第一条（到头按循环模式；`delta` = ±1）
+void ViewerModel::stepFolder(int delta)
+{
+    if (!m_seq || m_seq->count() <= 0) return judge();
+    const int cur = qBound(0, m_pos, m_seq->count() - 1);
+    int target = (delta > 0) ? m_seq->nextContainerFirst(cur) : m_seq->prevContainerFirst(cur);
+    if (target < 0) {
+        if (m_loop == Loop::All)         target = (delta > 0) ? 0 : qMax(0, m_seq->count() - 1);
+        else if (m_loop == Loop::Folder) target = loopScope().first;
+        else return judge();                        // 不循环：到头（按钮本来就是灰的）
+    }
+    if (target == cur) return judge();
+    act(target, 0);
+}
+
+//   换循环模式：会话级、不写盘；**只重判一次**（不重置份额）。
+void ViewerModel::setLoopMode(int mode)
+{
+    const Loop want = (mode == int(Loop::All))    ? Loop::All
+                    : (mode == int(Loop::Folder)) ? Loop::Folder
+                                                  : Loop::None;
+    if (m_loop == want) return;
+    m_loop = want;
+    emit loopModeChanged();
+    judge();
 }
 
 // 这一条在不在当前屏上（淘汰槽位时不离手）。
@@ -225,28 +329,34 @@ void ViewerModel::dispatch()
     const int n = m_seq->count();
     if (n <= 0) return;
 
-    //   要的条目 = **本屏的位置** + 本屏之外的那 L 条（从**屏外第一条**起数：+1..+f 与 −1..−(L−f)）；
-    //   最近方向那一侧的条目排在前面。
+    //   要的条目 = **本屏的位置** + 顺着"下一屏 / 上一屏"各走 f / b 屏（最近方向那侧在前）。
+    //   ★★ **不按下标加减硬算**（用户 2026-10-15 定的 L38）：每一步都过 `nextScreen`
+    //      ⇒ 开了循环就**跟着绕回开头**（到末尾附近时，开头的条目也在队列里）。
     const QVector<int> items = screenItems(screenStart(m_pos));
     if (items.isEmpty()) return;
     const int start = items.first();
-    const int size  = qMax(1, items.size());
 
     const int f = m_f;
     const int b = m_length - f;
     QVector<int> want;
     want.reserve(m_length + 2);
     want << items;                                   // 本屏（1 或 2 个位置）
-    if (m_dir > 0) {
-        for (int k = 0; k < f; ++k) want << start + size + k;
-        for (int k = 1; k <= b; ++k) want << start - k;
-    } else {
-        for (int k = 1; k <= b; ++k) want << start - k;
-        for (int k = 0; k < f; ++k) want << start + size + k;
-    }
+    const auto walk = [&](int dir, int steps) {
+        int cur = start;
+        for (int k = 0; k < steps; ++k) {
+            cur = nextScreen(cur, dir);
+            if (cur < 0) return;
+            const QVector<int> its = screenItems(cur);
+            if (its.isEmpty()) return;
+            want << its;
+        }
+    };
+    if (m_dir > 0) { walk(+1, f); walk(-1, b); }
+    else           { walk(-1, b); walk(+1, f); }
 
     for (int i : want) {
         if (i < 0 || i >= n) continue;                  // 没有这一条
+        if (!inLoopScope(i)) continue;                  // ★ 区间外 ⇒ 不派活（留空，不白解码）
         if (isBad(i)) continue;                         // 已知是坏的 ⇒ 跳过（**永不重派**）
         if (slotOf(i) >= 0) continue;                   // 已在等 / 已备好 ⇒ 跳过
 
@@ -268,6 +378,7 @@ void ViewerModel::dispatch()
 QImage ViewerModel::imageOf(int item) const
 {
     if (item < 0) return QImage();
+    if (!inLoopScope(item)) return QImage();         // ★ 区间外 ⇒ **留空**（不是坏，只是本次不显示）
     const int s = slotOf(item);
     if (s < 0 || m_slots[s].state != Slot::State::Ready) return QImage();
     return m_slots[s].image;
@@ -332,6 +443,7 @@ void ViewerModel::markBad(int item, Bad why)
 //   每一轮开头都更新一次浮层（`updateLoading()`）⇒ 所有返回路径都更新到，没有早退漏掉。
 void ViewerModel::judge()
 {
+    const int origin = screenStart(m_pos);     // 出发那一屏（跳过坏屏时"绕一圈回到它就停"）
     for (;;) {
         updateLoading();                       // 浮层按当前状态当场算（唯一更新入口）
         if (!m_seq || m_seq->count() <= 0) return;   // 还没有条目（扫描中 = 浮层显示，扫完 = 不显示）
@@ -349,8 +461,8 @@ void ViewerModel::judge()
                 return;
             }
             ++m_skipped;                       // 整屏坏 ⇒ 跳过（按当前方向）
-            const int next = nextScreen(start, m_dir);      // 跳过也按当前方向换屏（不绕圈）
-            if (next < 0) {
+            const int next = nextScreen(start, m_dir);      // 跳过也按当前方向换屏
+            if (next < 0 || next == origin) {               // 到头 / 绕一圈回到出发那屏 ⇒ 停
                 qInfo().noquote() << QStringLiteral("[viewer] 本屏（起点 %1）是坏的，且后面没有了"
                                                     "（累计跳过 %2）")
                                          .arg(start).arg(m_skipped);
@@ -379,6 +491,7 @@ void ViewerModel::scanScreen(const QVector<int> &items, bool &settled, bool &any
     settled  = true;
     anyReady = false;
     for (int i : items) {
+        if (!inLoopScope(i)) continue;                   // 区间外：留空 = 有结论
         if (isBad(i)) continue;                          // 坏 = 有结论
         const int s = slotOf(i);
         if (s >= 0 && m_slots[s].state == Slot::State::Ready) { anyReady = true; continue; }

@@ -181,6 +181,9 @@ void UiModel::goTo(Screen s, bool push)
     if (s == m_screen) return;
     if (push) m_screenStack << m_screen;
     m_screen = s;
+    // ★ 循环模式**不持久化**（设计 01 §3.6）：**每次进入沉浸视图回到默认（不循环）**。
+    //   （换来源自然是新的 viewer ⇒ 也是默认。）
+    if (s == Screen::Viewer && m_src.vm) m_src.vm->setLoopMode(0);
     // ★ T2c-2b-1：**离开浏览 / 查看 ⇒ 释放显示槽**（设计 14 §9.3）——
     //   图集查看 = 从磁盘读出的只读快照（重开＝读一次行）；会话来源 = 停 + 销毁。
     if (s == Screen::Library) releaseDisplaySlot();
