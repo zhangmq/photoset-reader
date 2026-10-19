@@ -176,9 +176,18 @@ UiModel::~UiModel()
 //     （拿它当下标用就是"打开第 N 行显示错图"那一类静默 bug）。
 //     ⇒ T2d-1b：这些**按浏览行号解释**的动作（`activate / open / isContainerRow`）与
 //       查行一起归 `app::BrowseModel`（QML 的 `ui.browse`）—— 行语义只有一处实现。
+//   ★ **离开查看屏 ⇒ 先停播**（用户 2026-10-19）：幻灯片是会话级状态，模型可能还活着
+//     （退到浏览屏时它还要用同一条会话序列）⇒ 不显式停，它会在后台一直翻。
+//     真正的"销毁整个 ViewerModel"发生在离开**这个来源**时（落到库屏 / 换来源 ⇒ `teardownViewer`）。
+void UiModel::stopPlaybackLeavingViewer()
+{
+    if (m_screen == Screen::Viewer && m_src.vm) m_src.vm->setPlaying(false);
+}
+
 void UiModel::goTo(Screen s, bool push)
 {
     if (s == m_screen) return;
+    stopPlaybackLeavingViewer();
     if (push) m_screenStack << m_screen;
     m_screen = s;
     // ★ 循环模式**不持久化**（设计 01 §3.6）：**每次进入沉浸视图回到默认（不循环）**。
@@ -195,6 +204,7 @@ void UiModel::goLibrary()
     // [返回图集库] / [home]：**清屏栈**直接回（back() 才是一级一级退）
     m_screenStack.clear();
     if (m_screen == Screen::Library) return;
+    stopPlaybackLeavingViewer();
     m_screen = Screen::Library;
     releaseDisplaySlot();                       // ★ 离开浏览/查看 ⇒ 释放显示槽
     emit screenChanged();
@@ -202,6 +212,7 @@ void UiModel::goLibrary()
 
 void UiModel::back()
 {
+    stopPlaybackLeavingViewer();                // ★ 离开查看屏 ⇒ 先停播
     if (m_screenStack.isEmpty()) {
         if (m_screen == Screen::Library) return;
         m_screen = Screen::Library;
@@ -465,6 +476,7 @@ void UiModel::releaseNow(Source &s)
 //   · 与 `releaseLater` 的区别：这里**不等事件循环**。
 void UiModel::teardownViewer()
 {
+    if (m_src.vm) m_src.vm->setPlaying(false);   // ★ 先停止，再销毁整个 viewer
     if (!m_src.vm && !m_src.seq) return;
     Source old = m_src;
     m_src = Source{};

@@ -339,6 +339,8 @@ private:
     // 同步拆掉当前 viewer 组（**core 接下来要销毁序列之前必须调**；`~ViewerModel` 不 join，
     //   解码线程只拿一份条目信息的副本 ⇒ 拆完立刻返回）
     void teardownViewer();
+    //   离开查看屏 ⇒ 先停播（幻灯片是会话级状态；模型可能还活着，浏览屏要用同一条序列）
+    void stopPlaybackLeavingViewer();
     // 用 **core 给的序列**（非拥有）建一组 viewer；序列生命周期归 core
     fetch::ViewerModel *installCoreViewer(Sequence *seq);
     // 建"图集查看"这一组：core 快照 → 收尾（pump 一次）→ 落到 `chain/page`
