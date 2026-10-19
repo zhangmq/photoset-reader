@@ -185,7 +185,20 @@ private:
     bool inLoopScope(int item) const;           // 这一条在不在本次循环的区间里
     int  lastScreenStart() const;               // 最后一屏的起点
     int  wrapTarget(int dir) const;             // 文件夹循环的回绕目标（区间两端所在那屏）
-    QString folderNameAt(int target) const;     // 目标那一条所属容器的名字（空 = 没有）
+    // ★★ **上一个 / 下一个文件夹**（用户 2026-10-19 定案；**规则在本类**，序列只给事实表）：
+    //   · 候选 = 序列的容器区间表（根不在里面）；**包含当前 index 的容器距离 ≤ 0 ⇒ 排除**
+    //     （你正躺在它里面 —— 所以"在深层"与"在上层"候选集合不同，这是**看当前状态**的判定）；
+    //   · 下一个 = `first_index > 当前 index` 里**最近**的（first 最小的）；
+    //     上一个 = `last_index < 当前 index` 里**最近**的（last 最大的）；
+    //   · **距离并列**（同一个 first / 同一个 last ⇒ 只可能是嵌套链）⇒ 取**最上层**那个
+    //     （`level` 最小的）—— 名字与落点都取它；
+    //   · 落点 = 那个容器的**第一条图**（双幅由配对表锚定到含它的那一屏）；
+    //   · 名字 = 那个容器**自己**的 `label`（单段，不取落点那条图的 `folderLabel`）。
+    //   返回**容器节点下标**；-1 = 到头（不循环 / 区间外）。
+    int  adjacentFolderNode(int dir) const;     // dir > 0 = 下一个，< 0 = 上一个
+    int  edgeFolderNode(int dir) const;         // 全部循环的回绕：第一个 / 最后一个容器
+    QString currentFolderName() const;          // 当前这一条所属容器的名字（空 = 根上）
+    QString folderNameOfNode(int node) const;   // 容器自己的名字
     //   换一屏：**单幅** = 相邻一条；**双幅** = 问序列的配对表（+本对张数）。到头 ⇒ -1。
     //   ⇒ "±本对张数"的算术在序列的配对表里，本类只做"这次用一条还是用一对"的选择。
     int  nextScreen(int start, int dir) const;

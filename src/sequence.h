@@ -282,12 +282,22 @@ public:
     int   prevPairStart(int index) const;
 
     // ── ②b 容器（文件树节点）查询 ──
-    // ★★ **相邻容器**（上一 / 下一文件夹）：按 `firstIndex` 排的**相邻那一行** —— 走
-    //   `m_containerFirsts`（容器扫完时按序追加的那张表）**二分查找**，O(log 容器数)；
-    //   与库里那条 `WHERE first_index > ? ORDER BY first_index LIMIT 1` **同一份数据、同一语义**。
-    //   （两处都不再"搜全树"。）
-    int nextContainerFirst(int index) const;
-    int prevContainerFirst(int index) const;
+    // ★★ **容器的区间表**（**事实**，序列唯一对外的那份；用户 2026-10-19 定案）：
+    //   · 一项 = 一个容器：`node`（树节点下标）/ `first` / `last`（它子树覆盖的**图的
+    //     index** 闭区间）/ `level`（层数，越小越靠外）；
+    //   · **根不算**（它不是文件夹，且区间覆盖整条序列 ⇒ 永远不是"上/下一个"的候选）；
+    //   · **空容器不算**（没有图 ⇒ 不是元素，L40）；
+    //   · 次序 = 按 `(first, level)` 升序（阅读顺序；**并列 = 嵌套链，最上层在前**）；
+    //     扫描/恢复期间随容器收尾增量重建（脏了就重排一次，读的时候才付）。
+    //   ⚠️ 这里**只摆事实**：谁是"上一个 / 下一个文件夹"是**视图**的规则（要看当前在哪），
+    //      序列是静态的、不知道当前 index ⇒ 那个判定在 `ViewerModel` 里做。
+    struct Container {
+        int node  = -1;      // 树节点下标（名字取它自己的 `label`）
+        int first = -1;      // 子树第一条图的 index
+        int last  = -1;      // 子树最后一条图的 index
+        int level = 0;       // 层数（0 = 根那一层；越小越靠外）
+    };
+    const QVector<Container> &containers() const;
     //   ★★ **子树记录**（L41；语义的**唯一事实源**就是这两行）：
     //     · `subtreeFirst(node)` = 该节点子树里**第一条真图**的下标；**没有图 ⇒ -1**；
     //     · `subtreeCount(node)` = 该节点子树里**真图的条数**；没有 ⇒ 0。
@@ -310,7 +320,7 @@ public:
     //     `fetch::Window::childrenOf`）；而 `fetch::Window::ancestorsOf` 给的是**祖先链**
     //     （层不是元素）⇒ **不过**判定条件（见设计 12 §8.7.1）。
     //   ⚠️ 未扫完的节点**不是元素**（⇒ 不出现在任何枚举里），但它的**记录是"当前已知值"** ——
-    //      供 `ownerRange` / `prev·nextContainerFirst` 这类**内部查询**用（扫描期间 OSD 就能用）。
+    //      供 `ownerRange` / `containers()` 这类查询用（扫描期间 OSD 就能用）。
     bool isElement(int node) const;
     // ★★ **这一条所在容器的子树区间** = {第一条图的 index, 图条数}，**O(1)**：
     //   条目并入时就记下了它**直接所属**的那一层容器（`Item::parentNode`），
@@ -490,13 +500,12 @@ private:
     QVector<char> m_nodeClosed;
     QVector<int>  m_openStack;
     QVector<int>  m_chainBuf;                // `syncOpenChain` 的复用缓冲（不参与值语义）
-    // ★★ **容器起点表**：容器**扫完那一刻**在 `writeBoundaryRange` 里追加（DFS 收尾序）。
-    //   ⚠️ 收尾序**不是**起点升序（祖先可能比它的后代**晚**收尾）⇒ 查询前按需排一次
-    //   （`ensureContainerFirstsSorted`，一次改动只排一次）；"上一 / 下一文件夹"= 在这上面二分。
+    // ★★ **容器区间表**（对外事实，见 `containers()`）：容器**扫完那一刻**在
+    //   `writeBoundaryRange` 里增量重建（脏了就重排一次 —— 读的时候才付）。
     //   `resetNodeRecords`（重排）/ `resetRows` 时清空重建。
-    mutable QVector<int> m_containerFirsts;
-    mutable bool          m_containerFirstsDirty = true;
-    void ensureContainerFirstsSorted() const;    // 脏了就排一次（O(k log k)）
+    mutable QVector<Container> m_containers;
+    mutable bool               m_containersDirty = true;
+    void ensureContainers() const;               // 脏了就重建 + 排序（O(k log k)）
     QVector<Row>      m_rows;
     // ★★ 扫描参数（**调用方经 `startScan` / `restore` 传入** —— 序列不读设置）
     ScanOptions       m_scanOptions;

@@ -538,26 +538,51 @@ void Sequence::writeBoundaryRange(int node)
     Row &r = m_rows[*it];
     r.firstIndex = first;
     r.lastIndex  = first + cnt - 1;
-    //   ★ 顺手进**容器起点表**（上一/下一文件夹就在它上面二分）。收尾序不是起点升序 ⇒ 置脏，
-    //     查询前按需排一次（`ensureContainerFirstsSorted`）。
-    m_containerFirsts << first;
-    m_containerFirstsDirty = true;
+    //   ★ 顺手把**容器区间表**置脏（对外那份事实；`containers()` 读的时候才重建）。
+    m_containersDirty = true;
 }
 
-//   容器起点升序（脏了才排；同一批改动只付一次 O(k log k)）
-void Sequence::ensureContainerFirstsSorted() const
+// ★★ 容器区间表（**事实**）：从树 + 子树记录重建一次，按 `(first, level)` 升序
+//   —— 并列（同一个 first）只可能是嵌套链，最上层在前。
+//   根不算（它不是文件夹，区间覆盖整条序列）；空容器不算（L40：没有图就不是元素）。
+void Sequence::ensureContainers() const
 {
-    if (!m_containerFirstsDirty) return;
-    std::sort(m_containerFirsts.begin(), m_containerFirsts.end());
-    m_containerFirstsDirty = false;
+    if (!m_containersDirty) return;
+    m_containers.clear();
+    m_containers.reserve(m_tree.size());
+    for (int i = 0; i < m_tree.size(); ++i) {
+        if (m_tree.at(i).parent < 0) continue;            // 根不算（它不是文件夹）
+        if (!isElement(i)) continue;                      // L40 唯一判定：**扫完且子树里有图**
+        const int first = m_subFirst.at(i);
+        const int cnt   = m_subCount.at(i);
+        Container c;
+        c.node  = i;
+        c.first = first;
+        c.last  = first + cnt - 1;
+        c.level = m_tree.at(i).level;
+        m_containers << c;
+    }
+    std::sort(m_containers.begin(), m_containers.end(),
+              [](const Container &a, const Container &b) {
+                  if (a.first != b.first) return a.first < b.first;
+                  if (a.level != b.level) return a.level < b.level;   // 并列 ⇒ 最上层在前
+                  return a.last > b.last;                             // 保险：区间大的在前
+              });
+    m_containersDirty = false;
+}
+
+const QVector<Sequence::Container> &Sequence::containers() const
+{
+    ensureContainers();
+    return m_containers;
 }
 
 // 清记录（**只有"重排同一批条目"才用**：`sortNaturally` 会把 `m_items` 整个重并一遍 ⇒
 //   必须先把记录清零，否则沿链累加会**重复计数**）。扫完标志 / 打开链不属于记录，不动。
 void Sequence::resetNodeRecords()
 {
-    m_containerFirsts.clear();               // 起点表是"并入序的产物" ⇒ 重排要重建
-    m_containerFirstsDirty = true;
+    m_containers.clear();                    // 区间表是"并入序的产物" ⇒ 重排要重建
+    m_containersDirty = true;
     for (TreeNode &n : m_tree) { n.firstItem = 0; n.lastOwn = -1; n.itemCount = 0; }
     for (int i = 0; i < m_subFirst.size(); ++i) m_subFirst[i] = -1;
     for (int i = 0; i < m_subCount.size(); ++i) m_subCount[i] = 0;
@@ -671,26 +696,6 @@ QPair<int, int> Sequence::ownerRange(int index) const
     const int cnt   = subtreeCount(node);
     if (first < 0 || cnt <= 0) return { 0, count() };     // 记录还没长出来 ⇒ 当作整条序列
     return { first, cnt };
-}
-
-// ★★ 相邻容器（上一 / 下一文件夹）= 容器起点表上的**相邻那一项**（二分，O(log 容器数)）：
-//   · `nextContainerFirst(i)` = 起点**严格大于 i** 的第一个（`upper_bound`）；
-//   · `prevContainerFirst(i)` = **当前这一条所在容器的起点之前**的那个（`lower_bound` 退一格）。
-//   与库里那条 `WHERE first_index > ? ORDER BY first_index LIMIT 1` 是同一份数据、同一语义。
-int Sequence::nextContainerFirst(int index) const
-{
-    ensureContainerFirstsSorted();
-    const auto it = std::upper_bound(m_containerFirsts.cbegin(), m_containerFirsts.cend(), index);
-    return (it == m_containerFirsts.cend()) ? -1 : *it;
-}
-
-int Sequence::prevContainerFirst(int index) const
-{
-    ensureContainerFirstsSorted();
-    const int cur = ownerRange(index).first;          // 当前这一条所在容器的起点
-    const auto it = std::lower_bound(m_containerFirsts.cbegin(), m_containerFirsts.cend(), cur);
-    if (it == m_containerFirsts.cbegin()) return -1;
-    return *(it - 1);
 }
 
 // ══ 直接条目（**不是连续区间**，见头文件）══════════════════════════════
@@ -926,10 +931,10 @@ void Sequence::initRoot(bool hasTree, Kind root, const QString &rootLabel)
     rootNode.level = 0;
     rootNode.ord = -1;
     const int ri = addTreeNode(rootNode);
-    //   ★ 根也是容器（它的区间 = 整条序列），但它**没有行**（`writeBoundaryRange` 那条路
-    //     只对"有行的容器"生效）⇒ 起点在这里单独补进容器起点表。
-    m_containerFirsts << 0;
-    m_containerFirstsDirty = true;
+    //   ★ 根也是容器（它的区间 = 整条序列），但它**不进容器区间表**（`containers()`）：
+    //     它不是"文件夹"，而且区间覆盖整条序列 ⇒ 永远不可能是"上/下一个文件夹"的候选
+    //     （用户 2026-10-19）。
+
     // ★ 根是**第一行所属节点的祖先**（其实是它自己）⇒ 它就是那条打开链的链首。
     //   根到扫描结束才扫完（L40：根也是目录 / 压缩包，按同一条判定条件走）。
     m_openStack.clear();
