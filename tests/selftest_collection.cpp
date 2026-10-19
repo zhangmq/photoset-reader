@@ -380,10 +380,14 @@ static int runCollectionSelfTest()
     // ④ resume（**label 链 + 页号**，不是下标、不是拼串）
     //   ★ 2026-10-18：阅读版面的"字符串 ↔ 模式"翻译函数已删 —— 版面就是 `app::Layout`
     //     一份枚举（库里存它的值），这里不再有可测的映射。
-    check(src.indexOfChain({ QStringLiteral("p2.png") }, 0) == 2
-              && src.indexOfChain({ QStringLiteral("p0.png") }, 0) == 0
-              && src.indexOfChain({ QStringLiteral("nope.png") }, 0) == -1,
-          QStringLiteral("④ resume 存 label 链 ⇒ 沿链 walk 拿回下标（找不到 = -1）"));
+    //   ★ 2026-10-19：顺序 = **名称序先根遍历** ⇒ 容器与图**同序**排（`book.tar` / `outer.tar`
+    //     排在 `p*.png` 之前），所以 `p0.png` 不再是下标 0（期望值随顺序一起改）。
+    const int i0 = src.indexOfChain({ QStringLiteral("p0.png") }, 0);
+    const int i2 = src.indexOfChain({ QStringLiteral("p2.png") }, 0);
+    check(i0 == 6 && i2 == 8 && src.indexOfChain({ QStringLiteral("nope.png") }, 0) == -1,
+          QStringLiteral("④ resume 存 label 链 ⇒ 沿链 walk 拿回下标（找不到 = -1；"
+                         "p0.png = %1、p2.png = %2）").arg(i0).arg(i2));
+
     //   链是**结构化编码**（JSON 数组）：编解码往返 + 嵌套链也能命中
     {
         const QStringList chain = src.chainAt(src.indexOfChain({ QStringLiteral("p1.png") }, 0));

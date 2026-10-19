@@ -183,8 +183,13 @@ public:
         int     parent = -1;     // 父节点下标（-1 = 根）
         int     level = 0;
         int     ord = -1;        // 遍历序号（与叶子共用）
-        int     firstItem = 0;   // 它的**直接**条目区间 [firstItem, +itemCount)
-        int     itemCount = 0;
+        //   ★★ **直接条目** = 这一层自己产出的图（子容器的另算）—— **不是连续区间**：
+        //     遍历是**先根**（`A.jpg, A/, B.jpg, B/`）⇒ 自己的图会被子容器**切开**，
+        //     所以"直接条目"是一条**链**：`firstItem` = 链头、`lastOwn` = 链尾（续链用），
+        //     中间由 `Sequence::m_ownNext` 串联（同父的下一条）。取它走 `directItems()`。
+        int     firstItem = 0;   // 链头：第一条**直接**条目（下标进 `m_items`）
+        int     lastOwn = -1;    // 链尾：最后一条**直接**条目（-1 = 还没有）
+        int     itemCount = 0;   // **直接**条目数
     };
 
     // 一次要图的答复（**序列算，调用方只收下**）
@@ -312,6 +317,13 @@ public:
     //   该节点的子树区间是并入时沿祖先链维护的 ⇒ 两者都是查表。
     //   ⇒ 循环（文件夹循环）的区间用它，**不搜全树**；直接挂在根上 ⇒ 整条序列。
     QPair<int, int> ownerRange(int index) const;
+
+    // ★★ **一个节点的"直接条目"**（按序列顺序，下标进 `m_items`）—— **不是连续区间**：
+    //   遍历是**先根** ⇒ 容器自己的图会被它的子容器切开（`A.jpg, A/, B.jpg, B/` 里
+    //   `A.jpg` 与 `B.jpg` 都是**根**的直接条目，中间夹着两个子容器的子树）。
+    //   实现 = `TreeNode::firstItem/lastOwn` + `m_ownNext` 串成的链 ⇒ O(自己那几条)。
+    //   `node < 0`（没有树：单张图 / 多页文件根）⇒ 整条序列。
+    void directItems(int node, QVector<int> *out) const;
 
     // ── ②c **身份链**（v5 resume 用）─────────────────────────────
     //   链 = 从根往下、每层容器在它容器里的名字；**页行不含自己的名字**（label 为空）
@@ -461,6 +473,10 @@ private:
 
     QVector<Item>     m_items;
     QVector<TreeNode> m_tree;
+    // ★★ **直接条目的链**（与 `m_items` 等长：每条目 → **同父**的下一条直接条目；-1 = 末尾）：
+    //   先根遍历下"一个节点的直接图"**不再连续**（会被子容器切开）⇒ 用这条链取，
+    //   写入点只有 `appendItem` 一处（链头/链尾记在 `TreeNode::firstItem/lastOwn`）。
+    QVector<int>      m_ownNext;
     // ★★ **子树记录**（`m_tree` 的**并行数组**；**只由 `appendItem` 沿祖先链写**）：
     //   `m_subFirst[i]` = 含全部后代的**第一条真图**下标（**-1 = 还没有图**）；
     //   `m_subCount[i]` = 含全部后代的**真图条数**。

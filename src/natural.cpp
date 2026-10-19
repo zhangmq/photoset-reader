@@ -43,3 +43,8 @@ bool isImageSuffix(const QString &suffix)
     };
     return exts.contains(suffix.toLower());
 }
+
+QString nameSortKey(const QString &name, bool isDir)
+{
+    return isDir ? name + QLatin1Char('/') : name;
+}

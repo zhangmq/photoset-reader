@@ -6,6 +6,8 @@
 #include <QLocale>
 #include <QVariantMap>
 
+#include <algorithm>
+
 namespace fetch {
 
 // 浏览的一层：**唯一一份实现**（`app::BrowseModel` 每次换层 / 序列变了 / 游标变了就向它取一次）。
@@ -67,11 +69,16 @@ BrowseLayer browseLayerOf(const Sequence &seq, int node, int cursor)
         //   压缩包容器：封面 = **包内第 0 页**（`thumbzip` 不带成员就是第 0 页，设计 11 §5.2）；
         //   文件夹没有"封面"这回事 ⇒ 保持空（界面显示文件夹字形）。
         if (n.kind == Sequence::Kind::Archive && n.itemCount > 0) {
-            const Sequence::Item &first = seq.at(n.firstItem);
-            if (first.loc.members.isEmpty())
-                r.thumb = thumbUrlForFile(first.loc.diskPath);
-            else if (first.loc.members.size() == 1)
-                r.thumb = thumbUrlForArchiveMember(first.loc.diskPath, first.loc.members.first());
+            QVector<int> own;                          // 直接条目 = 链（不是连续区间）
+            seq.directItems(nodeIndex, &own);
+            if (!own.isEmpty()) {
+                const Sequence::Item &first = seq.at(own.first());
+                if (first.loc.members.isEmpty())
+                    r.thumb = thumbUrlForFile(first.loc.diskPath);
+                else if (first.loc.members.size() == 1)
+                    r.thumb = thumbUrlForArchiveMember(first.loc.diskPath,
+                                                       first.loc.members.first());
+            }
         }
         out.rows << r;
     };
@@ -79,14 +86,30 @@ BrowseLayer browseLayerOf(const Sequence &seq, int node, int cursor)
     if (bnode < 0) {                                  // 没有树（单张图等）⇒ 整条序列当一层
         for (int i = 0; i < seq.count(); ++i) addImage(i);
     } else {
-        const Sequence::TreeNode &n = tree.at(bnode);
-        for (int i = n.firstItem; i < n.firstItem + n.itemCount && i < seq.count(); ++i)
-            addImage(i);                              // ① 本层的**图**（自然序）
-        // ② 本层的**子容器**（扫描顺序 = 自然序）—— ★ **只有元素才成为行**（L40）：
-        //    空目录 / 无图压缩包 / 不受支持的压缩包 / **自己那一支还没扫完**的目录都不出现
-        //    （判定条件只有 `Sequence::isElement()` 一份实现；这里只调它，不另写一遍）。
+        // ★★ 这一层的行 = **自己的条目 + 直接子容器**，按 `ord`（= 序列顺序 = 先根遍历序）排。
+        //   ⇒ 图集常见的"上层放对应文件夹的封面图"就落在它那个文件夹的**前一行**。
+        //   ⚠️ **不能**再假设"自己的图是连续区间"：先根遍历下它们被子容器切开。
+        struct LayerRow {
+            int ord = -1;
+            int itemIndex = -1;                        // ≥ 0 = 自己的条目
+            int nodeIndex = -1;                        // ≥ 0 = 直接子容器
+        };
+        QVector<LayerRow> merged;
+        QVector<int> own;
+        seq.directItems(bnode, &own);
+        for (int k : own) merged << LayerRow{ seq.at(k).ord, k, -1 };
+        // 子容器—— ★ **只有元素才成为行**（L40）：空目录 / 无图压缩包 / 不受支持的压缩包 /
+        //   **自己那一支还没扫完**的目录都不出现（判定条件只有 `Sequence::isElement()`
+        //   一份实现；这里只调它，不另写一遍）。
         for (int i = 0; i < tree.size(); ++i)
-            if (tree.at(i).parent == bnode && seq.isElement(i)) addNode(i);
+            if (tree.at(i).parent == bnode && seq.isElement(i))
+                merged << LayerRow{ tree.at(i).ord, -1, i };
+        std::stable_sort(merged.begin(), merged.end(),
+                         [](const LayerRow &a, const LayerRow &b) { return a.ord < b.ord; });
+        for (const LayerRow &lr : merged) {
+            if (lr.itemIndex >= 0) addImage(lr.itemIndex);
+            else                   addNode(lr.nodeIndex);
+        }
     }
 
     // 高亮行 = 当前层里含"当前条目"的那一行（**派生**；唯一一处）

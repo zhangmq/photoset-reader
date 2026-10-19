@@ -189,16 +189,19 @@ static int runScanSelfTest()
     check(scanMs < 5000, QStringLiteral("① 符号链接环：整体扫描在合理时间内结束（%1 ms）").arg(scanMs));
 
     QStringList ks = pathsOf(cidS);
+    //   ★ 2026-10-19 用户定案：遍历 = **名称序先根遍历**（preorder DFS）—— 同层按名称排、
+    //     **图片与子目录同序**，遇到子目录**当场下钻**（不是"先出完这一层的图再看下一层"）。
     const QStringList expectedS = {
-        QStringLiteral("p1.png"), QStringLiteral("p2.png"), QStringLiteral("p10.png"),
         QStringLiteral("deep/l1/l2/l3/deep.png"), QStringLiteral("loop/li.png"),
+        QStringLiteral("p1.png"), QStringLiteral("p2.png"), QStringLiteral("p10.png"),
         QStringLiteral("sub/q1.png"), QStringLiteral("sub/q2.png"),
     };
     check(ks.size() == 7 && nodeCountOf(cidS) == 8,
           QStringLiteral("① 条目数 = 7、容器节点 = 8（实际 %1 / %2）")
               .arg(ks.size()).arg(nodeCountOf(cidS)));
-    check(ks == expectedS, QStringLiteral("① 顺序 = **一次遍历**（深度优先 + 同级自然排序）：%1")
-                               .arg(ks.join(QLatin1Char(','))));
+    check(ks == expectedS,
+          QStringLiteral("① 顺序 = **名称序先根遍历**（同层同序 + 遇到目录当场下钻）：%1")
+              .arg(ks.join(QLatin1Char(','))));
     check(!ks.contains(QStringLiteral(".hidden/h.png"))
               && !ks.contains(QStringLiteral(".hiddenfile.png")),
           QStringLiteral("① 隐藏目录 / 隐藏文件默认不扫（scanHidden=false）"));
