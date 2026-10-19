@@ -39,8 +39,10 @@ Item {
         { icon: root.intervalIsPreset ? "" : Theme.icCheck,
           text: "自定义（" + root.intervalMs + " ms）", selected: !root.intervalIsPreset },
         { sep: true },
-        { text: "加速", icon: Theme.icPlus,  keepOpen: true },   // 可连点（不关菜单）
-        { text: "减速", icon: Theme.icMinus, keepOpen: true }
+        //   ★ 这两行**不带 +/− 图标**（用户 2026-10-19：文本前带图标容易看反方向）；
+        //     `keepOpen` = 点了不关菜单，可以连点
+        { text: "加速", keepOpen: true },
+        { text: "减速", keepOpen: true }
     ]
     property int    fitMode: 1            // 0=原始 1=适应屏幕 2=适应宽度 3=适应高度
     property bool   doublePage: false     // 阅读版面：单幅 / 双幅
@@ -257,8 +259,9 @@ Item {
                     //   ★ 行序 = 数组序（分隔线也算一行）：预设 × n ｜ 自定义 ｜ 加速 ｜ 减速
                     //     —— 用**数组长度**定位末尾两项、用**预设个数**定位前缀，
                     //     不再写死下标（写死下标会随分隔线 / 档位增减而错位）。
-                    if (i === root.intervalItems.length - 2)      root.intervalStep(+10)     // 加速
-                    else if (i === root.intervalItems.length - 1) root.intervalStep(-10)     // 减速
+                    //   ★ 加速 = **间隔变小**（播得更快）；减速 = 间隔变大
+                    if (i === root.intervalItems.length - 2)      root.intervalStep(-10)     // 加速
+                    else if (i === root.intervalItems.length - 1) root.intervalStep(+10)     // 减速
                     else if (i < root.intervalPresets.length)     root.intervalSelected(root.intervalPresets[i])
                     // 其余（自定义行）不改值：当前值本身就是自定义值
                 }
