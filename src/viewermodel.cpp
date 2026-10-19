@@ -436,24 +436,27 @@ void ViewerModel::stopPlaying(const QString &noticeText)
 
 void ViewerModel::setPlaying(bool on)
 {
-    if (m_playing == on) return;
-    if (on) {
-        if (!m_seq || m_seq->count() <= 0) return;
-        //   已经在最后一屏（不循环 / 区间到头）⇒ **不回到开头**，只给"到头"的瞬时提示
-        if (nextScreen(screenStart(m_pos), +1) < 0) {
-            emit notice(QStringLiteral("到头"));
-            return;
-        }
-        m_playing = true;
-        m_want = Want::None;
-        m_wantArg = 0;
-        m_pendingAdvance = false;
-        m_reqAt = nowMs();
-        emit playingChanged();
-        armBeat();
+    if (!on) {
+        //   ★ 任何一次 `setPlaying(false)` 都**先清闹钟**（不管当时是不是在播放）
+        //     —— 不依赖"闹钟只在播放态存在"这条不变量。
+        cancelBeat();
+        if (m_playing) stopPlaying(QString());
         return;
     }
-    stopPlaying(QString());
+    if (m_playing) return;
+    if (!m_seq || m_seq->count() <= 0) return;
+    //   已经在最后一屏（不循环 / 区间到头）⇒ **不回到开头**，只给"到头"的瞬时提示
+    if (nextScreen(screenStart(m_pos), +1) < 0) {
+        emit notice(QStringLiteral("到头"));
+        return;
+    }
+    m_playing = true;
+    m_want = Want::None;
+    m_wantArg = 0;
+    m_pendingAdvance = false;
+    m_reqAt = nowMs();
+    emit playingChanged();
+    armBeat();
 }
 
 void ViewerModel::togglePlaying()
