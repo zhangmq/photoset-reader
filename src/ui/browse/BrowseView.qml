@@ -12,6 +12,15 @@ import ImageBrowser
 //       role 名与界面既有词表一致：name / sizeText / resText / kind / missing / thumb / depth）
 Item {
     id: root
+    //   ★ 键盘面：只有**当前这一屏**取焦点（三屏共存时不让隐藏屏抢走焦点）
+    focus: ui.screen === UiModel.Browse
+    //   ★ 全局键（三屏通用）：`Esc` = **退出全屏**（同 LibraryView：只处理"没人处理的" `Esc`）
+    Keys.onPressed: function (event) {
+        if (event.key === Qt.Key_Escape) {
+            ui.windowFullscreen = false
+            event.accepted = true
+        }
+    }
 
     // 语义状态一律在 ViewModel（设计 11 §二）；这里只是**绑定**，不存第二份
     property bool gridMode: ui.browseGrid         // 网格或列表

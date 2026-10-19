@@ -12,6 +12,16 @@ import ImageBrowser
 // 仍是纯 UI 的部分：过滤与排序**尚未接数据源**（信号发出、无人接收）。
 Item {
     id: root
+    //   ★ 键盘面：只有**当前这一屏**取焦点（三屏共存时不让隐藏屏抢走焦点）
+    focus: ui.screen === UiModel.Library
+    //   ★ 全局键（三屏通用）：`Esc` = **退出全屏**。键事件从焦点项沿父链上冒 ⇒
+    //     菜单 / 对话框 / 输入框自己处理 `Esc` 时**轮不到这里**（不会互相抢）。
+    Keys.onPressed: function (event) {
+        if (event.key === Qt.Key_Escape) {
+            ui.windowFullscreen = false
+            event.accepted = true
+        }
+    }
 
     property string sortKey: "lastViewed"      // name | added | lastViewed
     property bool   sortAsc: false
