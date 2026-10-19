@@ -180,7 +180,9 @@ PopupPanel {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         console.log("[probe] PopupMenu 鼠标点击 index=" + row.index)
-                        root.close()
+                        // ★ 行可带 `keepOpen`（例：切换速度里的「加速 / 减速」—— 可以连点）
+                        if (!(modelData && modelData.keepOpen))
+                            root.close()
                         root.itemTriggered(row.index)
                     }
                 }

@@ -2,8 +2,19 @@
 
 #include <QDebug>
 #include <QMetaObject>
+#include <QTimer>
+
+#include <chrono>
 
 namespace fetch {
+
+//   ★ 生产的时间源 = **单调时钟**（`steady_clock`）：系统时间跳变不影响节拍；
+//     自检可以 `setNowFn` 注入虚拟时钟（节奏精确验证，不靠真实 sleep）。
+static qint64 steadyNowMs()
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
 // ══ 构造 / 析构 ═════════════════════════════════════════════════════════════
 //   `prefetchLength` = 预取长度 L（两个方向的条数相加）。
@@ -14,6 +25,13 @@ ViewerModel::ViewerModel(int prefetchLength, QObject *parent)
 {
     m_poster->target = this;
     resetShare();                    // 起始：f = 6（夹到 [1, L−1]）、方向为正
+    m_now = steadyNowMs;
+    //   ★ 单发闹钟：只负责"到点叫醒"。**不是节拍器** —— 节奏由单调时钟算
+    //     （`到期 = 请求时刻 + 间隔`），所以默认精度够用（Qt 定时器只会晚到、不会早到）。
+    m_beat = new QTimer(this);
+    m_beat->setSingleShot(true);
+    m_beat->setTimerType(Qt::CoarseTimer);
+    connect(m_beat, &QTimer::timeout, this, &ViewerModel::onBeat);
 }
 
 //   **不 join 工作线程**（join 会把退出拖住几百毫秒）：**不加锁**地置失效记号 + 置空目标
@@ -263,6 +281,7 @@ void ViewerModel::stepFolder(int delta)
 {
     if (!m_seq || m_seq->count() <= 0) return judge();
     if (m_loop == Loop::Folder) return judge();     // ★ 文件夹内循环：不许切文件夹
+    if (m_playing) return foldOrRun(Want::Folder, (delta > 0) ? +1 : -1);
     int node = adjacentFolderNode(delta);
     if (node < 0) {
         if (m_loop == Loop::All) node = edgeFolderNode(delta);
@@ -293,6 +312,167 @@ bool ViewerModel::onScreen(int item) const
     return items.contains(item);
 }
 
+// ══ 幻灯片（规则见设计 13 §九·补·二）═══════════════════════════════════════
+//
+//   两种等待**必须分开**：
+//     · **等闹钟**：本屏已就位，节拍在计时 —— 能响应；
+//     · **等缓存**：本屏还没上屏 —— 不能响应。
+//   节奏：`到期 = 请求时刻 + 间隔`（**间隔是下限**，准备耗时吃掉间隔）⇒ 不堆积、不跳页。
+//   推进等待位 = **一个 bool**：到点但还在等缓存 ⇒ 置位、**且不挂闹钟**（忙碌期不存在闹钟）。
+//   折叠器 = **一个槽**：等缓存期间的进度事件按类型覆盖成一条最终意图，上屏那一刻执行一次；
+//   任何事件进折叠器 ⇒ **立刻清掉推进等待位**（用户意图优先）。
+
+bool ViewerModel::waitingForCache() const
+{
+    if (!m_seq || m_seq->count() <= 0) return true;
+    bool settled = false, anyReady = false;
+    scanScreen(screenItems(screenStart(m_pos)), settled, anyReady);
+    return !settled;                    // 本屏还没结论（既没备好、也不是坏）
+}
+
+void ViewerModel::cancelBeat()
+{
+    if (m_beat) m_beat->stop();
+}
+
+//   挂/重挂闹钟：剩余按**请求时刻**算（不是"上次到期"）⇒ 耗时自然吃掉间隔。
+//   ★ 等缓存期间**不挂**（不变量）；上屏那一刻会再来挂。
+void ViewerModel::armBeat()
+{
+    if (!m_playing || waitingForCache()) return;
+    const qint64 remain = qMax<qint64>(0, m_reqAt + m_intervalMs - nowMs());
+    m_beat->start(int(remain));
+}
+
+//   闹钟到点：**不预存目标**，一律按当时状态计算。
+void ViewerModel::onBeat()
+{
+    if (!m_playing) return;
+    if (waitingForCache()) {            // 这一次不推进 ⇒ 置推进等待位；不挂闹钟
+        m_pendingAdvance = true;
+        return;
+    }
+    const int next = nextScreen(screenStart(m_pos), +1);
+    if (next < 0) return stopPlaying(QStringLiteral("到头 · 幻灯片已停"));   // 与手动下一张一致
+    requestScreen(next, +1);
+}
+
+//   上屏那一刻（唯一上屏点 `screen()` 里调）：① 折叠器 ② 推进等待位 ③ 挂闹钟。
+void ViewerModel::onScreenUp()
+{
+    if (!m_playing) return;
+    if (m_want != Want::None) {         // ① 用户意图优先
+        const Want w = m_want;
+        const int arg = m_wantArg;
+        m_want = Want::None;
+        m_wantArg = 0;
+        return runWanted(w, arg, /*folded=*/true);
+    }
+    if (m_pendingAdvance) {             // ② 幻灯片的推进补做
+        m_pendingAdvance = false;
+        return onBeat();
+    }
+    armBeat();                          // ③ 直接挂闹钟
+}
+
+//   进度事件的统一入口（只在播放态调用）。
+void ViewerModel::foldOrRun(Want w, int arg)
+{
+    if (waitingForCache()) {            // 等缓存 ⇒ 折叠器（一个槽，后到覆盖先到）
+        m_want = w;
+        m_wantArg = arg;
+        m_pendingAdvance = false;       // ★ 用户意图进来 ⇒ 幻灯片这次推进作废
+        return;
+    }
+    cancelBeat();                       // 等闹钟 ⇒ 取消旧闹钟 → 执行 → 从这一刻重挂
+    runWanted(w, arg, /*folded=*/false);
+    armBeat();                          // 动作没换屏（例如到头）时兜住节拍；换屏那条已在 onScreenUp 挂过
+}
+
+void ViewerModel::runWanted(Want w, int arg, bool folded)
+{
+    if (!m_seq || m_seq->count() <= 0) return;
+    switch (w) {
+    case Want::Step: {
+        const int next = nextScreen(screenStart(m_pos), arg);
+        if (next < 0) {                 // 到头：折起来的那一次给个瞬时提示
+            if (folded) emit notice(QStringLiteral("到头"));
+            return;
+        }
+        return requestScreen(next, arg);
+    }
+    case Want::Jump:
+        return requestScreen(qBound(0, arg, m_seq->count() - 1), 0);
+    case Want::Folder: {
+        const int node = adjacentFolderNode(arg);
+        if (node < 0) return;
+        const int target = m_seq->subtreeFirst(node);
+        if (target < 0) return;
+        return requestScreen(target, 0);
+    }
+    case Want::None:
+        return;
+    }
+}
+
+//   换屏 + 记下**请求时刻**（计时起点 = 这次"成为当前屏"的动作被请求的时刻）。
+void ViewerModel::requestScreen(int target, int stepDir)
+{
+    m_reqAt = nowMs();
+    act(target, stepDir);               // 就位 ⇒ judge → screen（里面的 onScreenUp 会挂闹钟）
+}
+
+void ViewerModel::stopPlaying(const QString &noticeText)
+{
+    if (!m_playing) return;
+    m_playing = false;
+    cancelBeat();
+    m_want = Want::None;
+    m_wantArg = 0;
+    m_pendingAdvance = false;
+    emit playingChanged();
+    if (!noticeText.isEmpty()) emit notice(noticeText);
+}
+
+void ViewerModel::setPlaying(bool on)
+{
+    if (m_playing == on) return;
+    if (on) {
+        if (!m_seq || m_seq->count() <= 0) return;
+        //   已经在最后一屏（不循环 / 区间到头）⇒ **不回到开头**，只给"到头"的瞬时提示
+        if (nextScreen(screenStart(m_pos), +1) < 0) {
+            emit notice(QStringLiteral("到头"));
+            return;
+        }
+        m_playing = true;
+        m_want = Want::None;
+        m_wantArg = 0;
+        m_pendingAdvance = false;
+        m_reqAt = nowMs();
+        emit playingChanged();
+        armBeat();
+        return;
+    }
+    stopPlaying(QString());
+}
+
+void ViewerModel::togglePlaying()
+{
+    setPlaying(!m_playing);
+}
+
+//   改间隔：**立即生效** —— 取消旧闹钟，按当时请求时刻用新间隔重算。
+void ViewerModel::setIntervalMs(int ms)
+{
+    const int want = qMax(50, ms);
+    if (m_intervalMs == want) return;
+    m_intervalMs = want;
+    if (m_playing) {
+        cancelBeat();
+        armBeat();
+    }
+}
+
 // ══ 每个动作（stepPage / jump / 换版面）═════════════════════════════════════
 //   就三件：改位置 → 当场判 → 就位就上屏、没就位就派活再等。
 //   不做排队：一切走主线程正常的 Qt 事件逻辑，一次按键事件处理一次。
@@ -304,13 +484,17 @@ void ViewerModel::stepPage(int delta)
 {
     if (!m_seq) return judge();
     if (m_seq->count() <= 0) return judge();
-    const int start = screenStart(m_pos);
+    const int dir = (delta > 0) ? +1 : -1;
 
+    //   ★ 幻灯片：走"等闹钟 ⇒ 立刻执行 / 等缓存 ⇒ 进折叠器"（设计 13 §九·补·二 21–24）。
+    if (m_playing) return foldOrRun(Want::Step, dir);
+
+    //   ── 不播放：维持现状（本屏还没结论 ⇒ 这次按键丢掉）──
+    const int start = screenStart(m_pos);
     bool settled = false, anyReady = false;
     scanScreen(screenItems(start), settled, anyReady);
     if (!settled) return;                     // 本屏还没结论 ⇒ 这次按键丢掉
 
-    const int dir = (delta > 0) ? +1 : -1;
     const int next = nextScreen(start, dir);      // 到头 ⇒ -1（位置不动）
     if (next < 0) return judge();
     act(next, dir);
@@ -321,6 +505,7 @@ void ViewerModel::jump(int imageIndex)
     if (!m_seq) return judge();
     const int n = m_seq->count();
     if (n <= 0) return judge();
+    if (m_playing) return foldOrRun(Want::Jump, qBound(0, imageIndex, n - 1));
     act(qBound(0, imageIndex, n - 1), 0);     // 跳转 ⇒ 份额回到起始
 }
 
@@ -333,6 +518,12 @@ void ViewerModel::setDoublePage(bool on)
     m_layout = want;
     resetShare();
     emit doublePageChanged();
+    //   ★ 幻灯片：换版面**不停播**（设计 13 §九·补·二 28）：取消旧闹钟，按"这一刻"重新计时；
+    //     上屏那一刻会重挂（等缓存期间不挂）。
+    if (m_playing) {
+        cancelBeat();
+        m_reqAt = nowMs();
+    }
     judge();
 }
 
@@ -555,6 +746,7 @@ void ViewerModel::screen(int start, const QVector<int> &items)
     emit imageAChanged();
     emit imageBChanged();
     emit currentChanged();
+    onScreenUp();                             // ★ 幻灯片：上屏那一刻（唯一写点就在这里）
 }
 
 //   loading（界面浮层）的**唯一写点**，当场按当前状态算：

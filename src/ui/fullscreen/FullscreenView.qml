@@ -243,6 +243,8 @@ Item {
         fitMode: ui.fitMode
         doublePage: ui.viewer ? ui.viewer.doublePage : false
         loopMode: ui.viewer ? ui.viewer.loopMode : 0
+        playing: ui.viewer ? ui.viewer.playing : false
+        intervalMs: ui.slideshowIntervalMs
         prevFolderName: ui.viewer ? ui.viewer.prevFolderName : ""
         nextFolderName: ui.viewer ? ui.viewer.nextFolderName : ""
         zoomLocked: ui.zoomLocked
@@ -254,6 +256,9 @@ Item {
         onFitModeSelected: function (m) { ui.fitMode = m }
         onDoublePageSelected: function (on) { if (ui.viewer) ui.viewer.doublePage = on }
         onLoopModeSelected: function (m) { if (ui.viewer) ui.viewer.loopMode = m }
+        onPlayToggled: { if (ui.viewer) ui.viewer.togglePlaying() }
+        onIntervalSelected: function (ms) { ui.slideshowIntervalMs = ms }
+        onIntervalStep: function (d) { ui.slideshowIntervalMs = ui.slideshowIntervalMs + d }
         onPrevFolderRequested: { if (ui.viewer) ui.viewer.stepFolder(-1) }
         onNextFolderRequested: { if (ui.viewer) ui.viewer.stepFolder(1) }
         onZoomLockToggled: ui.zoomLocked = !ui.zoomLocked
@@ -316,6 +321,12 @@ Item {
         case Qt.Key_PageDown:    if (ui.viewer) ui.viewer.stepPage(1)
                                  event.accepted = true; break
         // ── 用户已确认的那几个（设计 08 §三）──
+        case Qt.Key_Space:       if (ui.viewer) ui.viewer.togglePlaying()
+                                 event.accepted = true; break
+        case Qt.Key_BracketLeft: ui.slideshowIntervalMs = ui.slideshowIntervalMs - 10
+                                 event.accepted = true; break
+        case Qt.Key_BracketRight: ui.slideshowIntervalMs = ui.slideshowIntervalMs + 10
+                                 event.accepted = true; break
         case Qt.Key_I:           ui.toggleOsd();             event.accepted = true; break
         case Qt.Key_Plus:
         case Qt.Key_Equal:       ui.zoom = Math.min(16, ui.zoom * 1.1)

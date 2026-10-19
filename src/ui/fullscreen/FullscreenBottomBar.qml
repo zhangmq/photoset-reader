@@ -245,8 +245,8 @@ Item {
                     { sep: true },
                     { text: "自定义（" + root.intervalMs + " ms）", selected: !root.intervalIsPreset },
                     { sep: true },
-                    { text: "加速", icon: Theme.icPlus },
-                    { text: "减速", icon: Theme.icMinus }
+                    { text: "加速", icon: Theme.icPlus,  keepOpen: true },   // 可连点（不关菜单）
+                    { text: "减速", icon: Theme.icMinus, keepOpen: true }
                 ]
                 onItemTriggered: function (i) {
                     if (i < 6)              root.intervalSelected(root.intervalPresets[i])

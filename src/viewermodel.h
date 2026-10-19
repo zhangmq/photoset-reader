@@ -52,8 +52,11 @@
 #include <QObject>
 #include <QVector>
 
+#include <functional>
 #include <memory>
 #include <thread>
+
+class QTimer;
 
 #include "appsettings.h"   // ★ app::Layout：阅读版面 = 一份枚举（本类只"持有并投影"，不定义）
 #include "sequence.h"
@@ -77,6 +80,8 @@ class ViewerModel : public QObject
     Q_PROPERTY(QString prevFolderName READ prevFolderName NOTIFY currentChanged)
     Q_PROPERTY(QString nextFolderName READ nextFolderName NOTIFY currentChanged)
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
+    //   ★ 幻灯片（13 §九·补·二）：`playing` **只是一个状态**（没有幻灯片对象）
+    Q_PROPERTY(bool playing READ playing WRITE setPlaying NOTIFY playingChanged)
     Q_PROPERTY(int cursor READ cursor WRITE setCursor NOTIFY currentChanged)  // 写 = 跳转；= 本屏起点
     Q_PROPERTY(int count READ itemCount NOTIFY currentChanged)             // 条目总数
     Q_PROPERTY(int totalPages READ totalPages NOTIFY currentChanged)       // = count（口径不变：按条目）
@@ -94,6 +99,18 @@ public:
     Q_INVOKABLE void stepPage(int delta);    // ±1 屏（前进量由序列按版面算）
     Q_INVOKABLE void jump(int imageIndex);   // 跳到某一条（时间轴拖 / 浏览里选中）
     Q_INVOKABLE void stepFolder(int delta);  // ★ 给 QML 的同一件事（`delta` = ±1）
+    Q_INVOKABLE void togglePlaying();        // ★ 幻灯片：播放 ⇄ 暂停（`Space` / ⏯）
+
+    // ── 幻灯片（规则见设计 13 §九·补·二）────────────────────────────────
+    //   ★ 没有幻灯片对象：只有 `playing` 一个状态 + 一个**单发闹钟**（只报时）+
+    //     一个**推进等待位**（一个 bool）+ 一个**折叠器**（等缓存期间的进度事件，一个槽）。
+    //   ★ 节奏一律由**单调时钟**算：`到期 = 请求时刻 + 间隔`（间隔是下限，准备耗时吃掉间隔）。
+    bool playing() const { return m_playing; }
+    void setPlaying(bool on);
+    int  intervalMs() const { return m_intervalMs; }
+    void setIntervalMs(int ms);                              // 由上层从设置下发
+    using NowFn = std::function<qint64()>;                   // 时间源（自检注入虚拟时钟）
+    void setNowFn(NowFn fn) { m_now = std::move(fn); }
 
     QImage imageA() const { return m_imageA; }
     QImage imageB() const { return m_imageB; }      // 单幅 / 坏的空位：空图
@@ -118,6 +135,9 @@ Q_SIGNALS:
     void doublePageChanged();
     void loopModeChanged();
     void loadingChanged();
+    void playingChanged();
+    //   瞬时提示（幻灯片到头）。上层（`UiModel`）转发到 `UiModel::notify`。
+    void notice(const QString &text);
 
 private:
     //   槽位 = { 它在等哪一条 / 状态 / 备好时那张图 }。空槽 = `item < 0`。
@@ -236,6 +256,31 @@ private:
 
     int m_f   = kStartForward;               // 前向条数
     int m_dir = +1;                          // 最近方向（+1 / −1）
+
+    // ── 幻灯片（13 §九·补·二）────────────────────────────────────────────
+    //   两种等待必须分开：**等闹钟**（本屏已就位，能响应）/ **等缓存**（本屏还没上屏，不能响应）。
+    //   进度事件（翻页 / 跳转 / 上一·下一文件夹）在等闹钟时**立刻执行**，
+    //   在等缓存时进**折叠器**（一个槽，后到覆盖先到，上屏那一刻执行一次）。
+    enum class Want { None, Step, Jump, Folder };   // 折叠器里的那条"最终意图"
+    bool    waitingForCache() const;          // 现算：本屏还没结论（= 等缓存）
+    void    onBeat();                         // 闹钟到点（按**当时**状态计算）
+    void    onScreenUp();                     // 上屏那一刻（在 `screen()` 里调）
+    void    foldOrRun(Want w, int arg);       // 进度事件的统一入口（播放态）
+    void    runWanted(Want w, int arg, bool folded);
+    void    requestScreen(int target, int stepDir);   // 换屏 + 记下"请求时刻"
+    void    armBeat();                        // 挂/重挂闹钟（等缓存时不挂）
+    void    cancelBeat();
+    void    stopPlaying(const QString &noticeText);   // 停播（到头）
+    qint64  nowMs() const { return m_now ? m_now() : 0; }
+
+    bool     m_playing = false;               // ★ 只是一个状态（没有幻灯片对象）
+    int      m_intervalMs = 300;              // 间隔（下层只收上层下发的值）
+    QTimer  *m_beat = nullptr;                // 单发闹钟（只负责"到点叫醒"，不参与节奏）
+    NowFn    m_now;                           // 单调时钟（可注入；生产在构造里装）
+    qint64   m_reqAt = 0;                     // 上一次"成为当前屏"的动作**被请求**的时刻
+    bool     m_pendingAdvance = false;        // 推进等待位（一个 bool；忙碌期只有一个）
+    Want     m_want = Want::None;             // 折叠器（一个槽）
+    int      m_wantArg = 0;
 };
 
 } // namespace fetch

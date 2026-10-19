@@ -528,6 +528,9 @@ void UiModel::installViewer(Source s)
     // 换画面 ⇒ 复位手势态（`zoomLocked` 时保留）。复位动作归 ui ⇒ QML 里不再有那段逻辑
     connect(s.vm, &fetch::ViewerModel::imageAChanged, this, &UiModel::resetView);
     connect(s.vm, &fetch::ViewerModel::imageBChanged, this, &UiModel::resetView);
+    // ★ 幻灯片：间隔由上层（设置）下发；到头等瞬时提示由上层转发到 `notify`
+    s.vm->setIntervalMs(m_settings.intervalMs());
+    connect(s.vm, &fetch::ViewerModel::notice, this, &UiModel::notify);
     // 阅读位置：游标变化 400ms 去抖（5s 兜底在 m_resumeFallback）；
     //   ★ 同一处把"当前条目"告诉浏览模型（高亮行 = **派生**自它，浏览不读 viewer）。
     connect(s.vm, &fetch::ViewerModel::currentChanged, this, [this] {
@@ -678,6 +681,8 @@ void UiModel::setSlideshowIntervalMs(int ms)
 {
     const int v = qMax(50, ms);                 // 下限 50ms（与 AppSettings 同一条）
     if (m_settings.intervalMs() != v) m_settings.setIntervalMs(v);
+    //   ★ 立刻下发（幻灯片用新参数继续：取消旧闹钟、按当时请求时刻重算）
+    if (m_src.vm) m_src.vm->setIntervalMs(v);
     emit slideshowIntervalMsChanged();
 }
 
