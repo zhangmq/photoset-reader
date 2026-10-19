@@ -316,10 +316,9 @@ Item {
     Keys.onPressed: function (event) {
         switch (event.key) {
         case Qt.Key_Backspace:   root.backRequested();       event.accepted = true; break
-        //   ★ `Esc`：**播放中**等同 `Space`（暂停）；否则**退出全屏**
+        //   ★ `Esc` = **退出全屏**（播放中也一样）；暂停**只由 `Space`** 负责
         //     （返回键已改为 `Backspace`；全屏切换的最终口径未定，这里先用 `Esc` 临时承担）
-        case Qt.Key_Escape:      if (ui.viewer && ui.viewer.playing) ui.viewer.togglePlaying()
-                                 else                              ui.windowFullscreen = false
+        case Qt.Key_Escape:      ui.windowFullscreen = false
                                  event.accepted = true; break
         case Qt.Key_Left:        if (ui.viewer) ui.viewer.stepPage(-1)
                                  event.accepted = true; break
