@@ -532,12 +532,26 @@ void Sequence::writeBoundaryRange(int node)
     Row &r = m_rows[*it];
     r.firstIndex = first;
     r.lastIndex  = first + cnt - 1;
+    //   ★ 顺手进**容器起点表**（上一/下一文件夹就在它上面二分）。收尾序不是起点升序 ⇒ 置脏，
+    //     查询前按需排一次（`ensureContainerFirstsSorted`）。
+    m_containerFirsts << first;
+    m_containerFirstsDirty = true;
+}
+
+//   容器起点升序（脏了才排；同一批改动只付一次 O(k log k)）
+void Sequence::ensureContainerFirstsSorted() const
+{
+    if (!m_containerFirstsDirty) return;
+    std::sort(m_containerFirsts.begin(), m_containerFirsts.end());
+    m_containerFirstsDirty = false;
 }
 
 // 清记录（**只有"重排同一批条目"才用**：`sortNaturally` 会把 `m_items` 整个重并一遍 ⇒
 //   必须先把记录清零，否则沿链累加会**重复计数**）。扫完标志 / 打开链不属于记录，不动。
 void Sequence::resetNodeRecords()
 {
+    m_containerFirsts.clear();               // 起点表是"并入序的产物" ⇒ 重排要重建
+    m_containerFirstsDirty = true;
     for (TreeNode &n : m_tree) { n.firstItem = 0; n.itemCount = 0; }
     for (int i = 0; i < m_subFirst.size(); ++i) m_subFirst[i] = -1;
     for (int i = 0; i < m_subCount.size(); ++i) m_subCount[i] = 0;
@@ -639,26 +653,9 @@ bool Sequence::isElement(int node) const
     return m_nodeClosed.at(node) != 0 && m_subCount.at(node) > 0;
 }
 
-int Sequence::containerOf(int index) const
-{
-    if (index < 0 || index >= count()) return -1;
-    int best = -1, bestFirst = -1;
-    for (int i = 0; i < m_tree.size(); ++i) {
-        const int first = subtreeFirst(i);
-        const int cnt = subtreeCount(i);
-        if (index < first || index >= first + cnt) continue;
-        if (first > bestFirst) { best = i; bestFirst = first; }
-    }
-    return best;
-}
-
-QPair<int, int> Sequence::containerRange(int index) const
-{
-    const int node = containerOf(index);
-    if (node < 0) return { 0, count() };
-    return { subtreeFirst(node), subtreeCount(node) };
-}
-
+// ★★ **这一条所在容器的子树区间** = {第一条图的 index, 图条数}，**O(1)**：
+//   条目并入时就记下了它**直接所属**的那一层容器（`Item::parentNode`），该节点的子树区间
+//   是并入时沿祖先链维护的 ⇒ 两者都是查表。⇒ 循环（文件夹循环）的区间也用它，**不搜全树**。
 QPair<int, int> Sequence::ownerRange(int index) const
 {
     if (index < 0 || index >= m_items.size()) return { 0, count() };
@@ -670,29 +667,26 @@ QPair<int, int> Sequence::ownerRange(int index) const
     return { first, cnt };
 }
 
+// ★★ 相邻容器（上一 / 下一文件夹）= 容器起点表上的**相邻那一项**（二分，O(log 容器数)）：
+//   · `nextContainerFirst(i)` = 起点**严格大于 i** 的第一个（`upper_bound`）；
+//   · `prevContainerFirst(i)` = **当前这一条所在容器的起点之前**的那个（`lower_bound` 退一格）。
+//   与库里那条 `WHERE first_index > ? ORDER BY first_index LIMIT 1` 是同一份数据、同一语义。
 int Sequence::nextContainerFirst(int index) const
 {
-    int best = -1, bestFirst = INT_MAX;
-    for (int i = 0; i < m_tree.size(); ++i) {
-        const int first = subtreeFirst(i);
-        if (first <= index) continue;
-        if (first < bestFirst) { bestFirst = first; best = i; }
-    }
-    return best < 0 ? -1 : bestFirst;
+    ensureContainerFirstsSorted();
+    const auto it = std::upper_bound(m_containerFirsts.cbegin(), m_containerFirsts.cend(), index);
+    return (it == m_containerFirsts.cend()) ? -1 : *it;
 }
 
 int Sequence::prevContainerFirst(int index) const
 {
-    const int node = containerOf(index);
-    const int cur = (node < 0) ? 0 : subtreeFirst(node);
-    int best = -1;
-    for (int i = 0; i < m_tree.size(); ++i) {
-        const int first = subtreeFirst(i);
-        if (first >= cur) continue;
-        if (first > best) best = first;
-    }
-    return best;
+    ensureContainerFirstsSorted();
+    const int cur = ownerRange(index).first;          // 当前这一条所在容器的起点
+    const auto it = std::lower_bound(m_containerFirsts.cbegin(), m_containerFirsts.cend(), cur);
+    if (it == m_containerFirsts.cbegin()) return -1;
+    return *(it - 1);
 }
+
 
 // ══ 身份链（v5 resume）════════════════════════════════════════════════
 
@@ -910,6 +904,10 @@ void Sequence::initRoot(bool hasTree, Kind root, const QString &rootLabel)
     rootNode.level = 0;
     rootNode.ord = -1;
     const int ri = addTreeNode(rootNode);
+    //   ★ 根也是容器（它的区间 = 整条序列），但它**没有行**（`writeBoundaryRange` 那条路
+    //     只对"有行的容器"生效）⇒ 起点在这里单独补进容器起点表。
+    m_containerFirsts << 0;
+    m_containerFirstsDirty = true;
     // ★ 根是**第一行所属节点的祖先**（其实是它自己）⇒ 它就是那条打开链的链首。
     //   根到扫描结束才扫完（L40：根也是目录 / 压缩包，按同一条判定条件走）。
     m_openStack.clear();

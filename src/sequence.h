@@ -277,7 +277,10 @@ public:
     int   prevPairStart(int index) const;
 
     // ── ②b 容器（文件树节点）查询 ──
-    int containerOf(int index) const;
+    // ★★ **相邻容器**（上一 / 下一文件夹）：按 `firstIndex` 排的**相邻那一行** —— 走
+    //   `m_containerFirsts`（容器扫完时按序追加的那张表）**二分查找**，O(log 容器数)；
+    //   与库里那条 `WHERE first_index > ? ORDER BY first_index LIMIT 1` **同一份数据、同一语义**。
+    //   （两处都不再"搜全树"。）
     int nextContainerFirst(int index) const;
     int prevContainerFirst(int index) const;
     //   ★★ **子树记录**（L41；语义的**唯一事实源**就是这两行）：
@@ -302,9 +305,8 @@ public:
     //     `fetch::Window::childrenOf`）；而 `fetch::Window::ancestorsOf` 给的是**祖先链**
     //     （层不是元素）⇒ **不过**判定条件（见设计 12 §8.7.1）。
     //   ⚠️ 未扫完的节点**不是元素**（⇒ 不出现在任何枚举里），但它的**记录是"当前已知值"** ——
-    //      供 `containerOf` / `prev·nextContainerFirst` 这类**内部查询**用（扫描期间 OSD 就能用）。
+    //      供 `ownerRange` / `prev·nextContainerFirst` 这类**内部查询**用（扫描期间 OSD 就能用）。
     bool isElement(int node) const;
-    QPair<int, int> containerRange(int index) const;
     // ★★ **这一条所在容器的子树区间** = {第一条图的 index, 图条数}，**O(1)**：
     //   条目并入时就记下了它**直接所属**的那一层容器（`Item::parentNode`），
     //   该节点的子树区间是并入时沿祖先链维护的 ⇒ 两者都是查表。
@@ -472,6 +474,13 @@ private:
     QVector<char> m_nodeClosed;
     QVector<int>  m_openStack;
     QVector<int>  m_chainBuf;                // `syncOpenChain` 的复用缓冲（不参与值语义）
+    // ★★ **容器起点表**：容器**扫完那一刻**在 `writeBoundaryRange` 里追加（DFS 收尾序）。
+    //   ⚠️ 收尾序**不是**起点升序（祖先可能比它的后代**晚**收尾）⇒ 查询前按需排一次
+    //   （`ensureContainerFirstsSorted`，一次改动只排一次）；"上一 / 下一文件夹"= 在这上面二分。
+    //   `resetNodeRecords`（重排）/ `resetRows` 时清空重建。
+    mutable QVector<int> m_containerFirsts;
+    mutable bool          m_containerFirstsDirty = true;
+    void ensureContainerFirstsSorted() const;    // 脏了就排一次（O(k log k)）
     QVector<Row>      m_rows;
     // ★★ 扫描参数（**调用方经 `startScan` / `restore` 传入** —— 序列不读设置）
     ScanOptions       m_scanOptions;
