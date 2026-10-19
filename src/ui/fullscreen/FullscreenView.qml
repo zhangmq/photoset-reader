@@ -292,6 +292,11 @@ Item {
     // ── 键盘（全屏是快捷键面）──
     //   ★ 方向键**不拦截自动重复**：Qt 的按键自动重复正常打进来，每个重复按键自然就是一次
     //     `stepPage(∓1)`。
+    //   ★ `↑ / ↓` = 上一个 / 下一个文件夹（设计 08 §三）。**按禁用状态走**：判定条件与底栏
+    //     那两个按钮**同一个**（名字为空 = 没有那个文件夹 ⇒ 按钮置灰）。所以：
+    //       · 到头（不循环）⇒ 名字空 ⇒ 快捷键也不动；
+    //       · **文件夹内循环** ⇒ 两个名字一律空 ⇒ 快捷键同样不许切文件夹；
+    //       · 这里**不要求** `overlaysVisible` —— 那是控件条的显隐，不是"能不能切"。
     focus: true
     Keys.onPressed: function (event) {
         switch (event.key) {
@@ -299,6 +304,12 @@ Item {
         case Qt.Key_Left:        if (ui.viewer) ui.viewer.stepPage(-1)
                                  event.accepted = true; break
         case Qt.Key_Right:       if (ui.viewer) ui.viewer.stepPage(1)
+                                 event.accepted = true; break
+        case Qt.Key_Up:          if (ui.viewer && ui.viewer.prevFolderName !== "")
+                                     ui.viewer.stepFolder(-1)
+                                 event.accepted = true; break
+        case Qt.Key_Down:        if (ui.viewer && ui.viewer.nextFolderName !== "")
+                                     ui.viewer.stepFolder(1)
                                  event.accepted = true; break
         case Qt.Key_PageUp:      if (ui.viewer) ui.viewer.stepPage(-1)
                                  event.accepted = true; break
