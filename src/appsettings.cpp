@@ -67,7 +67,6 @@ void AppSettings::load()
     m_scanHidden    = o.value(QStringLiteral("scanHidden")).toBool(m_scanHidden);
     m_recurseDepth  = qBound(1, o.value(QStringLiteral("recurseDepth")).toInt(m_recurseDepth), 64);
     m_prefetchWindow = qBound(3, o.value(QStringLiteral("prefetchWindow")).toInt(m_prefetchWindow), 64);
-    m_cacheMb       = qMax(64, o.value(QStringLiteral("cacheMb")).toInt(m_cacheMb));
     m_innerArchiveMaxMb = qBound(64, o.value(QStringLiteral("innerArchiveMaxMb"))
                                          .toInt(m_innerArchiveMaxMb), 8192);
 }
@@ -92,7 +91,6 @@ void AppSettings::save()
     o.insert(QStringLiteral("recurseDepth"), m_recurseDepth);
     o.insert(QStringLiteral("prefetchWindow"), m_prefetchWindow);
     o.insert(QStringLiteral("prefetchBatch"), m_prefetchBatch);
-    o.insert(QStringLiteral("cacheMb"), m_cacheMb);
     o.insert(QStringLiteral("innerArchiveMaxMb"), m_innerArchiveMaxMb);
 
     // 整文件全量写入（最后写的赢）

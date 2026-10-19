@@ -53,7 +53,6 @@ class GpuScalerItem : public QQuickRhiItem
     Q_PROPERTY(qreal mitchellB READ mitchellB WRITE setMitchellB NOTIFY paramsChanged)
     Q_PROPERTY(qreal mitchellC READ mitchellC WRITE setMitchellC NOTIFY paramsChanged)
     Q_PROPERTY(qreal antiring READ antiring WRITE setAntiring NOTIFY paramsChanged)
-    Q_PROPERTY(QString presetKey READ presetKey NOTIFY paramsChanged)
 
     Q_PROPERTY(QSize sourceSize READ sourceSize NOTIFY sourceChanged)
     Q_PROPERTY(QSize targetSize READ targetSize NOTIFY targetSizeChanged)
@@ -107,7 +106,6 @@ public:
     void setMitchellC(qreal c);
     qreal antiring() const { return m_params.antiring; }
     void setAntiring(qreal a);
-    QString presetKey() const;
 
     QSize sourceSize() const { return m_source.size(); }
     QSize targetSize() const { return m_plan.dst; }        // 设备像素
@@ -118,7 +116,6 @@ public:
     void setPlanForTest(const gpuscale::Plan &p) { m_plan = p; }
 
     // ── 便利入口（QML 可调）──
-    Q_INVOKABLE bool applyPreset(const QString &key);
     Q_INVOKABLE void resetView();                    // zoom=1、pan=0
     Q_INVOKABLE void zoomAt(qreal factor, qreal cx, qreal cy);   // 以 (cx,cy) 为锚点缩放（逻辑像素）
 

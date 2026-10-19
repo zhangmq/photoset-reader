@@ -2,33 +2,11 @@ import QtQuick
 import ImageBrowser
 
 // ══ 设置 · 图像页（**本文件自足：改这里不会影响别的页签**）══════
-//   项：缩放算法（**预设**）/ 缩放方式 / Lanczos 瓣数 / 抗振铃强度
-//   ★ 纪律：**参数才是真相，预设只是命名组合** ——
-//     预设表在 C++（`gpuscale::presets()`，唯一事实源），本页只显示"当前参数匹配到哪个预设"；
-//     参数不匹配任何预设时显示「自定义」（可用 CLI / 配置文件单独设参数）。
+//   项：缩放方式 / Lanczos 瓣数 / 抗振铃强度
+//   ★ 纪律：**参数才是真相**（2026-10-20 用户定案：画质预设已清，只留参数）。
 //   ★ 值一律**读写 ViewModel**；字符串 ↔ 枚举的映射只在 ViewModel（本页只做下标换算）
 Item {
     id: page
-
-    // 预设列表：读 `ui.scalerPreset` 建立依赖，参数一变就重算
-    readonly property var presetList: {
-        var cur = ui.scalerPreset
-        return ui.scalerPresetList()
-    }
-    readonly property string presetLabel: {
-        for (var i = 0; i < presetList.length; ++i)
-            if (presetList[i].key === ui.scalerPreset)
-                return presetList[i].label
-        return "自定义"
-    }
-    readonly property var presetMenu: {
-        var out = []
-        for (var i = 0; i < presetList.length; ++i)
-            out.push({ text: presetList[i].label, selected: presetList[i].selected })
-        out.push({ sep: true })
-        out.push({ text: "自定义（当前参数不匹配任何预设）", selected: ui.scalerPreset === "" })
-        return out
-    }
 
     readonly property var modeKeys: ["linear-light", "nearest", "qt-smooth"]
     readonly property var lobeValues: [2, 3, 4]
@@ -39,19 +17,6 @@ Item {
     Column {
         id: column
         width: parent.width
-
-        SettingsRow {
-            label: "缩放算法"
-            description: "一组预设参数；参数本身可在配置文件里单独调"
-            DropdownButton {
-                label: page.presetLabel
-                menuItems: page.presetMenu
-                onItemTriggered: function (i) {
-                    if (i < page.presetList.length)      // 分隔线与"自定义"不可选
-                        ui.applyScalerPreset(page.presetList[i].key)
-                }
-            }
-        }
 
         SettingsRow {
             label: "缩放方式"

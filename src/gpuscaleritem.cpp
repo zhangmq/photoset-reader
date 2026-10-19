@@ -256,21 +256,6 @@ void GpuScalerItem::setAntiring(qreal a)
     updatePlan();
 }
 
-QString GpuScalerItem::presetKey() const
-{
-    const gpuscale::Preset *p = gpuscale::presetFor(m_params);
-    return p ? QLatin1String(p->key) : QStringLiteral("custom");
-}
-
-bool GpuScalerItem::applyPreset(const QString &key)
-{
-    const gpuscale::Preset *p = gpuscale::presetByKey(key);
-    if (!p)
-        return false;
-    setParams(p->params);
-    return true;
-}
-
 void GpuScalerItem::resetView()
 {
     m_zoom = 1.0;
@@ -356,7 +341,7 @@ void GpuScalerItem::updatePlan()
                       .arg(m_plan.dst.width()).arg(m_plan.dst.height())
                       .arg(m_plan.full.width()).arg(m_plan.full.height())
                       .arg(QLatin1String(fitName(m_fit)))
-                      .arg(presetKey())
+                      .arg(QLatin1String(gpuscale::qualityName(m_params.quality)))
                       .arg(m_plan.offX || m_plan.offY
                                ? QStringLiteral(" · 窗(%1,%2)").arg(m_plan.offX).arg(m_plan.offY)
                                : QString()));

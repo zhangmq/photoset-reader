@@ -50,7 +50,6 @@ struct AppSettings
     int  prefetchWindow() const { return m_prefetchWindow; }
     int  prefetchBatch() const { return m_prefetchBatch; }      // 默认 4（一次一批的批大小 = 并发解码数）
                                                                 //   ★ 暂**不暴露到界面**（用户 2026-10-12）
-    int  cacheMb() const { return m_cacheMb; }                  // 默认 512
     // ★ v7：**内层压缩包上限**（MB）—— 超过上限的内层压缩包不展开（嵌套包不常见，
     //   避免为此付出大代价）。判定在**解压前**（从归档条目元数据取成员大小）。
     int  innerArchiveMaxMb() const { return m_innerArchiveMaxMb; }   // 默认 512，范围 64–8192
@@ -72,7 +71,6 @@ struct AppSettings
     void setRecurseDepth(int v) { m_recurseDepth = qBound(1, v, 64); save(); }
     void setPrefetchWindow(int v) { m_prefetchWindow = qBound(3, v, 64); save(); }
     void setPrefetchBatch(int v) { m_prefetchBatch = qBound(1, v, 32); save(); }
-    void setCacheMb(int v) { m_cacheMb = qMax(64, v); save(); }
     void setInnerArchiveMaxMb(int v) { m_innerArchiveMaxMb = qBound(64, v, 8192); save(); }
 
     QString filePath() const;
@@ -92,7 +90,6 @@ private:
     int  m_recurseDepth = 5;
     int  m_prefetchWindow = 8;
     int  m_prefetchBatch = 4;
-    int  m_cacheMb = 512;
     int  m_innerArchiveMaxMb = 512;     // ★ v7：内层压缩包上限（MB），范围 64–8192
 };
 

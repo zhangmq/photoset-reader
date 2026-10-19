@@ -49,7 +49,7 @@
 //   ## 会话级 vs 设置级
 //     · 会话级（不写入磁盘）：zoomLocked / zoom / panX / panY / osdVisible / overlaysVisible /
 //       windowFullscreen / browseGrid / inputFromKeyboard ⇒ 本类成员。
-//     · 设置级：themeMode / scanHidden / recurseDepth / prefetchWindow / cacheMb /
+//     · 设置级：themeMode / scanHidden / recurseDepth / prefetchWindow /
 //       scaler* ⇒ 读写本类持有的 `AppSettings`（`m_settings`），本类只发通知。
 //       `prefetchWindow`（预取长度 = viewer 的构造参数）、`scanHidden` / `recurseDepth`
 //       （等价于重扫）变化 ⇒ **重建 viewer**（会话态：位置带过去，"语义不变"）。
@@ -129,11 +129,10 @@ public:
     Q_PROPERTY(int  recurseDepth READ recurseDepth WRITE setRecurseDepth NOTIFY recurseDepthChanged)
     Q_PROPERTY(int  prefetchWindow READ prefetchWindow WRITE setPrefetchWindow
                                     NOTIFY prefetchWindowChanged)
-    Q_PROPERTY(int  cacheMb READ cacheMb WRITE setCacheMb NOTIFY cacheMbChanged)
     //   内层压缩包上限（MB）：超过上限的内层压缩包不展开（判定在解压前）
     Q_PROPERTY(int  innerArchiveMaxMb READ innerArchiveMaxMb WRITE setInnerArchiveMaxMb
                                        NOTIFY innerArchiveMaxMbChanged)
-    //   图像（缩放）——**参数才是真相**，预设只是命名组合（`gpuscale::presets()` 是唯一事实源）
+    //   图像（缩放）——**参数才是真相**（2026-10-20：画质预设已清，只留参数）
     Q_PROPERTY(QString scalerQuality READ scalerQuality WRITE setScalerQuality
                                       NOTIFY scalerQualityChanged)
     Q_PROPERTY(QString scalerMode READ scalerMode WRITE setScalerMode NOTIFY scalerModeChanged)
@@ -147,7 +146,6 @@ public:
     Q_PROPERTY(double scalerAntiring READ scalerAntiring WRITE setScalerAntiring
                                       NOTIFY scalerAntiringChanged)
     //   当前参数匹配到哪个预设（空串 = 自定义）—— **派生**，不存
-    Q_PROPERTY(QString scalerPreset READ scalerPreset NOTIFY scalerParamsChanged)
 
     // ── 幻灯片间隔（`AppSettings` 支撑）────────────────────────────────────
     //   设置项 `intervalMs` 的 QML 面（设置页读写 `ui.slideshowIntervalMs`）。
@@ -249,7 +247,6 @@ public:
     void setRecurseDepth(int v);
     int  prefetchWindow() const;
     void setPrefetchWindow(int v);
-    int  cacheMb() const;
     void setCacheMb(int v);
     //   ★ v7：内层压缩包上限（MB）—— 只影响**下一次展开**（正在看的那份序列不重建）
     int  innerArchiveMaxMb() const;
@@ -268,9 +265,6 @@ public:
     void    setScalerMitchellC(double v);
     double  scalerAntiring() const;
     void    setScalerAntiring(double v);
-    QString scalerPreset() const;                        // 派生（`gpuscale::presetFor`）
-    Q_INVOKABLE QVariantList scalerPresetList() const;   // UI 的下拉列表
-    Q_INVOKABLE void applyScalerPreset(const QString &key);
 
 Q_SIGNALS:
     void viewerChanged();
@@ -292,7 +286,6 @@ Q_SIGNALS:
     void scanHiddenChanged();
     void recurseDepthChanged();
     void prefetchWindowChanged();
-    void cacheMbChanged();
     void innerArchiveMaxMbChanged();
     void scalerQualityChanged();
     void scalerModeChanged();
@@ -301,7 +294,6 @@ Q_SIGNALS:
     void scalerMitchellBChanged();
     void scalerMitchellCChanged();
     void scalerAntiringChanged();
-    void scalerParamsChanged();        // 任一参数变化都发（预设派生属性跟它）
     void notificationChanged();        // ★ 瞬时提示（浮层）
 
 private:

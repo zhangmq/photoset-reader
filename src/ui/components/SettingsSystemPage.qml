@@ -12,7 +12,7 @@ import ImageBrowser
 //      **两侧各分多少由机制动态决定**，不再让用户分别配"前进/后退"两个数
 //   （用户 2026-10-11：这三项从常规页拆出来独立成页）
 //   ★ 值一律**读写 ViewModel**（`ui.scanHidden` / `ui.recurseDepth` / `ui.prefetchWindow` /
-//     `ui.cacheMb`）：设置是**语义状态**，单一来源在 ViewModel（本页不再存第二份占位属性）
+//     `ui.themeMode`）：设置是**语义状态**，单一来源在 ViewModel（本页不再存第二份占位属性）
 Item {
     id: page
 

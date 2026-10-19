@@ -14,8 +14,9 @@
 //
 //   ★ 2026-10-19：CPU 那条实现（`scaler::resize` 及其线性光 / 重采样内核）**已退休** ——
 //     阅读画质走这条 GPU 管线；缩略图只要"能看"，用 Qt 平滑缩放。
-//     ⇒ **参数与预设（`Mode` / `Quality` / `Filter` / `Params` / `Preset` / `presets()` /
-//       `paramsFromStrings()` / 名称助手）搬到这里**，成为本模块的一部分（一份定义、一处实现）。
+//     ⇒ **参数（`Mode` / `Quality` / `Filter` / `Params` / `paramsFromStrings()` / 名称助手）
+//       搬到这里**，成为本模块的一部分（一份定义、一处实现）。
+//     2026-10-20 用户定案：**画质预设清掉**（只留参数），算法与默认值不变。
 //
 // shader 数学（见 docs/research/12）：
 //
@@ -68,25 +69,12 @@ struct Params {
     double  antiring = 1.0;              // 振铃抑制强度 0–1（只在 quality==Best 时生效）
 };
 
-// 预设 = 一组参数值的命名组合（**唯一事实源**：UI 与 CLI 都从这里取）
-struct Preset {
-    const char *key;      // 存进设置的值
-    const char *label;    // UI 文案
-    const char *desc;     // UI 说明
-    Params      params;
-};
 // 字符串值域 → Params 的**唯一映射**（main.cpp 读配置用它；UI 侧重构后也用它）
 Params paramsFromStrings(const QString &mode, const QString &quality, const QString &filter,
                          int lobes, double mitchellB, double mitchellC, double antiring);
 
 // 便捷：只指定 mode/quality（其余取默认）
 inline Params params(Mode m, Quality q) { Params p; p.mode = m; p.quality = q; return p; }
-
-const QVector<Preset> &presets();
-const Preset *presetByKey(const QString &key);
-// 当前参数与哪个预设一致（找不到返回 nullptr → UI 显示"自定义"）
-const Preset *presetFor(const Params &p);
-
 
 // 供 UI 显示的可读名称
 const char *modeName(Mode m);

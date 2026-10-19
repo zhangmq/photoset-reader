@@ -838,16 +838,6 @@ void UiModel::setPrefetchWindow(int v)
     rebuildViewer();                         // 预取长度是 viewer 的**构造参数**
 }
 
-int UiModel::cacheMb() const { return m_settings.cacheMb(); }
-
-void UiModel::setCacheMb(int v)
-{
-    v = qMax(64, v);
-    if (m_settings.cacheMb() == v) return;
-    m_settings.setCacheMb(v);
-    emit cacheMbChanged();
-}
-
 int UiModel::innerArchiveMaxMb() const { return m_settings.innerArchiveMaxMb(); }
 
 void UiModel::setInnerArchiveMaxMb(int v)
@@ -870,7 +860,6 @@ void UiModel::setScalerQuality(const QString &v)
     if (m_settings.scalerQuality() == q) return;
     m_settings.setScalerQuality(q);
     emit scalerQualityChanged();
-    emit scalerParamsChanged();
 }
 
 QString UiModel::scalerMode() const { return m_settings.scalerMode(); }
@@ -882,7 +871,6 @@ void UiModel::setScalerMode(const QString &v)
     if (m_settings.scalerMode() == m) return;
     m_settings.setScalerMode(m);
     emit scalerModeChanged();
-    emit scalerParamsChanged();
 }
 
 QString UiModel::scalerFilter() const { return m_settings.scalerFilter(); }
@@ -894,7 +882,6 @@ void UiModel::setScalerFilter(const QString &v)
     if (m_settings.scalerFilter() == f) return;
     m_settings.setScalerFilter(f);
     emit scalerFilterChanged();
-    emit scalerParamsChanged();
 }
 
 int UiModel::scalerLobes() const { return m_settings.scalerLobes(); }
@@ -905,7 +892,6 @@ void UiModel::setScalerLobes(int v)
     if (m_settings.scalerLobes() == v) return;
     m_settings.setScalerLobes(v);
     emit scalerLobesChanged();
-    emit scalerParamsChanged();
 }
 
 double UiModel::scalerMitchellB() const { return m_settings.scalerMitchellB(); }
@@ -915,7 +901,6 @@ void UiModel::setScalerMitchellB(double v)
     if (qFuzzyCompare(m_settings.scalerMitchellB(), v)) return;
     m_settings.setScalerMitchellB(v);
     emit scalerMitchellBChanged();
-    emit scalerParamsChanged();
 }
 
 double UiModel::scalerMitchellC() const { return m_settings.scalerMitchellC(); }
@@ -925,7 +910,6 @@ void UiModel::setScalerMitchellC(double v)
     if (qFuzzyCompare(m_settings.scalerMitchellC(), v)) return;
     m_settings.setScalerMitchellC(v);
     emit scalerMitchellCChanged();
-    emit scalerParamsChanged();
 }
 
 double UiModel::scalerAntiring() const { return m_settings.scalerAntiring(); }
@@ -936,53 +920,6 @@ void UiModel::setScalerAntiring(double v)
     if (qFuzzyCompare(m_settings.scalerAntiring(), v)) return;
     m_settings.setScalerAntiring(v);
     emit scalerAntiringChanged();
-    emit scalerParamsChanged();
-}
-
-// 当前参数匹配哪个预设（空 = 自定义）—— 与旧 VM 同一口径（`gpuscale::presetFor`）
-QString UiModel::scalerPreset() const
-{
-    const AppSettings &s = m_settings;
-    const gpuscale::Params p = gpuscale::paramsFromStrings(s.scalerMode(), s.scalerQuality(),
-                                                       s.scalerFilter(), s.scalerLobes(),
-                                                       s.scalerMitchellB(), s.scalerMitchellC(),
-                                                       s.scalerAntiring());
-    const gpuscale::Preset *m = gpuscale::presetFor(p);
-    return m ? QString::fromLatin1(m->key) : QString();
-}
-
-QVariantList UiModel::scalerPresetList() const
-{
-    const QString cur = scalerPreset();
-    QVariantList out;
-    for (const gpuscale::Preset &p : gpuscale::presets()) {
-        QVariantMap m;
-        m.insert(QStringLiteral("key"), QString::fromLatin1(p.key));
-        m.insert(QStringLiteral("label"), QString::fromUtf8(p.label));
-        m.insert(QStringLiteral("desc"), QString::fromUtf8(p.desc));
-        m.insert(QStringLiteral("selected"), cur == QLatin1String(p.key));
-        out << m;
-    }
-    return out;
-}
-
-void UiModel::applyScalerPreset(const QString &key)
-{
-    const gpuscale::Preset *pre = gpuscale::presetByKey(key);
-    if (!pre) return;
-    const gpuscale::Params &p = pre->params;
-    m_settings.setScalerParams(QString::fromLatin1(gpuscale::modeName(p.mode)),
-                               QString::fromLatin1(gpuscale::qualityName(p.quality)),
-                               QString::fromLatin1(gpuscale::filterName(p.filter)),
-                               p.lobes, p.mitchellB, p.mitchellC, p.antiring);
-    emit scalerModeChanged();
-    emit scalerQualityChanged();
-    emit scalerFilterChanged();
-    emit scalerLobesChanged();
-    emit scalerMitchellBChanged();
-    emit scalerMitchellCChanged();
-    emit scalerAntiringChanged();
-    emit scalerParamsChanged();
 }
 
 } // namespace app
