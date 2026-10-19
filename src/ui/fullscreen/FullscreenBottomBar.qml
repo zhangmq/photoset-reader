@@ -26,6 +26,22 @@ Item {
     property int    intervalMs: 300       // 切换速度（幻灯片间隔）
     readonly property var intervalPresets: [500, 1000, 2000, 3000, 4000, 5000]
     readonly property bool intervalIsPreset: intervalPresets.indexOf(root.intervalMs) >= 0
+    //   ★ 切换速度菜单的行（**选中态 = 对号**，与库屏排序菜单同一写法）：
+    //     选中行在前导列显示对号；末尾两项是加速 / 减速（`keepOpen` = 可连点、不关菜单）
+    readonly property var intervalItems: [
+        { icon: root.intervalMs === 500  ? Theme.icCheck : "", text: "500 ms", selected: root.intervalMs === 500 },
+        { icon: root.intervalMs === 1000 ? Theme.icCheck : "", text: "1 s",    selected: root.intervalMs === 1000 },
+        { icon: root.intervalMs === 2000 ? Theme.icCheck : "", text: "2 s",    selected: root.intervalMs === 2000 },
+        { icon: root.intervalMs === 3000 ? Theme.icCheck : "", text: "3 s",    selected: root.intervalMs === 3000 },
+        { icon: root.intervalMs === 4000 ? Theme.icCheck : "", text: "4 s",    selected: root.intervalMs === 4000 },
+        { icon: root.intervalMs === 5000 ? Theme.icCheck : "", text: "5 s",    selected: root.intervalMs === 5000 },
+        { sep: true },
+        { icon: root.intervalIsPreset ? "" : Theme.icCheck,
+          text: "自定义（" + root.intervalMs + " ms）", selected: !root.intervalIsPreset },
+        { sep: true },
+        { text: "加速", icon: Theme.icPlus,  keepOpen: true },   // 可连点（不关菜单）
+        { text: "减速", icon: Theme.icMinus, keepOpen: true }
+    ]
     property int    fitMode: 1            // 0=原始 1=适应屏幕 2=适应宽度 3=适应高度
     property bool   doublePage: false     // 阅读版面：单幅 / 双幅
     property bool   zoomLocked: false     // 锁定缩放（跨画面保留用户缩放/offset；行为待实现）
@@ -43,6 +59,7 @@ Item {
     signal loopModeSelected(int mode)
     signal intervalSelected(int ms)
     signal intervalStep(int deltaMs)      // 加速 / 减速（步进 10ms）
+    function openIntervalMenu() { intervalMenu.open() }   // 开发自检用（截图：菜单打开态）
     signal fitModeSelected(int mode)
     signal doublePageSelected(bool on)
     signal zoomLockToggled()
@@ -235,24 +252,15 @@ Item {
             PopupMenu {
                 id: intervalMenu
                 anchorTarget: intervalBtn
-                items: [
-                    { text: "500 ms", selected: root.intervalMs === 500 },
-                    { text: "1 s",    selected: root.intervalMs === 1000 },
-                    { text: "2 s",    selected: root.intervalMs === 2000 },
-                    { text: "3 s",    selected: root.intervalMs === 3000 },
-                    { text: "4 s",    selected: root.intervalMs === 4000 },
-                    { text: "5 s",    selected: root.intervalMs === 5000 },
-                    { sep: true },
-                    { text: "自定义（" + root.intervalMs + " ms）", selected: !root.intervalIsPreset },
-                    { sep: true },
-                    { text: "加速", icon: Theme.icPlus,  keepOpen: true },   // 可连点（不关菜单）
-                    { text: "减速", icon: Theme.icMinus, keepOpen: true }
-                ]
+                items: root.intervalItems
                 onItemTriggered: function (i) {
-                    if (i < 6)              root.intervalSelected(root.intervalPresets[i])
-                    else if (i === 8)       root.intervalStep(+10)      // 加速（自动切自定义）
-                    else if (i === 9)       root.intervalStep(-10)      // 减速
-                    // i === 7（自定义）不改值：当前值本身就是自定义值
+                    //   ★ 行序 = 数组序（分隔线也算一行）：预设 × n ｜ 自定义 ｜ 加速 ｜ 减速
+                    //     —— 用**数组长度**定位末尾两项、用**预设个数**定位前缀，
+                    //     不再写死下标（写死下标会随分隔线 / 档位增减而错位）。
+                    if (i === root.intervalItems.length - 2)      root.intervalStep(+10)     // 加速
+                    else if (i === root.intervalItems.length - 1) root.intervalStep(-10)     // 减速
+                    else if (i < root.intervalPresets.length)     root.intervalSelected(root.intervalPresets[i])
+                    // 其余（自定义行）不改值：当前值本身就是自定义值
                 }
             }
 

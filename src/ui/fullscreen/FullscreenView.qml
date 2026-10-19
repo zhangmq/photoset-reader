@@ -36,6 +36,7 @@ Item {
             settingsDialog.tab = root.debugSettingsTab
             settingsDialog.open()
         }
+        root.openIntervalPopupIfAsked()      // 开发自检：`--show-interval-popup`
     }
 
     // ── 设置对话框（三屏同一实现；当前阶段单纯 UI）──
@@ -293,6 +294,15 @@ Item {
             win.visibility = ui.windowFullscreen ? Window.FullScreen : Window.Windowed
         }
     }
+
+    //   ★ 开发自检（`--show-interval-popup`）：阅读屏可见时把"切换速度"菜单打开（截图用）
+    property bool debugOpenIntervalPopup: false
+    function openIntervalPopupIfAsked() {
+        if (debugOpenIntervalPopup && bottomBar)
+            bottomBar.openIntervalMenu()
+    }
+    onVisibleChanged: if (visible) openIntervalPopupIfAsked()
+    onDebugOpenIntervalPopupChanged: if (debugOpenIntervalPopup) openIntervalPopupIfAsked()
 
     // ── 键盘（全屏是快捷键面）──
     //   ★ 方向键**不拦截自动重复**：Qt 的按键自动重复正常打进来，每个重复按键自然就是一次

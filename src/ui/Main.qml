@@ -71,6 +71,7 @@ ApplicationWindow {
         focus: ui.screen === UiModel.Viewer
         debugOpenSettings: devOpenSettings && ui.screen === UiModel.Viewer
         debugSettingsTab: devSettingsTab
+        debugOpenIntervalPopup: devShowIntervalPopup && ui.screen === UiModel.Viewer
 
         onLibraryRequested: ui.goLibrary()                    // [home]
         onBackRequested: ui.back()                            // [返回] → 文件浏览

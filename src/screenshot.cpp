@@ -49,11 +49,9 @@ void setupShot(QGuiApplication &app, QQmlApplicationEngine &engine,
             qInfo().noquote() << QStringLiteral("[seek] 已投递 jump(%1)（当前页号 %2，异步刷新）")
                 .arg(seekPage).arg(vm->currentPage());
         }
-        if (popup && uiModel) {
-            if (browse) browse->open(browse->browseRow());
-            qWarning().noquote() << QStringLiteral(
-                "[shot] ⚠ --show-interval-popup 在新壳上未接线（旧实现调的是已删除的旧 QML 方法）");
-        }
+        if (popup && browse) browse->open(browse->browseRow());
+        //   ★ `--show-interval-popup` 由阅读屏自己接线（`devShowIntervalPopup` 上下文属性）；
+        //     ⚠️ 菜单是**独立的 Popup 窗口** ⇒ 离屏 `grabWindow` 抓不到它（真要截菜单需要整屏抓）
 
         // 再等一帧，让绑定生效（popup 需要更久）
         QTimer::singleShot(popup ? 1400 : 400, win, [win, outPath, uiModel]() {

@@ -310,6 +310,10 @@ int main(int argc, char *argv[])
                                              parser.isSet(debugSettingsOpt));
     engine.rootContext()->setContextProperty(QStringLiteral("devSettingsTab"),
                                              parser.value(debugSettingsTabOpt).toInt());
+    //   ★ `--show-interval-popup`（截图自检用）：同样默认 false ⇒ 正常运行时零行为变化；
+    //     由阅读屏自己在可见时把"切换速度"菜单打开（旧实现调的是已删除的旧 QML 方法）。
+    engine.rootContext()->setContextProperty(QStringLiteral("devShowIntervalPopup"),
+                                             parser.isSet(popupOpt));
 
     engine.load(QUrl(QStringLiteral("qrc:/ImageBrowser/src/ui/Main.qml")));
     if (engine.rootObjects().isEmpty()) {
