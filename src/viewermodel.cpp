@@ -186,55 +186,49 @@ int ViewerModel::wrapTarget(int dir) const
     return (dir > 0) ? r.first : (r.first + r.second - 1);
 }
 
-// ══ 上一个 / 下一个文件夹（**规则在视图**：序列只给一张容器区间表）══════════
+// ══ 上一个 / 下一个文件夹（**规则在视图**：序列只给事实 + 两个序）══════════
 //
 //   候选 = `Sequence::containers()`（根不在里面）；**包含当前 index 的容器距离是负数/零**
 //   ⇒ 排除（你正躺在它里面）⇒ "在深层"与"在上层"候选集合本来就不同（看当前状态）。
 //      · 下一个 = `first_index > 当前 index` 里**最近**的（first 最小）；
 //      · 上一个 = `last_index < 当前 index` 里**最近**的（last 最大）；
-//      · 距离并列（同一个 first / 同一个 last ⇒ 嵌套链）⇒ 取**最上层**（`level` 最小）；
+//      · 距离并列（同一个 first / 同一个 last ⇒ 嵌套链）⇒ 取**最上层**（`level` 最小）
+//        —— 两个序都把并列的**最上层排在块首**，所以取块首就是它；
 //      · 落点 = 那个容器的**第一条图**；名字 = 那个容器**自己**的 label。
+//   两个序都在序列里**建好**（容器收尾那一刻）⇒ 这里只做二分，O(log 容器数)。
 int ViewerModel::adjacentFolderNode(int dir) const
 {
     if (!m_seq) return -1;
     const int n = m_seq->count();
     if (n <= 0) return -1;
     const int cur = qBound(0, m_pos, n - 1);
-
-    int best = -1;
-    int bestKey = -1;                     // 已选中的那个 key（first 或 last）
     const QVector<Sequence::Container> &cs = m_seq->containers();
-    for (const Sequence::Container &c : cs) {
-        const int key = (dir > 0) ? c.first : c.last;
-        if (dir > 0) {
-            if (c.first <= cur) continue;                  // 距离 ≤ 0 ⇒ 排除
-        } else {
-            if (c.last >= cur) continue;
-        }
-        if (best < 0 || (dir > 0 ? (key < bestKey) : (key > bestKey))
-            || (key == bestKey && c.level < m_seq->tree().at(best).level)) {
-            best = c.node;
-            bestKey = key;
-        }
+
+    if (dir > 0) {
+        const QVector<int> &idx = m_seq->containersByFirst();
+        const auto it = std::upper_bound(idx.cbegin(), idx.cend(), cur,
+                                         [&cs](int value, int ci) { return value < cs.at(ci).first; });
+        if (it == idx.cend()) return -1;
+        return cs.at(*it).node;                    // 并列块的**块首** = 最上层
     }
-    return best;
+    const QVector<int> &idx = m_seq->containersByLast();
+    const auto it = std::lower_bound(idx.cbegin(), idx.cend(), cur,
+                                     [&cs](int ci, int value) { return cs.at(ci).last < value; });
+    if (it == idx.cbegin()) return -1;
+    int pos = int(it - idx.cbegin()) - 1;          // 最后一个 last < cur
+    const int key = cs.at(idx.at(pos)).last;
+    while (pos > 0 && cs.at(idx.at(pos - 1)).last == key) --pos;   // 回到并列块的块首
+    return cs.at(idx.at(pos)).node;
 }
 
-//   全部循环的回绕目标：第一个 / 最后一个容器（并列同样取最上层）。
+//   全部循环的回绕目标：第一个 / 最后一个容器（块首同样是最上层）。
 int ViewerModel::edgeFolderNode(int dir) const
 {
     if (!m_seq) return -1;
-    int best = -1;
-    int bestKey = -1;
-    for (const Sequence::Container &c : m_seq->containers()) {
-        const int key = (dir > 0) ? c.first : c.last;
-        if (best < 0 || (dir > 0 ? (key < bestKey) : (key > bestKey))
-            || (key == bestKey && c.level < m_seq->tree().at(best).level)) {
-            best = c.node;
-            bestKey = key;
-        }
-    }
-    return best;
+    const QVector<Sequence::Container> &cs = m_seq->containers();
+    const QVector<int> &idx = (dir > 0) ? m_seq->containersByFirst() : m_seq->containersByLast();
+    if (idx.isEmpty()) return -1;
+    return cs.at(dir > 0 ? idx.first() : idx.last()).node;
 }
 
 QString ViewerModel::folderNameOfNode(int node) const
@@ -243,31 +237,24 @@ QString ViewerModel::folderNameOfNode(int node) const
     return m_seq->tree().at(node).label;            // 容器**自己**那一层的名字（单段）
 }
 
-//   当前这一条所属容器的名字（空 = 它直接挂在根上 ⇒ 没有文件夹）
-QString ViewerModel::currentFolderName() const
-{
-    if (!m_seq || m_seq->count() <= 0) return QString();
-    const int cur = qBound(0, m_pos, m_seq->count() - 1);
-    return folderNameOfNode(m_seq->at(cur).parentNode);   // 它**直接所属**的容器（-1 = 根上）
-}
-
 QString ViewerModel::prevFolderName() const
 {
-    if (!m_seq || m_seq->count() <= 0) return QString();
+    // ★ **文件夹内循环 ⇒ 两个按钮禁用置灰**（用户 2026-10-19）：既然只看这一个文件夹，
+    //   就没有"上一个 / 下一个文件夹"可切（以前这里会拿当前文件夹名顶上、
+    //   还会跳到区间外）。区间内回绕照旧由 ← → / ⏮⏭（换屏）承担。
+    if (!m_seq || m_seq->count() <= 0 || m_loop == Loop::Folder) return QString();
     const int node = adjacentFolderNode(-1);
     if (node >= 0) return folderNameOfNode(node);
-    if (m_loop == Loop::All)    return folderNameOfNode(edgeFolderNode(-1));
-    if (m_loop == Loop::Folder) return currentFolderName();   // 回绕回本文件夹开头
+    if (m_loop == Loop::All) return folderNameOfNode(edgeFolderNode(-1));
     return QString();
 }
 
 QString ViewerModel::nextFolderName() const
 {
-    if (!m_seq || m_seq->count() <= 0) return QString();
+    if (!m_seq || m_seq->count() <= 0 || m_loop == Loop::Folder) return QString();
     const int node = adjacentFolderNode(1);
     if (node >= 0) return folderNameOfNode(node);
-    if (m_loop == Loop::All)    return folderNameOfNode(edgeFolderNode(1));
-    if (m_loop == Loop::Folder) return currentFolderName();
+    if (m_loop == Loop::All) return folderNameOfNode(edgeFolderNode(1));
     return QString();
 }
 
@@ -275,10 +262,10 @@ QString ViewerModel::nextFolderName() const
 void ViewerModel::stepFolder(int delta)
 {
     if (!m_seq || m_seq->count() <= 0) return judge();
+    if (m_loop == Loop::Folder) return judge();     // ★ 文件夹内循环：不许切文件夹
     int node = adjacentFolderNode(delta);
     if (node < 0) {
-        if (m_loop == Loop::All)         node = edgeFolderNode(delta);
-        else if (m_loop == Loop::Folder) return act(loopScope().first, 0);   // 回本文件夹开头
+        if (m_loop == Loop::All) node = edgeFolderNode(delta);
         else return judge();                        // 不循环：到头（按钮本来就是灰的）
     }
     if (node < 0) return judge();

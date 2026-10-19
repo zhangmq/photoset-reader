@@ -195,10 +195,11 @@ private:
     //   · 落点 = 那个容器的**第一条图**（双幅由配对表锚定到含它的那一屏）；
     //   · 名字 = 那个容器**自己**的 `label`（单段，不取落点那条图的 `folderLabel`）。
     //   返回**容器节点下标**；-1 = 到头（不循环 / 区间外）。
-    int  adjacentFolderNode(int dir) const;     // dir > 0 = 下一个，< 0 = 上一个
+    //   ★ **文件夹内循环（`Loop::Folder`）⇒ 两个按钮禁用置灰、不许切文件夹**
+    //     （用户 2026-10-19；以前到头会拿当前文件夹名顶上、还会跳到区间外）。
+    int  adjacentFolderNode(int dir) const;     // dir > 0 = 下一个，< 0 = 上一个（二分）
     int  edgeFolderNode(int dir) const;         // 全部循环的回绕：第一个 / 最后一个容器
-    QString currentFolderName() const;          // 当前这一条所属容器的名字（空 = 根上）
-    QString folderNameOfNode(int node) const;   // 容器自己的名字
+    QString folderNameOfNode(int node) const;   // 容器自己的名字（单段）
     //   换一屏：**单幅** = 相邻一条；**双幅** = 问序列的配对表（+本对张数）。到头 ⇒ -1。
     //   ⇒ "±本对张数"的算术在序列的配对表里，本类只做"这次用一条还是用一对"的选择。
     int  nextScreen(int start, int dir) const;

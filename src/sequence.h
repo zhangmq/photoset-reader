@@ -282,22 +282,27 @@ public:
     int   prevPairStart(int index) const;
 
     // ── ②b 容器（文件树节点）查询 ──
-    // ★★ **容器的区间表**（**事实**，序列唯一对外的那份；用户 2026-10-19 定案）：
+    // ★★ **容器区间表**（**事实**）＋**两个序**（运行期在内存里建的索引；用户 2026-10-19）：
     //   · 一项 = 一个容器：`node`（树节点下标）/ `first` / `last`（它子树覆盖的**图的
     //     index** 闭区间）/ `level`（层数，越小越靠外）；
     //   · **根不算**（它不是文件夹，且区间覆盖整条序列 ⇒ 永远不是"上/下一个"的候选）；
     //   · **空容器不算**（没有图 ⇒ 不是元素，L40）；
-    //   · 次序 = 按 `(first, level)` 升序（阅读顺序；**并列 = 嵌套链，最上层在前**）；
-    //     扫描/恢复期间随容器收尾增量重建（脏了就重排一次，读的时候才付）。
-    //   ⚠️ 这里**只摆事实**：谁是"上一个 / 下一个文件夹"是**视图**的规则（要看当前在哪），
-    //      序列是静态的、不知道当前 index ⇒ 那个判定在 `ViewerModel` 里做。
+    //   · **建索引的时机 = 容器收尾那一刻**（`writeBoundaryRange` —— scan 与 restore 都在
+    //     这一步并入）⇒ 不在查询时重建；也**不落库、不需要数据库索引**；
+    //   · 两个序都是**下标**（进 `containers()`），各自按 `(key, level)` 升序
+    //     —— 并列（同一个 first / 同一个 last ⇒ 只可能是**嵌套链**）时**最上层在前**。
+    //   ⚠️ 这里**只摆事实与次序**：谁是"上一个 / 下一个文件夹"是**视图**的规则
+    //      （要看当前在哪），序列是静态的、不知道当前 index ⇒ 那个判定在 `ViewerModel` 里做。
     struct Container {
         int node  = -1;      // 树节点下标（名字取它自己的 `label`）
         int first = -1;      // 子树第一条图的 index
         int last  = -1;      // 子树最后一条图的 index
         int level = 0;       // 层数（0 = 根那一层；越小越靠外）
     };
-    const QVector<Container> &containers() const;
+    const QVector<Container> &containers() const { return m_containers; }
+    //   下标进 `containers()`，各自有序（并列最上层在前）
+    const QVector<int> &containersByFirst() const { return m_byFirst; }
+    const QVector<int> &containersByLast() const { return m_byLast; }
     //   ★★ **子树记录**（L41；语义的**唯一事实源**就是这两行）：
     //     · `subtreeFirst(node)` = 该节点子树里**第一条真图**的下标；**没有图 ⇒ -1**；
     //     · `subtreeCount(node)` = 该节点子树里**真图的条数**；没有 ⇒ 0。
@@ -500,12 +505,13 @@ private:
     QVector<char> m_nodeClosed;
     QVector<int>  m_openStack;
     QVector<int>  m_chainBuf;                // `syncOpenChain` 的复用缓冲（不参与值语义）
-    // ★★ **容器区间表**（对外事实，见 `containers()`）：容器**扫完那一刻**在
-    //   `writeBoundaryRange` 里增量重建（脏了就重排一次 —— 读的时候才付）。
+    // ★★ **容器区间表 + 两个序**（对外事实，见 `containers()`）：容器**收尾那一刻**
+    //   在 `writeBoundaryRange` 里追加 + 二分插进两个序（这就是那个"运行期的索引"）。
     //   `resetNodeRecords`（重排）/ `resetRows` 时清空重建。
-    mutable QVector<Container> m_containers;
-    mutable bool               m_containersDirty = true;
-    void ensureContainers() const;               // 脏了就重建 + 排序（O(k log k)）
+    QVector<Container> m_containers;     // 事实（按收尾序追加）
+    QVector<int>       m_byFirst;        // 下标进 `m_containers`，按 (first, level)
+    QVector<int>       m_byLast;         // 下标进 `m_containers`，按 (last, level)
+    void indexContainer(int ci);         // 把一个容器插进两个序（二分 + 搬移，O(k)）
     QVector<Row>      m_rows;
     // ★★ 扫描参数（**调用方经 `startScan` / `restore` 传入** —— 序列不读设置）
     ScanOptions       m_scanOptions;

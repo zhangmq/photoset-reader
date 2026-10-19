@@ -538,51 +538,45 @@ void Sequence::writeBoundaryRange(int node)
     Row &r = m_rows[*it];
     r.firstIndex = first;
     r.lastIndex  = first + cnt - 1;
-    //   ★ 顺手把**容器区间表**置脏（对外那份事实；`containers()` 读的时候才重建）。
-    m_containersDirty = true;
+    //   ★ 顺手进**容器区间表 + 两个序**：那个"运行期的索引"就在**容器收尾这一刻**建好
+    //     （不在查询时重建）。代价 = 每个容器 O(k) 的搬移（k = 文件夹 / 压缩包个数）。
+    Container c;
+    c.node  = node;
+    c.first = first;
+    c.last  = r.lastIndex;
+    c.level = m_tree.at(node).level;
+    m_containers << c;
+    indexContainer(m_containers.size() - 1);
 }
 
-// ★★ 容器区间表（**事实**）：从树 + 子树记录重建一次，按 `(first, level)` 升序
-//   —— 并列（同一个 first）只可能是嵌套链，最上层在前。
-//   根不算（它不是文件夹，区间覆盖整条序列）；空容器不算（L40：没有图就不是元素）。
-void Sequence::ensureContainers() const
+//   把一个容器插进两个序（各自按 (key, level) 升序；并列 ⇒ **最上层在前**）。
+void Sequence::indexContainer(int ci)
 {
-    if (!m_containersDirty) return;
-    m_containers.clear();
-    m_containers.reserve(m_tree.size());
-    for (int i = 0; i < m_tree.size(); ++i) {
-        if (m_tree.at(i).parent < 0) continue;            // 根不算（它不是文件夹）
-        if (!isElement(i)) continue;                      // L40 唯一判定：**扫完且子树里有图**
-        const int first = m_subFirst.at(i);
-        const int cnt   = m_subCount.at(i);
-        Container c;
-        c.node  = i;
-        c.first = first;
-        c.last  = first + cnt - 1;
-        c.level = m_tree.at(i).level;
-        m_containers << c;
-    }
-    std::sort(m_containers.begin(), m_containers.end(),
-              [](const Container &a, const Container &b) {
-                  if (a.first != b.first) return a.first < b.first;
-                  if (a.level != b.level) return a.level < b.level;   // 并列 ⇒ 最上层在前
-                  return a.last > b.last;                             // 保险：区间大的在前
-              });
-    m_containersDirty = false;
-}
-
-const QVector<Sequence::Container> &Sequence::containers() const
-{
-    ensureContainers();
-    return m_containers;
+    const auto beforeFirst = [this](int lhs, int rhs) {
+        const Container &a = m_containers.at(lhs);
+        const Container &b = m_containers.at(rhs);
+        if (a.first != b.first) return a.first < b.first;
+        if (a.level != b.level) return a.level < b.level;
+        return a.last > b.last;
+    };
+    const auto beforeLast = [this](int lhs, int rhs) {
+        const Container &a = m_containers.at(lhs);
+        const Container &b = m_containers.at(rhs);
+        if (a.last != b.last) return a.last < b.last;
+        if (a.level != b.level) return a.level < b.level;
+        return a.first > b.first;
+    };
+    m_byFirst.insert(std::upper_bound(m_byFirst.cbegin(), m_byFirst.cend(), ci, beforeFirst), ci);
+    m_byLast.insert(std::upper_bound(m_byLast.cbegin(), m_byLast.cend(), ci, beforeLast), ci);
 }
 
 // 清记录（**只有"重排同一批条目"才用**：`sortNaturally` 会把 `m_items` 整个重并一遍 ⇒
 //   必须先把记录清零，否则沿链累加会**重复计数**）。扫完标志 / 打开链不属于记录，不动。
 void Sequence::resetNodeRecords()
 {
-    m_containers.clear();                    // 区间表是"并入序的产物" ⇒ 重排要重建
-    m_containersDirty = true;
+    m_containers.clear();                    // 区间表 + 两个序是"并入序的产物" ⇒ 重排要重建
+    m_byFirst.clear();
+    m_byLast.clear();
     for (TreeNode &n : m_tree) { n.firstItem = 0; n.lastOwn = -1; n.itemCount = 0; }
     for (int i = 0; i < m_subFirst.size(); ++i) m_subFirst[i] = -1;
     for (int i = 0; i < m_subCount.size(); ++i) m_subCount[i] = 0;
