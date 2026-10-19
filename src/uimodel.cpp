@@ -860,7 +860,7 @@ void UiModel::setInnerArchiveMaxMb(int v)
 }
 
 // ── 图像（缩放）参数 ────────────────────────────────────────────────────
-//   值域裁剪照旧 VM（`viewmodel.cpp`）的语义；写入磁盘走 `m_settings`（唯一事实源）。
+//   值域裁剪照旧 `ViewerModel` 的语义；写入磁盘走 `m_settings`（唯一事实源）。
 QString UiModel::scalerQuality() const { return m_settings.scalerQuality(); }
 
 void UiModel::setScalerQuality(const QString &v)

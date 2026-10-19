@@ -10,7 +10,7 @@
 //
 // 一个 Item = **一张图按 gpuscale::Params 缩放后的画面**。它自己就是「渲染器」这一角色
 // （设计 13 §八）：fit 模式 / 交互缩放 / 平移 / 画质参数**全在这里**，
-// 与 CPU 参照实现（`gpuscale::resize`）逐像素等价（见 `--selftest-gpuscale`）。
+// 与 CPU 参照实现逐像素等价（真机跑 `--gpuscale-probe` 看色差）。
 //
 // ## 为什么是 QQuickRhiItem（而不是自定义 QSGMaterial）
 //   · 我们的算法是**三段 FBO**（线性化 → H → V(+anti-ringing)），需要

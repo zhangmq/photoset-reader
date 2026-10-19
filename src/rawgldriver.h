@@ -21,7 +21,7 @@
 //   Mesa llvmpipe），**执行同一份 qsb 烘焙 shader** + **同一份 Plan/passUniformsFor**，
 //   只把「谁来发 3 个 draw」换成这 40 行 GL 调用。
 //   ⇒ 它验证的是**算法与参数**；**QRhi 资源路径本身**必须在有设备节点的机器上
-//     用 `--selftest-gpuscale` 验证（见 docs/research/12 的口径限制）。
+//     用 `--gpuscale-probe` 在真机验证（见 docs/research/12 的口径限制）。
 //
 //   本文件**只被自检代码引用**，生产渲染路径不碰它。
 namespace rawgl {

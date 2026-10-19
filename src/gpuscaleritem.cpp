@@ -81,7 +81,7 @@ GpuScalerItem::GpuScalerItem(QQuickItem *parent)
     setSampleCount(1);                                  // 目标像素精确，MSAA 无意义
     setColorBufferFormat(TextureFormat::RGBA8);         // 与 shader 的最终输出一致
     // mirrorVertically 保持默认 false：我们的颜色缓冲第 0 行就是图像第 0 行
-    //   （QRhi 的纹理行序约定；见 --selftest-gpuscale 的朝向自检）
+    //   （QRhi 的纹理行序约定；见 `--gpuscale-probe` 的朝向自检）
     updatePlan();
 }
 

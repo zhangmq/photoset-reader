@@ -255,8 +255,8 @@ public:
     int producerThreadCount() const { return m_producerThreads.load(std::memory_order_relaxed); }
 
     bool drain();                            // **消费线程**：收下已产出的批次；true = 有变化
-    //   ★ T2d-1b：`waitForIndex` **已删** —— 它只服务"引擎在序列上等某个下标"那条路，
-    //     而引擎现在**不碰序列**（只吃有界窗口 —— `fetch::Window`；等窗口是 `ViewerModel` 的事）。
+    //   ★ `waitForIndex` **已删** —— 序列不参与"等某个下标"：取图与等待都在 `ViewerModel` 里
+    //     （它按条目号取，缺图由它自己等/扔）。
 
     State state() const { return m_state.load(std::memory_order_relaxed); }
     QString unsupportedReason() const { return m_unsupported; }
@@ -322,7 +322,7 @@ public:
     //       "子目录全空 ⇒ 自己也不出现"由**同一条判定条件自动成立**，**不需要自底向上剪**。
     //   · **节点不物理删除**（删掉会让树的节点下标位移 ⇒ 把消费方手里"当前在哪一层"的
     //     裸下标指错）：节点留在结构里，但**枚举接口一律过这个判定条件**（**浏览行** /
-    //     `fetch::Window::childrenOf`）；而 `fetch::Window::ancestorsOf` 给的是**祖先链**
+    //     `fetch::browseLayerOf`）；而面包屑给的是**祖先链**
     //     （层不是元素）⇒ **不过**判定条件（见设计 12 §8.7.1）。
     //   ⚠️ 未扫完的节点**不是元素**（⇒ 不出现在任何枚举里），但它的**记录是"当前已知值"** ——
     //      供 `ownerRange` / `containers()` 这类查询用（扫描期间 OSD 就能用）。
