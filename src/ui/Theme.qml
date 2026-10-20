@@ -334,6 +334,8 @@ QtObject {
     readonly property string icFolderNext: String.fromCodePoint(0xF19EE)  // folder-arrow-right
     readonly property string icHome:   String.fromCodePoint(0xF02DC)   // home（回图集库）
     // ── 全屏浮层：画面缩放 / 阅读版面 ──
+    // 缩放算法（对图"施加魔法"：图 + 自动调整）—— 用户 2026-10-20 选定
+    readonly property string icAlgorithm:  String.fromCodePoint(0xF0FC1)  // image-auto-adjust
     readonly property string icFitActual:  String.fromCodePoint(0xF0C8D)  // image-size-select-actual（原始大小）
     readonly property string icFitScreen:  String.fromCodePoint(0xF18F4)  // fit-to-screen（适应屏幕）
     readonly property string icFitWidth:   String.fromCodePoint(0xF084E)  // arrow-expand-horizontal（适应宽度）

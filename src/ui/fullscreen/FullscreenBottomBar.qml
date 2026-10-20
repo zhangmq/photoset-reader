@@ -213,7 +213,7 @@ Item {
             NavBtn {   // 缩放算法（viewer 态；键盘/设置里改的是全局默认，这里改完不回写）
                 id: algoBtn
                 anchors.verticalCenter: parent.verticalCenter
-                glyph: Theme.icImage
+                glyph: Theme.icAlgorithm
                 tooltip: "缩放算法：" + pageLabel(root.scaleAlgorithm)
                 enabled: root.overlaysVisible
                 onTriggered: algoMenu.visible ? algoMenu.close() : algoMenu.open()
