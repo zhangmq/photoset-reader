@@ -257,6 +257,7 @@ QtObject {
     readonly property int osdKeyW:      64      // OSD 面板键列宽（最长键 = 4 字：色彩空间/修改时间）
     readonly property int osdPathMaxW: 480      // 顶栏相对路径最大宽（超出中间省略）
     readonly property int osdValueMaxW: 420     // OSD 值列最大宽（EXIF 长值省略）
+    readonly property int osdKeyMaxW:   180     // OSD 键列上限（未映射的 EXIF 名可能很长）
     readonly property int fastFwdDelayMs:  400   // 长按多久开始连续快进（设计 §3.5）
     readonly property int fastFwdFastMs:    80   // 连续快进的重叠间隔
     readonly property int osdTrackLineH: 4     // 时间轴轨道高（常态）

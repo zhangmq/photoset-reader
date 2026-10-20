@@ -16,10 +16,26 @@ Item {
     id: root
 
     property bool osdVisible: false
-    property var  columns: []          // [ [ {k,v,section}, … ], … ]
+    property var  columns: []          // [ { rows: [ {k,v,section}, … ] }, … ]
+    //   键列宽 = **本屏所有键里最宽的那个**（未映射的 EXIF 名可能很长，如
+    //   `FocalLengthIn35mmFilm`）—— 固定 64 只够 4 个汉字，长键会压到值列上
+    property int  keyColumnWidth: Theme.osdKeyW
+
+    function measureKeyWidth(cols) {
+        var w = Theme.osdKeyW
+        for (var c = 0; c < cols.length; ++c) {
+            var rows = cols[c].rows
+            for (var r = 0; r < rows.length; ++r) {
+                keyMetrics.text = rows[r].k
+                if (keyMetrics.advanceWidth > w) w = keyMetrics.advanceWidth
+            }
+        }
+        return Math.min(Math.ceil(w) + 4, Theme.osdKeyMaxW)   // +4：给字形留余量（贴边会被 elide 掉一个字符）
+    }
 
     function refresh() {
         columns = (ui.viewer && root.osdVisible) ? ui.viewer.osdRows() : []
+        keyColumnWidth = measureKeyWidth(columns)
     }
     onOsdVisibleChanged: if (root.osdVisible) root.refresh()
     Component.onCompleted: if (root.osdVisible) root.refresh()
@@ -47,6 +63,16 @@ Item {
     visible: opacity > 0
     Behavior on opacity { NumberAnimation { duration: Theme.durMed; easing.type: Easing.OutCubic } }
 
+    //   隐藏的字体来源 + 量宽器（只用来算键列宽，不参与布局）
+    Text {
+        id: keyFontSource
+        visible: false
+    }
+    TextMetrics {
+        id: keyMetrics
+        font: keyFontSource.font
+    }
+
     Row {
         id: cols
         anchors.left: parent.left
@@ -66,7 +92,8 @@ Item {
                         spacing: Theme.spaceMd
 
                         Text {   // 键：外描边保证压在任意画面上可读（**面板无背景**）
-                            width: Theme.osdKeyW
+                            width: root.keyColumnWidth
+                            elide: Text.ElideRight
                             text: modelData.k
                             color: Theme.textSecondary
                             style: Text.Outline
