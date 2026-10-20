@@ -10,7 +10,8 @@ import ImageBrowser
 //       （vsr-player 反面教训：三段各自判定会在段间留 6~8px 死带 → 鼠标穿过时
 //        "可见→消失→可见"）
 //       `timeline.pressed` 单独保留：拖动中指针可能移出区域，但必须保持可见
-//   · 用 `HoverHandler` 而非 `MouseArea`：只观察 hover，不吞鼠标事件
+//   · 显隐用 `HoverHandler`（只观察 hover）；栏**可见时**另有一层 MouseArea 专门挡事件
+//     （用户 2026-10-20：压在栏上不许是拖拽光标、不许把拖动/滚轮穿透给画布）
 //   · 浮层隐藏时按钮 `enabled: false`（淡出后仍命中测试会误点）
 //   · 左：[上一文件夹] [⏮（长按连续**后退**）] [⏯] [⏭（长按连续**快进**）] [下一文件夹]
 //     （**纯图标**，目标名字在 tooltip；**长按对称** —— 用户 2026-10-12）
@@ -99,6 +100,16 @@ Item {
         color: Theme.bgBase                  // **不透明**（用户 2026-10-11：能自动显隐就不需要半透明）
         opacity: root.overlaysVisible ? 1.0 : 0.0
         Behavior on opacity { NumberAnimation { duration: Theme.durMed; easing.type: Easing.OutCubic } }
+
+        // ★ 挡住事件（用户 2026-10-20）：浮层下面是画布的拖拽/缩放手势区。
+        //   声明在最前 ⇒ 栏内按钮仍在上层；隐藏时自动让开（visible=false）。
+        MouseArea {
+            anchors.fill: parent
+            visible: root.overlaysVisible
+            acceptedButtons: Qt.AllButtons
+            cursorShape: Qt.ArrowCursor
+            onWheel: (w) => { w.accepted = true }
+        }
 
         // ── 左：文件夹 + 传输 ──
         Row {

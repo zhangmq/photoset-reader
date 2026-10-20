@@ -9,7 +9,8 @@ import ImageBrowser
 //       `implicitHeight = barH(48) + osdHotZoneH(40)` —— 栏 + 下方热区
 //       **整块一个 HoverHandler**（vsr-player 反面教训：分段判定会在段间留死带，
 //        鼠标穿过时"可见→消失→可见"）
-//   · 用 `HoverHandler` 而非 `MouseArea`：只观察 hover，不吞鼠标事件
+//   · 显隐用 `HoverHandler`（只观察 hover）；栏**可见时**另有一层 MouseArea 专门挡事件
+//     （用户 2026-10-20：压在栏上不许是拖拽光标、不许把拖动/滚轮穿透给画布）
 //   · 浮层隐藏时按钮 `enabled: false`（淡出后仍命中测试会误点）
 Item {
     id: root
@@ -36,6 +37,17 @@ Item {
         color: Theme.bgBase                  // **不透明**（用户 2026-10-11：能自动显隐就不需要半透明）
         opacity: root.overlaysVisible ? 1.0 : 0.0
         Behavior on opacity { NumberAnimation { duration: Theme.durMed; easing.type: Easing.OutCubic } }
+
+        // ★ 挡住事件（用户 2026-10-20）：本栏是浮层，下面是画布的拖拽/缩放手势区。
+        //   不挡的话，鼠标压在栏上仍是"拖拽"光标，按下还会拖动画面（事件穿透）。
+        //   声明在最前 ⇒ 栏内的按钮（后面声明）仍然在上层可点。
+        MouseArea {
+            anchors.fill: parent
+            visible: root.overlaysVisible
+            acceptedButtons: Qt.AllButtons
+            cursorShape: Qt.ArrowCursor
+            onWheel: (w) => { w.accepted = true }   // 滚轮也不许穿透去缩放
+        }
 
         // 左：返回（回浏览）+ 进度（**不属于 OSD**，随本栏显隐）
         Row {

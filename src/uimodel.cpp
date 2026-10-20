@@ -184,12 +184,30 @@ void UiModel::stopPlaybackLeavingViewer()
     if (m_screen == Screen::Viewer && m_src.vm) m_src.vm->setPlaying(false);
 }
 
+// 换屏时的手势态（用户 2026-10-20）：**离开查看屏 ⇒ zoom/pan 归零**，回来再按当前 fit 重算。
+//   为什么归零而不是"保留到来源销毁"：手势态是**会话级**（设计 01 §3.8：状态归 ui），
+//   不属于某一条序列；离开阅读屏后它就是过期状态，留着会让下次进入从"上次的 3 倍"开始。
+//   与 `zoomLocked` 无关：锁定管的是**切页**，不是换屏。
+void UiModel::resetGestureForScreenChange(Screen from, Screen to)
+{
+    if (from == Screen::Viewer && to != Screen::Viewer) {
+        m_freeZoom = false;
+        setZoom(1.0);
+        setPanX(0.0);
+        setPanY(0.0);
+    } else if (from != Screen::Viewer && to == Screen::Viewer) {
+        applyFit();          // 图还没到位时它会早退，等 imageAChanged 再来一次
+    }
+}
+
 void UiModel::goTo(Screen s, bool push)
 {
     if (s == m_screen) return;
     stopPlaybackLeavingViewer();
     if (push) m_screenStack << m_screen;
+    const Screen from = m_screen;
     m_screen = s;
+    resetGestureForScreenChange(from, s);
     // ★ 循环模式**不持久化**（设计 01 §3.6）：**每次进入沉浸视图回到默认（不循环）**。
     //   （换来源自然是新的 viewer ⇒ 也是默认。）
     if (s == Screen::Viewer && m_src.vm) m_src.vm->setLoopMode(0);
@@ -205,7 +223,9 @@ void UiModel::goLibrary()
     m_screenStack.clear();
     if (m_screen == Screen::Library) return;
     stopPlaybackLeavingViewer();
+    const Screen from = m_screen;
     m_screen = Screen::Library;
+    resetGestureForScreenChange(from, m_screen);
     releaseDisplaySlot();                       // ★ 离开浏览/查看 ⇒ 释放显示槽
     emit screenChanged();
 }
@@ -215,14 +235,18 @@ void UiModel::back()
     stopPlaybackLeavingViewer();                // ★ 离开查看屏 ⇒ 先停播
     if (m_screenStack.isEmpty()) {
         if (m_screen == Screen::Library) return;
+        const Screen from = m_screen;
         m_screen = Screen::Library;
+        resetGestureForScreenChange(from, m_screen);
         releaseDisplaySlot();                   // ★ 离开浏览/查看 ⇒ 释放显示槽
         emit screenChanged();
         return;
     }
     const Screen prev = m_screenStack.takeLast();
     if (prev == m_screen) return;
+    const Screen from = m_screen;
     m_screen = prev;
+    resetGestureForScreenChange(from, prev);
     if (prev == Screen::Library) releaseDisplaySlot();   // ★ 落到库屏才释放
     emit screenChanged();
 }
@@ -480,6 +504,11 @@ void UiModel::teardownViewer()
     if (!m_src.vm && !m_src.seq) return;
     Source old = m_src;
     m_src = Source{};
+    // 换来源 ⇒ 手势态归零（新来源的第一页从 fit 开始；不继承上一份的 zoom/pan）
+    m_freeZoom = false;
+    setZoom(1.0);
+    setPanX(0.0);
+    setPanY(0.0);
     if (m_browse) m_browse->clear();      // 浏览界面跟着换来源（不留上一条来源的层 / 序列）
     emit viewerChanged();
     releaseNow(old);

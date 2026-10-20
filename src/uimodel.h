@@ -311,6 +311,7 @@ private:
     void onBrowseOpenRequested(int itemIndex);   // 打开那条图 ⇒ 切查看屏
     void resetView();                   // 换画面复位手势态（zoomLocked 时保留）
     QImage geometryImage() const;       // 当前屏算几何用的那张图（双幅取有图的那张）
+    void resetGestureForScreenChange(Screen from, Screen to);   // 离开查看屏归零 / 回来重算 fit
     void goTo(Screen s, bool push);     // 屏切换（push = 压栈）
     void flushResume();                 // 阅读位置写入磁盘（**存 label 链 + 页号，不存下标**）
 

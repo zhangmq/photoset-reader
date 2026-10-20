@@ -31,7 +31,13 @@ Popup {
     width: Math.min(Theme.settingsW, parent ? parent.width - Theme.spaceXl * 2 : Theme.settingsW)
     height: Math.min(Theme.settingsH, parent ? parent.height - Theme.spaceXl * 2 : Theme.settingsH)
 
-    Overlay.modal: Rectangle { color: Theme.mask }
+    // ★ 不掉暗背景（用户 2026-10-20："不要加 mask，方便对照设置调整效果"）：
+    //   后面的画面保持原样，改设置时能直接看到效果。
+    //   但这层仍然**吃掉输入**（透明 MouseArea）——模态语义不丢：背后不会被误拖/误滚。
+    Overlay.modal: MouseArea {
+        acceptedButtons: Qt.AllButtons
+        onWheel: (w) => { w.accepted = true }
+    }
 
     background: Rectangle {
         color: Theme.bgLayer2
