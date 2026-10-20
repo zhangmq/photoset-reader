@@ -22,8 +22,9 @@ Item {
 
         SettingsRow {
             label: "缩放算法"
-            // 只在"软件渲染"这个真实约束下才解释；平时不写废话
+            // 只在"软件渲染"这个真实约束下才解释；平时不写废话。软件渲染是**降级**，用警告色
             description: ui.softwareBackend ? "软件渲染：固定 Smooth (Qt)，其余选项不生效" : ""
+            descriptionColor: Theme.warn
             DropdownButton {
                 label: page.algorithmLabels[Math.max(0, page.algorithmKeys.indexOf(ui.scaleAlgorithm))]
                 menuItems: [

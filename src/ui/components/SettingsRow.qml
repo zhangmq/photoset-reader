@@ -21,6 +21,8 @@ Item {
 
     property alias label: labelText.text
     property alias description: descText.text
+    //   描述颜色：默认次要色；某些行需要表达"当前处于非正常状态"时可改成 `Theme.warn`
+    property alias descriptionColor: descText.color
 
     // 控件槽：实例化时写进来的子项都放这里
     default property alias content: slot.data
@@ -56,7 +58,7 @@ Item {
                 Layout.fillWidth: true
                 visible: text !== ""
                 wrapMode: Text.WordWrap
-                color: Theme.textSecondary
+                color: Theme.textSecondary   // 由 root.descriptionColor 覆盖
                 font.pointSize: Theme.fontSm
             }
         }
