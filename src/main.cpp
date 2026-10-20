@@ -2,6 +2,8 @@
 #include <QApplication>          // 文件对话框用 QFileDialog（QtWidgets）；QApplication ⊂ QGuiApplication
 #include <QStyleHints>
 #include <QQmlApplicationEngine>
+#include <QQuickWindow>
+#include <QSGRendererInterface>
 #include <QQmlContext>
 #include <QCommandLineParser>
 #include <QImageReader>
@@ -10,6 +12,7 @@
 #include <QEvent>
 
 #include "imageprovider.h"
+#include "cpuscaleritem.h"
 #include "gpuscaleritem.h"
 #include "archive.h"
 
@@ -104,6 +107,9 @@ int main(int argc, char *argv[])
                                QStringLiteral("n"), QStringLiteral("-1"));
     QCommandLineOption gpuProbeOpt(QStringLiteral("gpuscale-probe"),
                                    QStringLiteral("诊断：8×8 已知图跑 GPU 1:1 直通并逐像素打印（不参与自检）"));
+    // 开发期：**强制走 CPU 缩放**（= 假装软件后端）——在有 GPU 的机器上验收降级画面用
+    QCommandLineOption forceCpuOpt(QStringLiteral("force-cpu-scale"),
+                                   QStringLiteral("调试：强制走 CPU 缩放（Smooth (Qt)），用于验收软件后端画面"));
     // ── 调试：启动即打开设置对话框（仅开发用，不在正式 CLI 范畴）──
     //   ★ 接线（2026-10-14 本批）：值经上下文属性 `devOpenSettings` / `devSettingsTab`
     //     在 **QML 加载之前**注入 `Main.qml`，再由它喂三屏各自的 `debugOpenSettings`
@@ -173,6 +179,7 @@ int main(int argc, char *argv[])
     parser.addOption(debugSettingsOpt);
     parser.addOption(debugSettingsTabOpt);
     parser.addOption(gpuProbeOpt);
+    parser.addOption(forceCpuOpt);
     parser.process(app);
 
     if (parser.isSet(probeArcOpt))
@@ -241,6 +248,8 @@ int main(int argc, char *argv[])
     //     而 src/ 一旦进包含路径，libarchive 的 <archive.h> 就会被我们的 src/archive.h 顶掉）
     //   ★ 必须放在**任何 QML 加载之前**（定稿视图 FullscreenView 的 `GpuScalerItem` 要用它）
     qmlRegisterType<GpuScalerItem>("ImageBrowser", 1, 0, "GpuScalerItem");
+    //   CPU 缩放项：**Smooth (Qt) 这一项**与**软件后端降级**都用它（设计 16 §五）
+    qmlRegisterType<CpuScalerItem>("ImageBrowser", 1, 0, "CpuScalerItem");
 
     // ── bench / 探针（**跑完即退**）：解析留在本文件，实现与装配在 `src/devbench.cpp` ──
     //   `main.cpp` 只把 `QCommandLineOption` 的取值装进请求结构（判"给没给"用 `xxxSet`）。
@@ -319,6 +328,27 @@ int main(int argc, char *argv[])
     if (engine.rootObjects().isEmpty()) {
         qWarning() << "QML 加载失败";
         return 1;
+    }
+
+    // ── 场景图后端是不是 software？⇒ 告诉 VM（QML 据此把阅读屏切到 CpuScalerItem）──
+    //   只能等场景图建好才问得准（`QQuickWindow::rendererInterface()`）；软件后端下
+    //   `QQuickRhiItem` 什么都不画 ⇒ 没有这条，阅读屏在 llvmpipe / 强制 software 时是黑的。
+    if (QQuickWindow *win = qobject_cast<QQuickWindow *>(engine.rootObjects().value(0))) {
+        auto probeBackend = [win, ui]() {
+            if (auto *ri = win->rendererInterface()) {
+                const bool sw = (ri->graphicsApi() == QSGRendererInterface::Software);
+                if (sw)
+                    qInfo().noquote() << QStringLiteral(
+                        "[scale] 场景图后端 = software ⇒ 阅读屏缩放降级为 Smooth (Qt)");
+                ui->setSoftwareBackend(sw);
+            }
+        };
+        QObject::connect(win, &QQuickWindow::sceneGraphInitialized, ui, probeBackend);
+        probeBackend();          // 已经初始化过的情况（例如窗口已 expose）
+        if (parser.isSet(forceCpuOpt)) {
+            qInfo().noquote() << QStringLiteral("[scale] --force-cpu-scale ⇒ 按软件后端处理（走 CPU 缩放）");
+            ui->setSoftwareBackend(true);
+        }
     }
 
     const QString shot = parser.value(shotOpt);

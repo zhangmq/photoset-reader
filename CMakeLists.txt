@@ -49,6 +49,9 @@ add_library(ibcore STATIC
     src/gpuscale.h
     src/gpuscaleritem.cpp
     src/gpuscaleritem.h
+    # CPU 缩放项：Smooth (Qt) 这一项 + 软件后端降级都走它（设计 16 §五）
+    src/cpuscaleritem.cpp
+    src/cpuscaleritem.h
     src/gpuscalecheck.cpp
     src/gpuscalecheck.h
     src/rawgldriver.cpp

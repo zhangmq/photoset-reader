@@ -25,6 +25,13 @@ Item {
     //   ★ 坏的位置**留空位**：`keyCount` 仍是 2（两格都占着），那一格只是没图。
     readonly property bool twoUp: ui.viewer ? ui.viewer.keyCount > 1 : false
 
+    // 这一屏的画面**由 CPU 项出**还是由 GPU 项出（设计 16 §五）：
+    //   ① 选了 `Smooth (Qt)` —— 这一项本来就是 Qt 的实现（GPU 管线不实现它）；
+    //   ② 场景图后端是 software —— `QQuickRhiItem` 在软件后端下什么都不画，
+    //      此时**无论选了什么算法**都降级成 Qt 平滑（画质不保证，见设计 16 §五）。
+    //   ⇒ 两个项都建出来、按这个布尔切 `visible`（不画的那个不参与渲染）。
+    readonly property bool cpuScale: ui.scaleAlgorithm === "smooth" || ui.softwareBackend
+
     // ── 浮层显隐：纯函数（照抄 vsr-player main.qml）──
     readonly property bool showUi: root.debugForceUi
                                    || topBar.mouseInRegion || bottomBar.mouseInRegion
@@ -104,9 +111,25 @@ Item {
                         anchors.centerIn: parent
                         anchors.horizontalCenterOffset: root.twoUp ? (parent.width - width) / 2 : 0
                         objectName: "imgA"
+                        visible: !root.cpuScale
+                        algorithm: ui.scaleAlgorithm   // nearest | bicubic | lanczos2 | lanczos3
                         viewport: Qt.size(canvas.boxW, canvas.height)
                         sourceImage: ui.viewer ? ui.viewer.imageA : null
                         fit: ui.fitMode              // 0 原始 / 1 适应屏幕 / 2 适应宽度 / 3 适应高度
+                        zoom: ui.zoom
+                        panX: ui.panX
+                        panY: ui.panY
+                    }
+
+                    // 同一个位置的 CPU 版（只在 `cpuScale` 时可见）——几何用同一份 makePlan
+                    CpuScalerItem {
+                        anchors.centerIn: parent
+                        anchors.horizontalCenterOffset: root.twoUp ? (parent.width - width) / 2 : 0
+                        objectName: "imgAcpu"
+                        visible: root.cpuScale
+                        viewport: Qt.size(canvas.boxW, canvas.height)
+                        sourceImage: ui.viewer ? ui.viewer.imageA : null
+                        fit: ui.fitMode
                         zoom: ui.zoom
                         panX: ui.panX
                         panY: ui.panY
@@ -122,6 +145,21 @@ Item {
                         anchors.centerIn: parent
                         anchors.horizontalCenterOffset: root.twoUp ? -(parent.width - width) / 2 : 0
                         objectName: "imgB"
+                        visible: !root.cpuScale
+                        algorithm: ui.scaleAlgorithm
+                        viewport: Qt.size(canvas.boxW, canvas.height)
+                        sourceImage: ui.viewer ? ui.viewer.imageB : null
+                        fit: ui.fitMode
+                        zoom: ui.zoom
+                        panX: ui.panX
+                        panY: ui.panY
+                    }
+
+                    CpuScalerItem {
+                        anchors.centerIn: parent
+                        anchors.horizontalCenterOffset: root.twoUp ? -(parent.width - width) / 2 : 0
+                        objectName: "imgBcpu"
+                        visible: root.cpuScale
                         viewport: Qt.size(canvas.boxW, canvas.height)
                         sourceImage: ui.viewer ? ui.viewer.imageB : null
                         fit: ui.fitMode
