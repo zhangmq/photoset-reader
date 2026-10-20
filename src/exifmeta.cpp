@@ -1,320 +1,110 @@
 #include "exifmeta.h"
 
 #include <QColorSpace>
-#include <QMap>
+#include <QHash>
+#include <QSet>
 
-#include <libexif/exif-data.h>
-
-#include <zlib.h>
+#include <exiv2/exiv2.hpp>
 
 #include <algorithm>
 
+// ══ 分层：Exiv2 负责"容器 + 标签 + 格式化 + ICC"，我们只留"怎么说给人听" ═══════
+//   · 容器（JPEG 段 / PNG 块 / WebP 块 / TIFF IFD / HEIF·AVIF·CR3·JP2·JXL 的 box 树）
+//     一律交给 Exiv2 —— 手写 216 行只认得前四种，HEIC 的 EXIF 组整块消失（用户 2026-10-21）；
+//   · 中文名、优先级、结构噪声过滤、上限 —— Exiv2 只给英文 key，这层是我们自己的；
+//   · 色彩空间判词与解码点 `toSrgb()` 共用 `QColorSpace::fromIccProfile` ⇒ 说的 = 做的。
 namespace exifmeta {
 
 namespace {
 
-// ══ 容器嗅探（不信扩展名，只认字节）═════════════════════════════════════════
-enum class Container { Unknown, Jpeg, Png, WebP, Tiff };
-
-Container sniff(const QByteArray &h)
-{
-    if (h.size() >= 2 && (quint8)h[0] == 0xFF && (quint8)h[1] == 0xD8) return Container::Jpeg;
-    if (h.size() >= 8 && h.startsWith("\x89PNG\r\n\x1a\n")) return Container::Png;
-    if (h.size() >= 12 && h.startsWith("RIFF") && h.mid(8, 4) == "WEBP") return Container::WebP;
-    if (h.size() >= 4 && (h.startsWith("II*\0") || h.startsWith("MM\0*"))) return Container::Tiff;
-    return Container::Unknown;
-}
-
-quint32 be32(const QByteArray &b, int p)
-{
-    if (p < 0 || p + 4 > b.size()) return 0;
-    return (quint32(quint8(b[p])) << 24) | (quint32(quint8(b[p + 1])) << 16)
-         | (quint32(quint8(b[p + 2])) << 8) | quint32(quint8(b[p + 3]));
-}
-
-quint32 le32(const QByteArray &b, int p)
-{
-    if (p < 0 || p + 4 > b.size()) return 0;
-    return quint32(quint8(b[p])) | (quint32(quint8(b[p + 1])) << 8)
-         | (quint32(quint8(b[p + 2])) << 16) | (quint32(quint8(b[p + 3])) << 24);
-}
-
-quint16 be16(const QByteArray &b, int p)
-{
-    if (p < 0 || p + 2 > b.size()) return 0;
-    return quint16((quint16(quint8(b[p])) << 8) | quint8(b[p + 1]));
-}
-
-// ── JPEG：扫段直到 SOS；APP1 "Exif\0\0" = EXIF 块，APP2 "ICC_PROFILE\0" = ICC 分段 ──
-struct JpegParts {
-    QByteArray exif;    // TIFF 头开始的那一段
-    QByteArray icc;     // 按序号拼好的完整 profile（可能为空）
-    bool       hasIcc = false;
-};
-
-JpegParts scanJpeg(const QByteArray &h)
-{
-    JpegParts out;
-    int pos = 2;                                  // 跳过 SOI
-    QMap<int, QByteArray> iccSegs;
-    int iccCount = 0;
-    while (pos + 4 <= h.size()) {
-        if ((quint8)h[pos] != 0xFF) break;
-        const quint8 marker = (quint8)h[pos + 1];
-        if (marker == 0xFF) { ++pos; continue; }
-        if (marker == 0xD8 || marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7)) {
-            pos += 2;
-            continue;
-        }
-        if (marker == 0xDA) break;                // SOS：后面是压缩数据
-        const int len = be16(h, pos + 2);
-        if (len < 2) break;
-        const int body = pos + 4;
-        const int bodyLen = qMin(len - 2, h.size() - body);
-        if (bodyLen > 0) {
-            const QByteArray blob = h.mid(body, bodyLen);
-            // ★ libexif 的 `exif_data_load_data()` 要的是**带 `Exif\0\0` 前缀**的整块
-            //   （实测：去掉前缀就 0 条）—— 这里保留原样，统一格式在 `read()` 里补齐
-            if (marker == 0xE1 && blob.startsWith("Exif\0\0") && out.exif.isEmpty())
-                out.exif = blob;
-            else if (marker == 0xE2 && blob.startsWith("ICC_PROFILE\0") && blob.size() > 14) {
-                const int seq = quint8(blob[12]);
-                iccCount = quint8(blob[13]);
-                iccSegs.insert(seq, blob.mid(14));
-                out.hasIcc = true;
-            }
-        }
-        pos = body + (len - 2);
-    }
-    if (iccCount > 0 && iccSegs.size() == iccCount) {
-        for (int i = 1; i <= iccCount; ++i) {
-            if (!iccSegs.contains(i)) { out.icc.clear(); break; }
-            out.icc += iccSegs.value(i);
-        }
-    }
-    return out;
-}
-
-// ── PNG：eXIf（未压缩的 TIFF 块）/ iCCP（profile 名 + 方法 + zlib 流）──
-QByteArray inflateZlib(const QByteArray &in)
-{
-    if (in.isEmpty()) return {};
-    z_stream zs{};
-    if (inflateInit(&zs) != Z_OK) return {};
-    QByteArray out;
-    out.resize(qMax<int>(in.size() * 3, 4096));
-    zs.next_in = reinterpret_cast<Bytef *>(const_cast<char *>(in.constData()));
-    zs.avail_in = uInt(in.size());
-    int rc = Z_OK;
-    while (true) {
-        if (out.size() - int(zs.total_out) < 256) out.resize(out.size() * 2);
-        zs.next_out = reinterpret_cast<Bytef *>(out.data()) + zs.total_out;
-        zs.avail_out = uInt(out.size() - zs.total_out);
-        rc = inflate(&zs, Z_NO_FLUSH);
-        if (rc == Z_STREAM_END) break;
-        if (rc != Z_OK) { out.clear(); break; }
-    }
-    inflateEnd(&zs);
-    if (out.isEmpty()) return {};
-    out.resize(int(zs.total_out));
-    return out;
-}
-
-void scanPng(const QByteArray &h, JpegParts *out)
-{
-    int pos = 8;
-    while (pos + 8 <= h.size()) {
-        const quint32 len = be32(h, pos);
-        const QByteArray type = h.mid(pos + 4, 4);
-        const int data = pos + 8;
-        const int avail = qMin<int>(len, h.size() - data);
-        if (type == "eXIf" && out->exif.isEmpty()) {
-            out->exif = h.mid(data, avail);
-        } else if (type == "iCCP") {
-            const QByteArray blob = h.mid(data, avail);
-            const int nameEnd = blob.indexOf('\0');
-            if (nameEnd > 0 && nameEnd + 2 <= blob.size()) {
-                const QByteArray inflated = inflateZlib(blob.mid(nameEnd + 2));
-                if (!inflated.isEmpty()) { out->icc = inflated; out->hasIcc = true; }
-                else if (blob.size() > nameEnd + 2) out->hasIcc = true;   // 有但解不开
-            }
-        } else if (type == "IEND") {
-            break;
-        }
-        pos = data + int(len) + 4;                // 数据 + CRC
-        if (len == 0) pos = data + 4;
-    }
-}
-
-// ── WebP：RIFF 分块（EXIF / ICCP 都是裸块）──
-void scanWebp(const QByteArray &h, JpegParts *out)
-{
-    int pos = 12;
-    while (pos + 8 <= h.size()) {
-        const QByteArray fourcc = h.mid(pos, 4);
-        const quint32 len = le32(h, pos + 4);
-        const int data = pos + 8;
-        const int avail = qMin<int>(len, h.size() - data);
-        if (fourcc == "EXIF") {
-            QByteArray blob = h.mid(data, avail);
-            if (blob.startsWith("Exif\0\0")) blob = blob.mid(6);
-            if (out->exif.isEmpty()) out->exif = blob;
-        } else if (fourcc == "ICCP") {
-            out->icc = h.mid(data, avail);
-            out->hasIcc = true;
-        }
-        pos = data + int(len) + (int(len) & 1);
-    }
-}
-
-// ── TIFF：文件本身就是 EXIF 块；ICC 在 tag 0x8773 ──
-QByteArray tiffIcc(const QByteArray &head)
-{
-    // 只解 IFD0 里 0x8773 这一条：够用，且不依赖 libexif 的 TIFF 走法
-    const bool little = head.startsWith("II");
-    auto rd16 = [&](int p) {
-        return little ? quint16(quint8(head[p]) | (quint8(head[p + 1]) << 8)) : be16(head, p);
-    };
-    auto rd32 = [&](int p) {
-        return little ? le32(head, p) : be32(head, p);
-    };
-    const int ifd0 = int(rd32(4));
-    if (ifd0 <= 0 || ifd0 + 2 > head.size()) return {};
-    const int n = rd16(ifd0);
-    for (int i = 0; i < n; ++i) {
-        const int e = ifd0 + 2 + i * 12;
-        if (e + 12 > head.size()) break;
-        if (rd16(e) != 0x8773) continue;
-        const quint32 count = rd32(e + 4);
-        const int off = int(rd32(e + 8));
-        if (off <= 0 || off >= head.size()) return {};
-        return head.mid(off, qMin<int>(int(count), head.size() - off));
-    }
-    return {};
-}
-
-// ══ EXIF 标签 → 中文名 / 排序权重 / 噪声过滤 ═════════════════════════════════
+// ══ 标签 → 中文名 / 排序权重 ═════════════════════════════════════════════════
+//   键用 Exiv2 的稳定 key（`Exif.Image.Make` / `Exif.Photo.DateTimeOriginal`）
 struct TagSpec {
-    int     tag;
-    QString label;
-    int     prio;      // 越小越靠前；0 = 不参与优先（按文件原序）
+    const char *key;
+    const char *label;
+    int         prio;      // 越小越靠前；未列出 = 按文件原序排在后面
 };
 
 const TagSpec kSpecs[] = {
-    { EXIF_TAG_MAKE,                 QStringLiteral("相机厂商"), 1 },
-    { EXIF_TAG_MODEL,                QStringLiteral("机型"),     2 },
-    { EXIF_TAG_LENS_MODEL,           QStringLiteral("镜头"),     3 },
-    { EXIF_TAG_DATE_TIME_ORIGINAL,    QStringLiteral("拍摄时间"), 4 },
-    { EXIF_TAG_EXPOSURE_TIME,        QStringLiteral("曝光"),     5 },
-    { EXIF_TAG_FNUMBER,              QStringLiteral("光圈"),     6 },
-    { EXIF_TAG_ISO_SPEED_RATINGS,    QStringLiteral("ISO"),      7 },
-    { EXIF_TAG_FOCAL_LENGTH,         QStringLiteral("焦距"),     8 },
-    { EXIF_TAG_FOCAL_LENGTH_IN_35MM_FILM, QStringLiteral("等效焦距"), 9 },
-    { EXIF_TAG_EXPOSURE_BIAS_VALUE,  QStringLiteral("曝光补偿"), 10 },
-    { EXIF_TAG_MAX_APERTURE_VALUE,   QStringLiteral("最大光圈"), 11 },
-    { EXIF_TAG_METERING_MODE,        QStringLiteral("测光"),     12 },
-    { EXIF_TAG_FLASH,                QStringLiteral("闪光灯"),   13 },
-    { EXIF_TAG_LIGHT_SOURCE,         QStringLiteral("光源"),     14 },
-    { EXIF_TAG_WHITE_BALANCE,        QStringLiteral("白平衡"),   15 },
-    { EXIF_TAG_EXPOSURE_PROGRAM,     QStringLiteral("曝光程序"), 16 },
-    { EXIF_TAG_SOFTWARE,             QStringLiteral("软件"),     20 },
-    { EXIF_TAG_ARTIST,               QStringLiteral("作者"),     21 },
-    { EXIF_TAG_COPYRIGHT,            QStringLiteral("版权"),     22 },
-    { EXIF_TAG_IMAGE_DESCRIPTION,    QStringLiteral("描述"),     23 },
-    { EXIF_TAG_DATE_TIME,            QStringLiteral("修改时间"), 17 },
-    { EXIF_TAG_LENS_MAKE,            QStringLiteral("镜头厂商"), 24 },
-    { EXIF_TAG_SUBJECT_DISTANCE,     QStringLiteral("拍摄距离"), 25 },
-    { EXIF_TAG_DIGITAL_ZOOM_RATIO,   QStringLiteral("数码变焦"), 26 },
-    { EXIF_TAG_SCENE_CAPTURE_TYPE,   QStringLiteral("场景"),     27 },
-    { EXIF_TAG_SATURATION,           QStringLiteral("饱和度"),   28 },
-    { EXIF_TAG_CONTRAST,             QStringLiteral("对比度"),   29 },
-    { EXIF_TAG_SHARPNESS,            QStringLiteral("锐度"),     30 },
+    { "Exif.Image.Make",                  "相机厂商",  1 },
+    { "Exif.Image.Model",                 "机型",      2 },
+    { "Exif.Photo.LensModel",             "镜头",      3 },
+    { "Exif.Photo.DateTimeOriginal",      "拍摄时间",  4 },
+    { "Exif.Photo.ExposureTime",          "曝光",      5 },
+    { "Exif.Photo.FNumber",               "光圈",      6 },
+    { "Exif.Photo.ISOSpeedRatings",       "ISO",       7 },
+    { "Exif.Photo.FocalLength",           "焦距",      8 },
+    { "Exif.Photo.FocalLengthIn35mmFilm", "等效焦距",  9 },
+    { "Exif.Photo.ExposureBiasValue",     "曝光补偿", 10 },
+    { "Exif.Photo.MaxApertureValue",      "最大光圈", 11 },
+    { "Exif.Photo.MeteringMode",          "测光",     12 },
+    { "Exif.Photo.Flash",                 "闪光灯",   13 },
+    { "Exif.Photo.LightSource",           "光源",     14 },
+    { "Exif.Photo.WhiteBalance",          "白平衡",   15 },
+    { "Exif.Photo.ExposureProgram",       "曝光程序", 16 },
+    { "Exif.Image.DateTime",              "修改时间", 17 },
+    { "Exif.Image.Software",              "软件",     20 },
+    { "Exif.Image.Artist",                "作者",     21 },
+    { "Exif.Image.Copyright",             "版权",     22 },
+    { "Exif.Image.ImageDescription",      "描述",     23 },
+    { "Exif.Photo.LensMake",              "镜头厂商", 24 },
+    { "Exif.Photo.SubjectDistance",       "拍摄距离", 25 },
+    { "Exif.Photo.DigitalZoomRatio",      "数码变焦", 26 },
+    { "Exif.Photo.SceneCaptureType",      "场景",     27 },
+    { "Exif.Photo.Saturation",            "饱和度",   28 },
+    { "Exif.Photo.Contrast",              "对比度",   29 },
+    { "Exif.Photo.Sharpness",             "锐度",     30 },
 };
 
-const TagSpec *specFor(int tag)
+const QHash<QString, const TagSpec *> &specMap()
 {
-    for (const TagSpec &s : kSpecs)
-        if (s.tag == tag) return &s;
-    return nullptr;
+    static const QHash<QString, const TagSpec *> m = [] {
+        QHash<QString, const TagSpec *> h;
+        for (const TagSpec &s : kSpecs) h.insert(QString::fromLatin1(s.key), &s);
+        return h;
+    }();
+    return m;
 }
 
 // 结构 / 常量类标签：对"看图的人"没有信息量，且会盖掉真正生效的结论
-bool isNoise(int tag)
+bool isNoise(const QString &key)
 {
-    switch (tag) {
-    case EXIF_TAG_EXIF_VERSION:
-    case EXIF_TAG_FLASH_PIX_VERSION:
-    case EXIF_TAG_COMPONENTS_CONFIGURATION:
-    case EXIF_TAG_MAKER_NOTE:
-    case EXIF_TAG_USER_COMMENT:
-    case EXIF_TAG_X_RESOLUTION:
-    case EXIF_TAG_Y_RESOLUTION:
-    case EXIF_TAG_RESOLUTION_UNIT:
-    case EXIF_TAG_COLOR_SPACE:      // 常写 Uncalibrated，与真正生效的 ICC 冲突
-    case EXIF_TAG_ORIENTATION:      // 效果已体现在"分辨率"行
-    case EXIF_TAG_INTER_COLOR_PROFILE:   // ICC 本体，不作为行显示
-    case EXIF_TAG_PIXEL_X_DIMENSION:     // 像素尺寸已在"分辨率"行
-    case EXIF_TAG_PIXEL_Y_DIMENSION:
-        return true;
-    default:
-        return false;
-    }
+    if (key.startsWith(QLatin1String("Exif.Thumbnail."))) return true;   // 缩略图 IFD 整组
+    static const QSet<QString> kNoise = {
+        QStringLiteral("Exif.Photo.ExifVersion"),
+        QStringLiteral("Exif.Photo.FlashpixVersion"),
+        QStringLiteral("Exif.Photo.ComponentsConfiguration"),
+        QStringLiteral("Exif.Photo.MakerNote"),
+        QStringLiteral("Exif.Photo.UserComment"),
+        QStringLiteral("Exif.Photo.ColorSpace"),      // 常写 Uncalibrated，与真正生效的 ICC 冲突
+        QStringLiteral("Exif.Photo.InterColorProfile"),
+        QStringLiteral("Exif.Photo.PixelXDimension"), // 像素尺寸已在"分辨率"行
+        QStringLiteral("Exif.Photo.PixelYDimension"),
+        QStringLiteral("Exif.Image.XResolution"),     // DPI 与屏幕显示无关
+        QStringLiteral("Exif.Image.YResolution"),
+        QStringLiteral("Exif.Image.ResolutionUnit"),
+        QStringLiteral("Exif.Image.Orientation"),     // 效果已体现在"分辨率"行
+        QStringLiteral("Exif.Image.InterColorProfile"),
+        QStringLiteral("Exif.Image.ExifTag"),         // 只是 IFD 偏移
+        QStringLiteral("Exif.Image.GPSTag"),          // 同上（Exiv2 比 libexif 多暴露指针类标签）
+        QStringLiteral("Exif.Image.InteroperabilityTag"),
+        QStringLiteral("Exif.GPSInfo.GPSVersionID"),
+        QStringLiteral("Exif.GPSInfo.GPSLatitudeRef"),    // 只是方向标记，值已在经纬度里
+        QStringLiteral("Exif.GPSInfo.GPSLongitudeRef"),
+        QStringLiteral("Exif.GPSInfo.GPSAltitudeRef"),
+    };
+    return kNoise.contains(key);
 }
 
-// GPS 有独立的中文名（tag 号与 IFD0 重号，必须按 IFD 区分）
-QString gpsLabel(int tag)
+// GPS 有独立的中文名（词条与其它 IFD 无关，按 Exiv2 的完整 key 区分）
+QString gpsLabel(const QString &key)
 {
-    switch (tag) {
-    case EXIF_TAG_GPS_LATITUDE:   return QStringLiteral("纬度");
-    case EXIF_TAG_GPS_LONGITUDE:  return QStringLiteral("经度");
-    case EXIF_TAG_GPS_ALTITUDE:   return QStringLiteral("海拔");
-    case EXIF_TAG_GPS_TIME_STAMP: return QStringLiteral("GPS 时间");
-    case EXIF_TAG_GPS_DATE_STAMP: return QStringLiteral("GPS 日期");
-    default:                      return {};
-    }
-}
-
-struct Row { QString key; QString value; int prio; int seq; int ifd; };
-
-QVector<Row> exifRowsFromBlock(const QByteArray &block)
-{
-    QVector<Row> out;
-    if (block.size() < 8) return out;
-    ExifData *d = exif_data_new();
-    if (!d) return out;
-    exif_data_load_data(d, reinterpret_cast<const unsigned char *>(block.constData()),
-                        uint(block.size()));
-    static const ExifIfd kIfds[] = { EXIF_IFD_0, EXIF_IFD_EXIF, EXIF_IFD_GPS };
-    int seq = 0;
-    for (ExifIfd ifd : kIfds) {
-        ExifContent *c = d->ifd[ifd];
-        if (!c) continue;
-        for (unsigned i = 0; i < c->count; ++i) {
-            ExifEntry *e = c->entries[i];
-            if (!e || isNoise(int(e->tag))) continue;
-            char buf[512] = { 0 };
-            exif_entry_get_value(e, buf, sizeof buf);
-            const QString value = QString::fromUtf8(buf).trimmed();
-            if (value.isEmpty()) continue;
-            if (ifd == EXIF_IFD_GPS && int(e->tag) <= EXIF_TAG_GPS_LONGITUDE_REF)
-                continue;                        // *_REF 只是方向标记，值已在经纬度里
-            QString key = (ifd == EXIF_IFD_GPS) ? gpsLabel(int(e->tag)) : QString();
-            int prio = 1000;
-            if (key.isEmpty()) {
-                if (const TagSpec *s = specFor(int(e->tag))) { key = s->label; prio = s->prio; }
-                else key = QString::fromUtf8(exif_tag_get_name_in_ifd(e->tag, ifd));
-            }
-            if (key.isEmpty()) continue;
-            out.push_back({ key, value, prio, seq++, int(ifd) });
-        }
-    }
-    exif_data_unref(d);
-    // 常用项按固定优先级在前，其余保持文件原序
-    std::stable_sort(out.begin(), out.end(), [](const Row &a, const Row &b) {
-        if (a.prio != b.prio) return a.prio < b.prio;
-        return a.seq < b.seq;
-    });
-    return out;
+    if (key == QLatin1String("Exif.GPSInfo.GPSLatitude"))  return QStringLiteral("纬度");
+    if (key == QLatin1String("Exif.GPSInfo.GPSLongitude")) return QStringLiteral("经度");
+    if (key == QLatin1String("Exif.GPSInfo.GPSAltitude"))  return QStringLiteral("海拔");
+    if (key == QLatin1String("Exif.GPSInfo.GPSTimeStamp")) return QStringLiteral("GPS 时间");
+    if (key == QLatin1String("Exif.GPSInfo.GPSDateStamp")) return QStringLiteral("GPS 日期");
+    return {};
 }
 
 // ══ 色彩空间判词（与解码点 `toSrgb()` 同一个解析器）══════════════════════════
@@ -330,41 +120,83 @@ QString colorSpaceText(const QByteArray &icc, bool hasIcc)
     return desc + QStringLiteral(" → 已转 sRGB");
 }
 
+struct Row { QString key; QString value; int prio; int seq; };
+
 }  // namespace
 
-Info read(const QByteArray &head, const QString &format)
+Info read(const Source &src)
 {
+    // Exiv2 默认把坏文件的 Warning 写 stderr；本项目要求"跑起来除了 qml: 没有多余输出"。
+    // 解析失败本来也只体现为"这组行不出现"，所以静音，不丢信息。
+    static const bool kQuiet = [] {
+        Exiv2::LogMsg::setLevel(Exiv2::LogMsg::mute);
+        return true;
+    }();
+    Q_UNUSED(kQuiet)
+
     Info info;
-    const Container c = sniff(head);
-    const QString fmt = format.toLower();
+    info.colorSpace = QStringLiteral("sRGB（无 profile）");
 
-    JpegParts parts;
-    QByteArray icc;
-    bool hasIcc = false;
-    switch (c) {
-    case Container::Jpeg: parts = scanJpeg(head); break;
-    case Container::Png:  scanPng(head, &parts);  break;
-    case Container::WebP: scanWebp(head, &parts); break;
-    case Container::Tiff: parts.exif = head; icc = tiffIcc(head); hasIcc = !icc.isEmpty(); break;
-    case Container::Unknown: break;
+    Exiv2::Image::UniquePtr img;
+    try {
+        if (!src.path.isEmpty()) {
+            // ★ 磁盘文件走**路径**：Exiv2 自己 seek，只读元数据那一截（14 MB 的 HEIC 读 20 KB）
+            const QByteArray path = src.path.toUtf8();
+            img = Exiv2::ImageFactory::open(path.constData());
+        } else if (!src.bytes.isEmpty()) {
+            // 包内成员：整份已在内存（`Probe::memberBytes`），零拷贝借用
+            img = Exiv2::ImageFactory::open(
+                reinterpret_cast<const Exiv2::byte *>(src.bytes.constData()),
+                size_t(src.bytes.size()));
+        }
+        if (!img) return info;
+        img->readMetadata();
+    } catch (const Exiv2::Error &) {
+        return info;      // 格式不认识 / 数据损坏：整组不出现，判词按无 profile
     }
-    if (icc.isEmpty()) icc = parts.icc;
-    hasIcc = hasIcc || parts.hasIcc;
 
-    // 嗅探失败时退回扩展名提示（例如截断的头），交给 libexif 自己判断
-    if (parts.exif.isEmpty() && !head.isEmpty() && fmt == QStringLiteral("tiff"))
-        parts.exif = head;
+    QByteArray icc;
+    if (img->iccProfileDefined()) {
+        const Exiv2::DataBuf &buf = img->iccProfile();
+        icc = QByteArray(reinterpret_cast<const char *>(buf.c_data()), int(buf.size()));
+    }
+    info.colorSpace = colorSpaceText(icc, !icc.isEmpty());
 
-    // libexif 只认带 `Exif\0\0` 前缀的那一种块（PNG eXIf / WebP EXIF / TIFF 都是裸 TIFF）
-    QByteArray exifBlock = parts.exif;
-    if (!exifBlock.isEmpty() && !exifBlock.startsWith("Exif\0\0"))
-        exifBlock.prepend("Exif\0\0", 6);
+    QVector<Row> rows;
+    int seq = 0;
+    for (const Exiv2::Exifdatum &d : img->exifData()) {
+        const QString key = QString::fromLatin1(d.key().c_str());
+        if (isNoise(key)) continue;
+        QString value;
+        try {
+            value = QString::fromStdString(d.print()).trimmed();
+        } catch (const Exiv2::Error &) {
+            continue;                       // 个别标签的类型不被支持 ⇒ 只跳过它
+        }
+        if (value.isEmpty()) continue;
 
-    info.colorSpace = colorSpaceText(icc, hasIcc);
+        QString label;
+        int prio = 1000;
+        if (const TagSpec *s = specMap().value(key, nullptr)) {
+            label = QString::fromUtf8(s->label);
+            prio = s->prio;
+        } else {
+            label = gpsLabel(key);
+            if (label.isEmpty()) label = QString::fromStdString(d.tagLabel());
+            if (label.isEmpty()) label = QString::fromStdString(d.tagName());
+        }
+        if (label.isEmpty() || label.startsWith(QLatin1String("0x"))) continue;   // 词典外的裸 tag
+        rows.push_back({ label, value, prio, seq++ });
+    }
 
-    const QVector<Row> rows = exifRowsFromBlock(exifBlock);
+    // 常用项按固定优先级在前，其余保持文件原序
+    std::stable_sort(rows.begin(), rows.end(), [](const Row &a, const Row &b) {
+        if (a.prio != b.prio) return a.prio < b.prio;
+        return a.seq < b.seq;
+    });
+
     info.total = rows.size();
-    constexpr int kMaxRows = 24;      // 单幅最多 24 行（超出补"… 其余 N 条"）
+    constexpr int kMaxRows = 24;          // 单幅最多 24 行（超出补"… 其余 N 条"）
     for (const Row &r : rows) {
         if (info.rows.size() >= kMaxRows) break;
         info.rows.append(qMakePair(r.key, r.value));

@@ -18,9 +18,10 @@ enable_testing()
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBARCHIVE REQUIRED libarchive)
-# EXIF 解析：libexif（LGPL-2.1，动态链接）—— Qt 不向外暴露任何 EXIF 标签（见设计 17 §二）
-pkg_check_modules(LIBEXIF REQUIRED libexif)
-find_package(ZLIB REQUIRED)
+# 元数据解析：Exiv2（容器 + 标签 + ICC 一体）—— Qt 不向外暴露任何 EXIF 标签（见设计 17 §二）
+#   ★ 只认这一个：它自带 JPEG/PNG/WebP/TIFF/HEIF/AVIF/CR3/JP2/JXL 的容器走法，
+#     不必我们再手写段扫描（用户 2026-10-21）；按路径打开时它自己 seek，不读全文。
+pkg_check_modules(EXIV2 REQUIRED exiv2)
 
 # libunrar：只读 RAR 用途；无 pkg-config，手动找
 find_library(UNRAR_LIBRARY NAMES unrar REQUIRED)
@@ -118,11 +119,10 @@ target_link_libraries(ibcore PUBLIC
     Qt6::Core Qt6::Gui Qt6::Quick Qt6::Qml Qt6::Sql Qt6::Widgets
     Qt6::GuiPrivate
     ${LIBARCHIVE_LIBRARIES}
-    ${LIBEXIF_LIBRARIES}
-    ZLIB::ZLIB
+    ${EXIV2_LIBRARIES}
     LibLZMA::LibLZMA
     ${UNRAR_LIBRARY})
-target_include_directories(ibcore PUBLIC ${LIBARCHIVE_INCLUDE_DIRS} ${LIBEXIF_INCLUDE_DIRS}
+target_include_directories(ibcore PUBLIC ${LIBARCHIVE_INCLUDE_DIRS} ${EXIV2_INCLUDE_DIRS}
                                         ${UNRAR_INCLUDE_DIR})
 
 # ══ testsupport：测试脚手架**独立成库**（设计 14 §11）════════════════════════
