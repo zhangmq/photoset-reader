@@ -37,6 +37,18 @@ QByteArray readLocation(const Location &loc);
 //   包内成员本来就要解出整条，再截断）
 QByteArray headBytes(const Location &loc, int maxBytes);
 
+// 条目探测（**一次拿全**，不解码）：头字节 + 容器格式 + 显示尺寸 + 页数 + 字节数
+//   ★ 给 OSD 用：`head` 交 `exifmeta`，其余是"图像"那组的行；一次取，不重复开容器
+struct Probe {
+    QByteArray head;
+    QString    format;        // "jpeg" / "png" / …（QImageReader 报的，空 = 读不到）
+    QSize      size;          // **显示尺寸**（已按 EXIF 旋转）
+    bool       rotated = false;
+    int        pages = 1;
+    qint64     bytes = -1;    // 文件大小 / 成员大小
+};
+Probe probe(const Location &loc, int headMax);
+
 // 解码（**唯一实现**）。空图 = 不可读
 QImage image(const Location &loc);
 

@@ -286,7 +286,7 @@ Item {
         onSettingsRequested: root.settingsRequested()
         progressText: ui.viewer ? ((ui.viewer.currentPage + 1) + " / " + ui.viewer.totalPages) : ""
         fileName: ui.viewer ? ui.viewer.currentName : ""
-        relativePath: ""
+        relativePath: ui.viewer ? ui.viewer.relativePath : ""
     }
 
     // ── 底部类播放器控制条 ──
@@ -333,13 +333,8 @@ Item {
         anchors.leftMargin: Theme.spaceLg
         anchors.topMargin: Theme.barH + Theme.spaceSm
         osdVisible: ui.viewer ? ui.viewer.osdVisible : false
-        positionLabel: ui.viewer ? ((ui.viewer.currentPage + 1) + " / " + ui.viewer.totalPages) : ""
-        fileLabel: ""
-        pathLabel: ""
-        folderLabel: ""
-        resolutionLabel: ""      // 分辨率 = 像素尺寸（尺寸=文件字节大小，待接）
-        kindLabel: ""
-        // 图集 / 分辨率 / EXIF：数据未接入 → 面板显示 "—"（需求见设计 §3.9）
+        //   行由 viewer 按需读（`osdRows()`）：文件 / 图像 / EXIF 三组，
+        //   EXIF 是**动态的**（不同图片标签不同）⇒ 面板不再有固定字段
     }
 
     // ── 窗口全屏：状态在 ViewModel，窗口跟随（照 vsr-player 的双向同步）──

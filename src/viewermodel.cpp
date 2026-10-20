@@ -1,8 +1,10 @@
 #include "viewermodel.h"
 
+#include "exifmeta.h"
 #include "gpuscale.h"
 
 #include <QDebug>
+#include <QVariantMap>
 #include <QMetaObject>
 #include <QTimer>
 
@@ -879,6 +881,7 @@ void ViewerModel::screen(int start, const QVector<int> &items)
         if (!b.isEmpty())
             m_screenName += QStringLiteral(" · ") + b;
     }
+    m_screenPath = relativePathOf(items.value(0, -1));
     m_keyCount = items.size();
     m_cursor = start;
     updateLoading();                          // 上屏之后也更新一次（浮层与新口径无关，只是不漏路径）
@@ -888,6 +891,103 @@ void ViewerModel::screen(int start, const QVector<int> &items)
     // 换画面 ⇒ 视图态复位（未锁定时按当前 fit 重算 zoom；锁定 ⇒ 保留 zoom/pan）
     if (!m_zoomLocked) applyFit();
     onScreenUp();                             // ★ 幻灯片：上屏那一刻（唯一写点就在这里）
+}
+
+// ══ OSD 信息行（**按需读取**，无状态；用户 2026-10-21 定案）═════════════════
+//   · OSD / EXIF 不归 `Sequence`（它只描述序列），也不做 VM 状态 ⇒ 界面要时才读；
+//   · 一次读 = 一次条目探测（头字节 + 格式 + 尺寸 + 页数，**不解码**）+ EXIF/ICC 解析；
+//   · 普通文件只读头 256 KB；包内成员复用内层包单槽（`imageread`）。
+namespace {
+constexpr int kOsdHeadBytes = 256 * 1024;
+const QString kSecFile  = QStringLiteral("文件");
+const QString kSecImage = QStringLiteral("图像");
+const QString kSecExif  = QStringLiteral("EXIF");
+
+QString humanBytes(qint64 n)
+{
+    if (n < 0) return {};
+    if (n < 1024) return QStringLiteral("%1 B").arg(n);
+    if (n < 1024 * 1024) return QStringLiteral("%1 KB").arg(n / 1024.0, 0, 'f', 1);
+    if (n < qint64(1024) * 1024 * 1024) return QStringLiteral("%1 MB").arg(n / 1048576.0, 0, 'f', 1);
+    return QStringLiteral("%1 GB").arg(n / 1073741824.0, 0, 'f', 2);
+}
+}  // namespace
+
+//   相对图集根的路径：`文件夹/…/压缩包!/包内成员`（容器层数取自 `loc.members`）
+QString ViewerModel::relativePathOf(int idx) const
+{
+    if (!m_seq || idx < 0 || idx >= m_seq->count()) return {};
+    const QStringList chain = m_seq->chainAt(idx);
+    if (chain.isEmpty()) return {};
+    const int depth = qMax(0, m_seq->at(idx).members().size() - 1);   // 容器层数
+    const int boundary = chain.size() - depth;                        // 第一个"包内"元素
+    QString out;
+    for (int i = 0; i < chain.size(); ++i) {
+        if (i > 0) out += (i == boundary) ? QStringLiteral("!/") : QStringLiteral("/");
+        out += chain.at(i);
+    }
+    return out;
+}
+
+QVariantList ViewerModel::osdColumn(int idx)
+{
+    QVariantList rows;
+    if (!m_seq || idx < 0 || idx >= m_seq->count()) return rows;
+    const Sequence::Item &it = m_seq->at(idx);
+    const auto add = [&rows](const QString &k, const QString &v, const QString &section) {
+        if (k.isEmpty() || v.isEmpty()) return;      // 没有的行不出现（不显示 "—"）
+        QVariantMap m;
+        m.insert(QStringLiteral("k"), k);
+        m.insert(QStringLiteral("v"), v);
+        m.insert(QStringLiteral("section"), section);
+        rows.append(m);
+    };
+
+    // ── 文件（序列 + 上层给的上下文，不需要读盘）──
+    add(QStringLiteral("序号"), QStringLiteral("%1 / %2").arg(idx + 1).arg(totalPages()), kSecFile);
+    add(QStringLiteral("文件"), it.displayName, kSecFile);
+    const QString tail = relativePathOf(idx);
+    if (tail != it.displayName) add(QStringLiteral("路径"), tail, kSecFile);   // 根目录下与文件名相同 ⇒ 不重复
+    add(QStringLiteral("文件夹"), it.folderLabel, kSecFile);
+    add(QStringLiteral("图集"), m_collectionLabel, kSecFile);
+
+    // ── 图像（一次探测，不解码）──
+    const imageread::Probe pb = imageread::probe(it.loc, kOsdHeadBytes);
+    if (pb.size.isValid()) {
+        const QString dims = QStringLiteral("%1×%2").arg(pb.size.width()).arg(pb.size.height());
+        add(QStringLiteral("分辨率"), pb.rotated ? dims + QStringLiteral("（已按 EXIF 旋转）") : dims,
+            kSecImage);
+    }
+    QString kind = pb.format.toUpper();
+    if (kind.isEmpty()) kind = QStringLiteral("未知");
+    if (pb.pages > 1) kind += QStringLiteral(" %1/%2").arg(it.loc.page + 1).arg(pb.pages);
+    add(QStringLiteral("类型"), kind, kSecImage);
+    add(QStringLiteral("尺寸"), humanBytes(pb.bytes), kSecImage);
+
+    // ── EXIF + 色彩空间（纯函数解析头字节）──
+    const exifmeta::Info info = exifmeta::read(pb.head, pb.format);
+    add(QStringLiteral("色彩空间"), info.colorSpace, kSecImage);
+    for (const auto &row : info.rows) add(row.first, row.second, kSecExif);
+    if (info.total > info.rows.size())
+        add(QStringLiteral("其他"),
+            QStringLiteral("… 其余 %1 条").arg(info.total - info.rows.size()), kSecExif);
+    return rows;
+}
+
+//   一次调用 = 当前这一屏所有可见位置各一列（双幅两列）
+QVariantList ViewerModel::osdRows()
+{
+    QVariantList cols;
+    if (!m_seq || m_seq->count() <= 0) return cols;
+    const QVector<int> items = screenItems(screenStart(m_pos));
+    for (int idx : items) {
+        const QVariantList col = osdColumn(idx);
+        if (col.isEmpty()) continue;
+        QVariantMap column;
+        column.insert(QStringLiteral("rows"), col);
+        cols.append(column);
+    }
+    return cols;
 }
 
 //   loading（界面浮层）的**唯一写点**，当场按当前状态算：

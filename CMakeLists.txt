@@ -18,6 +18,9 @@ enable_testing()
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBARCHIVE REQUIRED libarchive)
+# EXIF 解析：libexif（LGPL-2.1，动态链接）—— Qt 不向外暴露任何 EXIF 标签（见设计 17 §二）
+pkg_check_modules(LIBEXIF REQUIRED libexif)
+find_package(ZLIB REQUIRED)
 
 # libunrar：只读 RAR 用途；无 pkg-config，手动找
 find_library(UNRAR_LIBRARY NAMES unrar REQUIRED)
@@ -69,6 +72,9 @@ add_library(ibcore STATIC
     # ── 条目读取（位置 + 读图）：`Sequence` 只调用，不碰 QImageReader / QImage ──
     src/imageread.cpp
     src/imageread.h
+    # ── 元数据（EXIF / 色彩空间）：纯函数，把"头字节"变成 OSD 的行 ──
+    src/exifmeta.cpp
+    src/exifmeta.h
     # ── 浏览的一层（`fetch::BrowseLayer` / `browseLayerOf`）：浏览界面直接从序列取 ──
     src/seqwindow.cpp
     src/seqwindow.h
@@ -112,9 +118,12 @@ target_link_libraries(ibcore PUBLIC
     Qt6::Core Qt6::Gui Qt6::Quick Qt6::Qml Qt6::Sql Qt6::Widgets
     Qt6::GuiPrivate
     ${LIBARCHIVE_LIBRARIES}
+    ${LIBEXIF_LIBRARIES}
+    ZLIB::ZLIB
     LibLZMA::LibLZMA
     ${UNRAR_LIBRARY})
-target_include_directories(ibcore PUBLIC ${LIBARCHIVE_INCLUDE_DIRS} ${UNRAR_INCLUDE_DIR})
+target_include_directories(ibcore PUBLIC ${LIBARCHIVE_INCLUDE_DIRS} ${LIBEXIF_INCLUDE_DIRS}
+                                        ${UNRAR_INCLUDE_DIR})
 
 # ══ testsupport：测试脚手架**独立成库**（设计 14 §11）════════════════════════
 #   `check` / `waitFor` / `TempFixture` / `pipetest` / 套件入口 —— 只有**测试**该碰它，

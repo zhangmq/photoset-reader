@@ -63,6 +63,12 @@ qt_add_executable(ib-test-uicore
 )
 target_link_libraries(ib-test-uicore PRIVATE testsupport)
 
+# ── 元数据（EXIF / 色彩空间）纯函数（设计 17）：不需要临时库，只读 `.testdata` ──
+qt_add_executable(ib-test-meta
+    selftest_meta.cpp
+)
+target_link_libraries(ib-test-meta PRIVATE testsupport)
+
 # ── ctest：相对 `.testdata` 的套件在**源码根**跑 ──────────────────────────
 add_test(NAME ib-test-library COMMAND ib-test-library
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
@@ -77,6 +83,8 @@ add_test(NAME ib-test-cover COMMAND ib-test-cover
 add_test(NAME ib-test-reset COMMAND ib-test-reset
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME ib-test-uicore COMMAND ib-test-uicore
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME ib-test-meta COMMAND ib-test-meta
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 # ── 可能**整条套件跳过**（夹具 / 环境不具备 ⇒ rc 77）：ctest 显示 skipped ──────

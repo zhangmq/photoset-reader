@@ -6,6 +6,8 @@
 #include <QColorSpace>
 #include <QFile>
 #include <QHash>
+#include <QFileInfo>
+#include <QImageIOHandler>
 #include <QImageReader>
 #include <QMutex>
 
@@ -203,6 +205,46 @@ QByteArray headBytes(const Location &loc, int maxBytes)
     }
     const QByteArray all = readLocation(loc);
     return all.size() > maxBytes ? all.left(maxBytes) : all;
+}
+
+Probe probe(const Location &loc, int headMax)
+{
+    Probe out;
+    if (headMax <= 0) headMax = 0;
+    QByteArray all;
+    if (loc.members.isEmpty()) {
+        QFileInfo fi(loc.diskPath);
+        out.bytes = fi.size();
+        QFile f(loc.diskPath);
+        if (f.open(QIODevice::ReadOnly)) out.head = f.read(headMax);
+    } else {
+        all = readLocation(loc);
+        out.bytes = all.isEmpty() ? -1 : all.size();
+        out.head = all.size() > headMax ? all.left(headMax) : all;
+    }
+
+    QImageReader reader;
+    QBuffer buf;
+    if (loc.members.isEmpty()) {
+        reader.setFileName(loc.diskPath);
+    } else if (!all.isEmpty()) {
+        buf.setData(all);
+        if (!buf.open(QIODevice::ReadOnly)) return out;
+        reader.setDevice(&buf);
+    } else {
+        return out;
+    }
+    if (loc.page > 0) reader.jumpToImage(loc.page);
+    out.format = QString::fromLatin1(reader.format());
+    const QSize raw = reader.size();
+    const int pages = reader.imageCount();
+    out.pages = pages > 1 ? pages : 1;
+    // 显示尺寸 = 按 EXIF 方向旋转后的尺寸（用户看到的那一版）
+    const auto t = reader.transformation();
+    const bool swap = bool(t & QImageIOHandler::TransformationRotate90);
+    out.rotated = t != QImageIOHandler::TransformationNone;
+    out.size = swap ? QSize(raw.height(), raw.width()) : raw;
+    return out;
 }
 
 QImage image(const Location &loc)

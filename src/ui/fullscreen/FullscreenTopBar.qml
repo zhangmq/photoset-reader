@@ -80,9 +80,9 @@ Item {
             }
             Text {   // 相对图集根的路径（长路径中间省略，保留首尾辨识度）
                 anchors.verticalCenter: parent.verticalCenter
-                visible: root.relativePath !== ""
+                visible: root.relativePath !== "" && root.relativePath !== root.fileName
                 text: root.relativePath
-                color: Theme.textPrimary
+                color: Theme.textSecondary      // 路径是次要信息（不抢文件名）
                 elide: Text.ElideMiddle
                 width: Math.min(implicitWidth, Theme.osdPathMaxW)
             }

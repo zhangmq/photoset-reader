@@ -554,6 +554,10 @@ void UiModel::installViewer(Source s)
     emit viewerChanged();            // ★ 先让 QML 换绑到新 viewer
     if (m_src.vm) m_src.vm->setSequence(m_src.seq);
     applyViewerDefaults();           // ★ 新建 viewer ⇒ 按全局默认起一份阅读态（直接打开也走这里）      // ★ 立刻定 loading + 派活
+    //   图集标题（OSD 的"图集"行）：会话来源没有图集 ⇒ 空（该行不出现）
+    if (m_src.vm)
+        m_src.vm->setCollectionLabel(m_collectionId >= 0 ? collectionById(m_collectionId).title
+                                                         : QString());
     if (m_browse) {
         // 浏览只吃序列 + 当前条目（不经过 viewer）
         m_browse->setSequence(m_src.seq);

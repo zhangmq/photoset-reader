@@ -83,6 +83,8 @@ class ViewerModel : public QObject
     //   当前这一屏的**文件名**（双幅两页时用 " · " 连起来；多页文件是 "file [k/N]"）——
     //   顶栏显示用，派生值，不改任何状态
     Q_PROPERTY(QString currentName READ currentName NOTIFY currentChanged)
+    //   当前这一屏第一幅**相对图集根的路径**（顶栏用；与 OSD 的"路径"行同一份实现）
+    Q_PROPERTY(QString relativePath READ relativePath NOTIFY currentChanged)
     //   ★ 幻灯片（13 §九·补·二）：`playing` **只是一个状态**（没有幻灯片对象）
     Q_PROPERTY(bool playing READ playing WRITE setPlaying NOTIFY playingChanged)
     Q_PROPERTY(int cursor READ cursor WRITE setCursor NOTIFY currentChanged)  // 写 = 跳转；= 本屏起点
@@ -149,6 +151,15 @@ public:
     Q_INVOKABLE void panBy(qreal dx, qreal dy);
     Q_INVOKABLE void zoomAtPoint(qreal factor, qreal anchorX, qreal anchorY);
 
+    // ── OSD 信息行（**按需读取**，用户 2026-10-21 定案）─────────────────────
+    //   ★ 不是属性、没有 NOTIFY、不进任何成员：EXIF / 尺寸 / 色彩空间是**信息性数据**
+    //     （AGENTS.md「信息性数据用 getter，不进 VM 状态」），界面要看时才读一次。
+    //   返回"列"：单幅 1 列、双幅 2 列；每列 = 该幅的行（`{k, v, section}`；
+    //   EXIF 行**有才出现** —— 不同图片标签集不同，绝不固化）。
+    Q_INVOKABLE QVariantList osdRows();
+    //   图集标题（属于"这一屏的上下文"，不是 OSD 数据）：由上层建 viewer / 进图集时下发
+    void setCollectionLabel(const QString &label) { m_collectionLabel = label; }
+
     QImage imageA() const { return m_imageA; }
     QImage imageB() const { return m_imageB; }      // 单幅 / 坏的空位：空图
     int  keyCount() const { return m_keyCount; }
@@ -157,6 +168,7 @@ public:
     int  loopMode() const { return int(m_loop); }
     void setLoopMode(int mode);                     // 写 = 换循环模式（不写盘；进沉浸视图回默认）
     QString currentName() const;
+    QString relativePath() const { return m_screenPath; }
     QString prevFolderName() const;
     QString nextFolderName() const;
     bool loading() const { return m_loading; }
@@ -332,6 +344,10 @@ private:
     bool   m_osdVisible = false;
     QString m_scaleAlgorithm = QStringLiteral("lanczos3");
     QString m_screenName;                     // 当前这一屏的文件名（上屏时按真实条目算）
+    QString m_screenPath;                     // 当前这一屏的路径（同上）
+    QString m_collectionLabel;                // 图集标题（会话来源 = 空）
+    QVariantList osdColumn(int itemIndex);    // OSD 的一列（按需读；见 osdRows）
+    QString      relativePathOf(int itemIndex) const;   // 相对图集根的路径（`A!/B`）
     QTimer  *m_beat = nullptr;                // 单发闹钟（只负责"到点叫醒"，不参与节奏）
     NowFn    m_now;                           // 单调时钟（可注入；生产在构造里装）
     qint64   m_reqAt = 0;                     // 上一次"成为当前屏"的动作**被请求**的时刻
