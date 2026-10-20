@@ -132,20 +132,13 @@ public:
     //   内层压缩包上限（MB）：超过上限的内层压缩包不展开（判定在解压前）
     Q_PROPERTY(int  innerArchiveMaxMb READ innerArchiveMaxMb WRITE setInnerArchiveMaxMb
                                        NOTIFY innerArchiveMaxMbChanged)
-    //   图像（缩放）——**参数才是真相**（2026-10-20：画质预设已清，只留参数）
-    Q_PROPERTY(QString scalerQuality READ scalerQuality WRITE setScalerQuality
-                                      NOTIFY scalerQualityChanged)
-    Q_PROPERTY(QString scalerMode READ scalerMode WRITE setScalerMode NOTIFY scalerModeChanged)
-    Q_PROPERTY(QString scalerFilter READ scalerFilter WRITE setScalerFilter
-                                      NOTIFY scalerFilterChanged)
-    Q_PROPERTY(int scalerLobes READ scalerLobes WRITE setScalerLobes NOTIFY scalerLobesChanged)
-    Q_PROPERTY(double scalerMitchellB READ scalerMitchellB WRITE setScalerMitchellB
-                                       NOTIFY scalerMitchellBChanged)
-    Q_PROPERTY(double scalerMitchellC READ scalerMitchellC WRITE setScalerMitchellC
-                                       NOTIFY scalerMitchellCChanged)
-    Q_PROPERTY(double scalerAntiring READ scalerAntiring WRITE setScalerAntiring
-                                      NOTIFY scalerAntiringChanged)
-    //   当前参数匹配到哪个预设（空串 = 自定义）—— **派生**，不存
+    //   图像（缩放）——**唯一选项 = 算法**（2026-10-20 定案：5 个一级算法，无二级参数）
+    //   值域：nearest | smooth | bicubic | lanczos2 | lanczos3（键串与 gpuscale::algorithmKey 同源）
+    Q_PROPERTY(QString scaleAlgorithm READ scaleAlgorithm WRITE setScaleAlgorithm
+                                       NOTIFY scaleAlgorithmChanged)
+    //   场景图后端是不是软件渲染（**只读**，main.cpp 在 sceneGraphInitialized 时写一次）。
+    //   软件后端下 QQuickRhiItem 不画 ⇒ QML 按它切到 CpuScalerItem。
+    Q_PROPERTY(bool softwareBackend READ softwareBackend NOTIFY softwareBackendChanged)
 
     // ── 幻灯片间隔（`AppSettings` 支撑）────────────────────────────────────
     //   设置项 `intervalMs` 的 QML 面（设置页读写 `ui.slideshowIntervalMs`）。
@@ -247,24 +240,14 @@ public:
     void setRecurseDepth(int v);
     int  prefetchWindow() const;
     void setPrefetchWindow(int v);
-    void setCacheMb(int v);
     //   ★ v7：内层压缩包上限（MB）—— 只影响**下一次展开**（正在看的那份序列不重建）
     int  innerArchiveMaxMb() const;
     void setInnerArchiveMaxMb(int v);
-    QString scalerQuality() const;
-    void setScalerQuality(const QString &v);
-    QString scalerMode() const;
-    void setScalerMode(const QString &v);
-    QString scalerFilter() const;
-    void setScalerFilter(const QString &v);
-    int     scalerLobes() const;
-    void    setScalerLobes(int v);
-    double  scalerMitchellB() const;
-    void    setScalerMitchellB(double v);
-    double  scalerMitchellC() const;
-    void    setScalerMitchellC(double v);
-    double  scalerAntiring() const;
-    void    setScalerAntiring(double v);
+    QString scaleAlgorithm() const;
+    void setScaleAlgorithm(const QString &v);
+    bool softwareBackend() const { return m_softwareBackend; }
+    // 只给 main.cpp 用（探测到 graphicsApi 之后写一次）
+    void setSoftwareBackend(bool on);
 
 Q_SIGNALS:
     void viewerChanged();
@@ -287,13 +270,8 @@ Q_SIGNALS:
     void recurseDepthChanged();
     void prefetchWindowChanged();
     void innerArchiveMaxMbChanged();
-    void scalerQualityChanged();
-    void scalerModeChanged();
-    void scalerFilterChanged();
-    void scalerLobesChanged();
-    void scalerMitchellBChanged();
-    void scalerMitchellCChanged();
-    void scalerAntiringChanged();
+    void scaleAlgorithmChanged();
+    void softwareBackendChanged();
     void notificationChanged();        // ★ 瞬时提示（浮层）
 
 private:
@@ -350,6 +328,7 @@ private:
     //   构造时 `load()`（= 旧 `main`/`iconpicker`/自检里那次单例的 `load()`）；
     //   各成员函数读写它；需要值的组件一律由本类**调用时传参**。
     AppSettings m_settings;
+    bool m_softwareBackend = false;   // 场景图后端 = software（main.cpp 探测后写一次）
 
     // 条目来源：只有**库来源**才有（阅读位置的 key ↔ 下标映射；会话来源不写入磁盘）
     //   ⚠️ T2c-2b-1：图集查看改走 core 的**静态只读快照** ⇒ 位置派生直接用

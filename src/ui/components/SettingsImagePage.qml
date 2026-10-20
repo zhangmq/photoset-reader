@@ -2,15 +2,17 @@ import QtQuick
 import ImageBrowser
 
 // ══ 设置 · 图像页（**本文件自足：改这里不会影响别的页签**）══════
-//   项：缩放方式 / Lanczos 瓣数 / 抗振铃强度
-//   ★ 纪律：**参数才是真相**（2026-10-20 用户定案：画质预设已清，只留参数）。
-//   ★ 值一律**读写 ViewModel**；字符串 ↔ 枚举的映射只在 ViewModel（本页只做下标换算）
+//   只有一个设置项：**缩放算法**（5 个一级选项，英文名照社区口径，不翻译）。
+//   ★ 2026-10-20 用户定案：不再有"档位 / 预设 / 二级参数"——
+//     每个算法内部的核宽、色彩空间、是否抑制振铃全部固定（见 gpuscale::Algorithm）。
+//   ★ 值一律读写 ViewModel（`ui.scaleAlgorithm`，键串唯一事实源在 gpuscale）。
+//   ★ `Smooth (Qt)` 是唯一由 Qt 实现的项：软件渲染时它也是唯一能出画面的那项。
 Item {
     id: page
 
-    readonly property var modeKeys: ["linear-light", "nearest", "qt-smooth"]
-    readonly property var lobeValues: [2, 3, 4]
-    readonly property var arValues: [0.0, 0.5, 1.0]
+    // 键串 ↔ 显示名的唯一映射（键必须与 gpuscale::algorithmKey() 一致）
+    readonly property var algorithmKeys: ["nearest", "smooth", "bicubic", "lanczos2", "lanczos3"]
+    readonly property var algorithmLabels: ["Nearest", "Smooth (Qt)", "Bicubic", "Lanczos 2", "Lanczos 3"]
 
     implicitHeight: column.implicitHeight
 
@@ -19,38 +21,20 @@ Item {
         width: parent.width
 
         SettingsRow {
-            label: "缩放方式"
-            description: "缩放所用的色彩空间"
+            label: "缩放算法"
+            description: ui.softwareBackend
+                         ? "软件渲染：固定 Smooth (Qt)，其余选项不生效"
+                         : "每个算法内部参数已固定；Smooth (Qt) 由 Qt 执行，其余走 GPU"
             DropdownButton {
-                label: ["线性光（推荐）", "像素完美（整数倍 + 最近邻）", "Qt 平滑"][page.modeKeys.indexOf(ui.scalerMode)]
-                menuItems: [ { text: "线性光（推荐）",             selected: ui.scalerMode === "linear-light" },
-                             { text: "像素完美（整数倍 + 最近邻）", selected: ui.scalerMode === "nearest" },
-                             { text: "Qt 平滑",                   selected: ui.scalerMode === "qt-smooth" } ]
-                onItemTriggered: function (i) { ui.scalerMode = page.modeKeys[i] }
-            }
-        }
-
-        SettingsRow {
-            label: "Lanczos 瓣数"
-            description: "越大越锐，振铃越多（仅 Lanczos 系生效）"
-            DropdownButton {
-                label: String(ui.scalerLobes)
-                menuItems: [ { text: "2", selected: ui.scalerLobes === 2 },
-                             { text: "3", selected: ui.scalerLobes === 3 },
-                             { text: "4", selected: ui.scalerLobes === 4 } ]
-                onItemTriggered: function (i) { ui.scalerLobes = page.lobeValues[i] }
-            }
-        }
-
-        SettingsRow {
-            label: "抗振铃强度"
-            description: "把结果夹回源邻域的范围，0 = 关（仅「最佳」档生效）"
-            DropdownButton {
-                label: ["关", "一半", "全"][page.arValues.indexOf(ui.scalerAntiring)]
-                menuItems: [ { text: "关",   selected: ui.scalerAntiring === 0.0 },
-                             { text: "一半", selected: ui.scalerAntiring === 0.5 },
-                             { text: "全",   selected: ui.scalerAntiring === 1.0 } ]
-                onItemTriggered: function (i) { ui.scalerAntiring = page.arValues[i] }
+                label: page.algorithmLabels[Math.max(0, page.algorithmKeys.indexOf(ui.scaleAlgorithm))]
+                menuItems: [
+                    { text: "Nearest",     selected: ui.scaleAlgorithm === "nearest" },
+                    { text: "Smooth (Qt)", selected: ui.scaleAlgorithm === "smooth" },
+                    { text: "Bicubic",     selected: ui.scaleAlgorithm === "bicubic" },
+                    { text: "Lanczos 2",   selected: ui.scaleAlgorithm === "lanczos2" },
+                    { text: "Lanczos 3",   selected: ui.scaleAlgorithm === "lanczos3" }
+                ]
+                onItemTriggered: function (i) { ui.scaleAlgorithm = page.algorithmKeys[i] }
             }
         }
     }

@@ -24,8 +24,10 @@
 //
 // ## 与 CPU 的对应关系
 //   `viewport`（逻辑像素）+ `fit` + `zoom` + `pan` ⇒ `gpuscale::Plan`（`makePlan`）
-//   ⇒ 三段 shader；`mode/quality/filter/lobes/mitchellB/mitchellC/antiring` 与
-//   `gpuscale::Params` 一一对应（`params()` / `setParams()`）。
+//   ⇒ 三段 shader；**算法**是唯一参数（`algorithm`，键串 `nearest|bicubic|lanczos2|lanczos3`），
+//   与 `gpuscale::Params` 一一对应（`params()` / `setParams()`）。
+//   ⚠️ `smooth` 不在本项的职责内：它由 Qt 执行（`CpuScalerItem`），本项收到它会照常算几何，
+//      但 QML 侧不会把它设为可见。
 //
 // ## 不缓存缩放结果（设计 13 §八）
 //   每次重绘都重跑 shader；中间纹理只是**一帧内**的工作区（尺寸不变才复用）。
@@ -45,14 +47,8 @@ class GpuScalerItem : public QQuickRhiItem
     Q_PROPERTY(qreal panY READ panY WRITE setPanY NOTIFY panChanged)
     Q_PROPERTY(bool autoSize READ autoSize WRITE setAutoSize NOTIFY autoSizeChanged)
 
-    // ── gpuscale::Params 的逐项暴露（QML 友好；枚举值与 scaler 的枚举一一对应）──
-    Q_PROPERTY(int mode READ mode WRITE setMode NOTIFY paramsChanged)
-    Q_PROPERTY(int quality READ quality WRITE setQuality NOTIFY paramsChanged)
-    Q_PROPERTY(int filter READ filter WRITE setFilter NOTIFY paramsChanged)
-    Q_PROPERTY(int lobes READ lobes WRITE setLobes NOTIFY paramsChanged)
-    Q_PROPERTY(qreal mitchellB READ mitchellB WRITE setMitchellB NOTIFY paramsChanged)
-    Q_PROPERTY(qreal mitchellC READ mitchellC WRITE setMitchellC NOTIFY paramsChanged)
-    Q_PROPERTY(qreal antiring READ antiring WRITE setAntiring NOTIFY paramsChanged)
+    // ── 算法（**唯一**的画质参数；键串与 `gpuscale::algorithmKey()` 同源）──
+    Q_PROPERTY(QString algorithm READ algorithm WRITE setAlgorithm NOTIFY paramsChanged)
 
     Q_PROPERTY(QSize sourceSize READ sourceSize NOTIFY sourceChanged)
     Q_PROPERTY(QSize targetSize READ targetSize NOTIFY targetSizeChanged)
@@ -89,23 +85,11 @@ public:
     bool autoSize() const { return m_autoSize; }
     void setAutoSize(bool on);
 
-    // ── 画质参数 ──
+    // ── 算法（唯一画质参数）──
     gpuscale::Params params() const;
     void setParams(const gpuscale::Params &p);
-    int mode() const { return int(m_params.mode); }
-    void setMode(int m);
-    int quality() const { return int(m_params.quality); }
-    void setQuality(int q);
-    int filter() const { return int(m_params.filter); }
-    void setFilter(int f);
-    int lobes() const { return m_params.lobes; }
-    void setLobes(int n);
-    qreal mitchellB() const { return m_params.mitchellB; }
-    void setMitchellB(qreal b);
-    qreal mitchellC() const { return m_params.mitchellC; }
-    void setMitchellC(qreal c);
-    qreal antiring() const { return m_params.antiring; }
-    void setAntiring(qreal a);
+    QString algorithm() const;
+    void setAlgorithm(const QString &key);      // "nearest"|"bicubic"|"lanczos2"|"lanczos3"（"smooth" 见头注释）
 
     QSize sourceSize() const { return m_source.size(); }
     QSize targetSize() const { return m_plan.dst; }        // 设备像素
@@ -155,7 +139,6 @@ private:
     gpuscale::Plan m_plan;
     QString m_status;
     bool m_inUpdate = false;
-    bool m_warnedQtSmooth = false;
 
     friend class GpuScalerRenderer;
 };

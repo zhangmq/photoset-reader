@@ -849,77 +849,26 @@ void UiModel::setInnerArchiveMaxMb(int v)
     // ★ v7：**不重建 viewer**（避免无谓的重新扫描）；上限在"下一次展开"生效。
 }
 
-// ── 图像（缩放）参数 ────────────────────────────────────────────────────
-//   值域裁剪照旧 `ViewerModel` 的语义；写入磁盘走 `m_settings`（唯一事实源）。
-QString UiModel::scalerQuality() const { return m_settings.scalerQuality(); }
+// ── 图像（缩放）：唯一选项 = 算法 ──────────────────────────────────────────
+//   值域收在本处（键串 → 枚举的唯一映射仍由 gpuscale 提供）；
+//   写入磁盘走 `m_settings`（唯一事实源），本类只负责通知。
+QString UiModel::scaleAlgorithm() const { return m_settings.scaleAlgorithm(); }
 
-void UiModel::setScalerQuality(const QString &v)
+void UiModel::setScaleAlgorithm(const QString &v)
 {
-    const QString q = (v == QLatin1String("fast") || v == QLatin1String("best"))
-                          ? v : QStringLiteral("balanced");
-    if (m_settings.scalerQuality() == q) return;
-    m_settings.setScalerQuality(q);
-    emit scalerQualityChanged();
+    // 不认识的值一律回默认（lanczos3）：宁可"没改成"，也不要留下一个渲染不出的键
+    const gpuscale::Algorithm a = gpuscale::algorithmFromKey(v);
+    const QString key = QLatin1String(gpuscale::algorithmKey(a));
+    if (m_settings.scaleAlgorithm() == key) return;
+    m_settings.setScaleAlgorithm(key);
+    emit scaleAlgorithmChanged();
 }
 
-QString UiModel::scalerMode() const { return m_settings.scalerMode(); }
-
-void UiModel::setScalerMode(const QString &v)
+void UiModel::setSoftwareBackend(bool on)
 {
-    const QString m = (v == QLatin1String("nearest") || v == QLatin1String("qt-smooth"))
-                          ? v : QStringLiteral("linear-light");
-    if (m_settings.scalerMode() == m) return;
-    m_settings.setScalerMode(m);
-    emit scalerModeChanged();
-}
-
-QString UiModel::scalerFilter() const { return m_settings.scalerFilter(); }
-
-void UiModel::setScalerFilter(const QString &v)
-{
-    const QString f = (v == QLatin1String("box") || v == QLatin1String("lanczos")
-                       || v == QLatin1String("mitchell")) ? v : QStringLiteral("auto");
-    if (m_settings.scalerFilter() == f) return;
-    m_settings.setScalerFilter(f);
-    emit scalerFilterChanged();
-}
-
-int UiModel::scalerLobes() const { return m_settings.scalerLobes(); }
-
-void UiModel::setScalerLobes(int v)
-{
-    v = qBound(2, v, 4);
-    if (m_settings.scalerLobes() == v) return;
-    m_settings.setScalerLobes(v);
-    emit scalerLobesChanged();
-}
-
-double UiModel::scalerMitchellB() const { return m_settings.scalerMitchellB(); }
-
-void UiModel::setScalerMitchellB(double v)
-{
-    if (qFuzzyCompare(m_settings.scalerMitchellB(), v)) return;
-    m_settings.setScalerMitchellB(v);
-    emit scalerMitchellBChanged();
-}
-
-double UiModel::scalerMitchellC() const { return m_settings.scalerMitchellC(); }
-
-void UiModel::setScalerMitchellC(double v)
-{
-    if (qFuzzyCompare(m_settings.scalerMitchellC(), v)) return;
-    m_settings.setScalerMitchellC(v);
-    emit scalerMitchellCChanged();
-}
-
-double UiModel::scalerAntiring() const { return m_settings.scalerAntiring(); }
-
-void UiModel::setScalerAntiring(double v)
-{
-    v = qBound(0.0, v, 1.0);
-    if (qFuzzyCompare(m_settings.scalerAntiring(), v)) return;
-    m_settings.setScalerAntiring(v);
-    emit scalerAntiringChanged();
+    if (m_softwareBackend == on) return;
+    m_softwareBackend = on;
+    emit softwareBackendChanged();
 }
 
 } // namespace app

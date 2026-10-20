@@ -10,13 +10,14 @@
 #include <QtGui/rhi/qshader.h>
 
 
-// ══ 缩放：**唯一实现是 GPU 这条**（产品路径的算法核心）══════════════════
+// ══ 缩放：GPU 管线（产品路径的算法核心）+ 算法枚举（唯一表示）═════════════
 //
 //   ★ 2026-10-19：CPU 那条实现（`scaler::resize` 及其线性光 / 重采样内核）**已退休** ——
 //     阅读画质走这条 GPU 管线；缩略图只要"能看"，用 Qt 平滑缩放。
-//     ⇒ **参数（`Mode` / `Quality` / `Filter` / `Params` / `paramsFromStrings()` / 名称助手）
-//       搬到这里**，成为本模块的一部分（一份定义、一处实现）。
-//     2026-10-20 用户定案：**画质预设清掉**（只留参数），算法与默认值不变。
+//     ⇒ **算法参数（`Algorithm` / `Params` / 键与 UI 名）就在这里**（一份定义、一处实现）。
+//     2026-10-20 用户定案：**选项收敛成 5 个一级算法**（见下方 `Algorithm`）——
+//     不再有 quality/filter/lobes/B/C/antiring 这些正交旋钮；
+//     其中 `Smooth` 由 Qt 的内置平滑缩放执行，**不在本管线里实现**。
 //
 // shader 数学（见 docs/research/12）：
 //
@@ -38,48 +39,34 @@
 //   `synchronize()`（GUI 线程被阻塞）里取走引用（QImage 隐式共享，零拷贝）。
 namespace gpuscale {
 
-enum class Quality {
-    Fast,       // 线性光 + box（面积平均）：大比例缩小时足够且很快
-    Balanced,   // 线性光 + Lanczos3（默认）
-    Best,       // 线性光 + Lanczos3 + anti-ringing（放大时抑制振铃）
+// ══ 缩放算法：**5 个一级选项**（2026-10-20 用户定案）══════════════════════════
+//
+//   名字用社区常用英文名，不做中文翻译：Nearest / Smooth (Qt) / Bicubic / Lanczos 2 / Lanczos 3。
+//   · 每个算法内部的核宽、色彩空间、是否抑制振铃**全部固定**——没有第二级参数、没有档位；
+//   · "质量/效率两个变体"只落在 Lanczos 上（2 瓣 = 省 / 3 瓣 = 锐）；
+//   · `Smooth` **不由本模块实现**：它是 Qt 的内置平滑缩放（CPU），见 `CpuScalerItem`。
+//     这里保留这个枚举值，只为让"当前是哪个算法"只有**一个表示**（设置 / UI / 日志同源）。
+enum class Algorithm {
+    Nearest = 0,    // 1 抽头、不线性化：整数倍 1:1 无损
+    Smooth = 1,     // Qt 内置（缩小 box 面积平均 / 放大 bilinear，sRGB）—— GPU 管线不实现它
+    Bicubic = 2,    // 双三次，a=-0.5（B=0 / C=0.5）
+    Lanczos2 = 3,   // Lanczos 2 瓣：省
+    Lanczos3 = 4,   // Lanczos 3 瓣 + anti-ringing：锐（默认）
 };
 
-// 滤波器族（与 Quality 正交：Quality 管"档位/是否 anti-ringing"，Filter 管"用哪个核"）
-enum class Filter {
-    Auto,       // 按 Quality 走默认：Fast→box，其余→Lanczos(lobes)
-    Box,        // 面积平均（支撑 0.5）
-    Lanczos,    // Lanczos（支撑 = lobes）
-    Mitchell,   // Mitchell–Netravali bicubic（支撑 2.0，B/C 可调）
-};
+// 配置键（写进设置文件 / 日志）：nearest | smooth | bicubic | lanczos2 | lanczos3
+const char *algorithmKey(Algorithm a);
+// UI 名（英文；只有 Smooth 带来源标注，因为它是唯一由 Qt 实现的）
+const char *algorithmLabel(Algorithm a);
+// 键 → 算法；不认识的值回退给 fallback（唯一映射，界面/配置都走这里）
+Algorithm algorithmFromKey(const QString &key, Algorithm fallback = Algorithm::Lanczos3);
+// 这条算法是否由 GPU 管线实现（Smooth = false → 走 CpuScalerItem）
+inline bool usesGpu(Algorithm a) { return a != Algorithm::Smooth; }
 
-enum class Mode {
-    Nearest,    // 像素完美（整数倍时）
-    LinearLight,// 我们的实现
-    QtSmooth,   // 对照用：Qt 的 SmoothTransformation（非线性）
-};
-
-// ── 全部可调参数（**参数才是真相**；预设只是命名组合）──────────
+// 算法参数：**只有一个字段**。核宽/色彩空间/抗振铃都由算法本身决定。
 struct Params {
-    Mode    mode = Mode::LinearLight;    // 色彩空间 / 通路
-    Quality quality = Quality::Balanced; // 档位（Best 时启用 anti-ringing）
-    Filter  filter = Filter::Auto;       // 用哪个核
-    int     lobes = 3;                   // Lanczos 瓣数（2/3/4）：越大越锐、振铃越多
-    double  mitchellB = 1.0 / 3.0;       // Mitchell B/C 参数化
-    double  mitchellC = 1.0 / 3.0;       //   B=C=1/3 → Mitchell；B=0,C=1/2 → Catmull-Rom；B=1,C=0 → B 样条
-    double  antiring = 1.0;              // 振铃抑制强度 0–1（只在 quality==Best 时生效）
+    Algorithm algorithm = Algorithm::Lanczos3;
 };
-
-// 字符串值域 → Params 的**唯一映射**（main.cpp 读配置用它；UI 侧重构后也用它）
-Params paramsFromStrings(const QString &mode, const QString &quality, const QString &filter,
-                         int lobes, double mitchellB, double mitchellC, double antiring);
-
-// 便捷：只指定 mode/quality（其余取默认）
-inline Params params(Mode m, Quality q) { Params p; p.mode = m; p.quality = q; return p; }
-
-// 供 UI 显示的可读名称
-const char *modeName(Mode m);
-const char *qualityName(Quality q);
-const char *filterName(Filter f);
 
 // ── 视口适配：原始 / 适应屏幕 / 适应宽度 / 适应高度（设计 13 §八）────────
 enum class Fit {

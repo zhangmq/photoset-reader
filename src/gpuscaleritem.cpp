@@ -182,76 +182,17 @@ void GpuScalerItem::setParams(const gpuscale::Params &p)
     updatePlan();
 }
 
-void GpuScalerItem::setMode(int m)
+QString GpuScalerItem::algorithm() const
 {
-    const auto v = gpuscale::Mode(qBound(0, m, 2));
-    if (v == m_params.mode)
-        return;
-    if (v == gpuscale::Mode::QtSmooth && !m_warnedQtSmooth) {
-        // Qt 的 SmoothTransformation 是**非线性**的对照路径（AGENTS.md 立场 #1），GPU 路径不实现它
-        m_warnedQtSmooth = true;
-        qWarning().noquote() << QStringLiteral("[GpuScalerItem] mode=qt-smooth 是 CPU 对照路径，"
-                                               "GPU 渲染按 linear-light 处理");
-    }
-    m_params.mode = v;
-    emit paramsChanged();
-    updatePlan();
+    return QLatin1String(gpuscale::algorithmKey(m_params.algorithm));
 }
 
-void GpuScalerItem::setQuality(int q)
+void GpuScalerItem::setAlgorithm(const QString &key)
 {
-    const auto v = gpuscale::Quality(qBound(0, q, 2));
-    if (v == m_params.quality)
+    const gpuscale::Algorithm v = gpuscale::algorithmFromKey(key, m_params.algorithm);
+    if (v == m_params.algorithm)
         return;
-    m_params.quality = v;
-    emit paramsChanged();
-    updatePlan();
-}
-
-void GpuScalerItem::setFilter(int f)
-{
-    const auto v = gpuscale::Filter(qBound(0, f, 3));
-    if (v == m_params.filter)
-        return;
-    m_params.filter = v;
-    emit paramsChanged();
-    updatePlan();
-}
-
-void GpuScalerItem::setLobes(int n)
-{
-    const int v = qBound(2, n, 4);
-    if (v == m_params.lobes)
-        return;
-    m_params.lobes = v;
-    emit paramsChanged();
-    updatePlan();
-}
-
-void GpuScalerItem::setMitchellB(qreal b)
-{
-    if (qFuzzyCompare(b, m_params.mitchellB))
-        return;
-    m_params.mitchellB = b;
-    emit paramsChanged();
-    updatePlan();
-}
-
-void GpuScalerItem::setMitchellC(qreal c)
-{
-    if (qFuzzyCompare(c, m_params.mitchellC))
-        return;
-    m_params.mitchellC = c;
-    emit paramsChanged();
-    updatePlan();
-}
-
-void GpuScalerItem::setAntiring(qreal a)
-{
-    const qreal v = qBound(0.0, a, 1.0);
-    if (qFuzzyCompare(v, m_params.antiring))
-        return;
-    m_params.antiring = v;
+    m_params.algorithm = v;
     emit paramsChanged();
     updatePlan();
 }
@@ -341,7 +282,7 @@ void GpuScalerItem::updatePlan()
                       .arg(m_plan.dst.width()).arg(m_plan.dst.height())
                       .arg(m_plan.full.width()).arg(m_plan.full.height())
                       .arg(QLatin1String(fitName(m_fit)))
-                      .arg(QLatin1String(gpuscale::qualityName(m_params.quality)))
+                      .arg(QLatin1String(gpuscale::algorithmLabel(m_params.algorithm)))
                       .arg(m_plan.offX || m_plan.offY
                                ? QStringLiteral(" · 窗(%1,%2)").arg(m_plan.offX).arg(m_plan.offY)
                                : QString()));

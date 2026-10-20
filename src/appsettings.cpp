@@ -13,19 +13,6 @@ namespace app {
 // ⚠️ 这里**没有** `instance()` —— 设计 14 §9.3：设置**没有单例、没有静态状态**。
 //    运行期实例挂在 `UiModel` 上；其他组件需要值一律调用时传参。
 
-void AppSettings::setScalerParams(const QString &mode, const QString &quality, const QString &filter,
-                                  int lobes, double b, double c, double antiring)
-{
-    m_scalerMode = mode;
-    m_scalerQuality = quality;
-    m_scalerFilter = filter;
-    m_scalerLobes = qBound(2, lobes, 4);
-    m_scalerMitchellB = b;
-    m_scalerMitchellC = c;
-    m_scalerAntiring = qBound(0.0, antiring, 1.0);
-    save();                                  // 只写一次盘
-}
-
 QString AppSettings::filePath() const
 {
     // 自检/测试可用环境变量指到临时文件，避免碰用户的真配置
@@ -57,13 +44,18 @@ void AppSettings::load()
     m_themeMode     = o.value(QStringLiteral("themeMode")).toInt(m_themeMode);
     m_intervalMs    = qMax(50, o.value(QStringLiteral("intervalMs")).toInt(m_intervalMs));
     m_fitMode       = o.value(QStringLiteral("defaultFitMode")).toInt(m_fitMode);
-    m_scalerQuality = o.value(QStringLiteral("scalerQuality")).toString(m_scalerQuality);
-    m_scalerMode    = o.value(QStringLiteral("scalerMode")).toString(m_scalerMode);
-    m_scalerFilter  = o.value(QStringLiteral("scalerFilter")).toString(m_scalerFilter);
-    m_scalerLobes   = o.value(QStringLiteral("scalerLobes")).toInt(m_scalerLobes);
-    m_scalerMitchellB = o.value(QStringLiteral("scalerMitchellB")).toDouble(m_scalerMitchellB);
-    m_scalerMitchellC = o.value(QStringLiteral("scalerMitchellC")).toDouble(m_scalerMitchellC);
-    m_scalerAntiring  = o.value(QStringLiteral("scalerAntiring")).toDouble(m_scalerAntiring);
+    // 缩放算法：新键优先；没有就按旧键迁移（旧版是 mode/quality/filter/lobes/... 七个字段）
+    if (o.contains(QStringLiteral("scaleAlgorithm"))) {
+        m_scaleAlgorithm = o.value(QStringLiteral("scaleAlgorithm")).toString();
+    } else {
+        const QString oldMode = o.value(QStringLiteral("scalerMode")).toString();
+        if (oldMode == QLatin1String("nearest"))
+            m_scaleAlgorithm = QStringLiteral("nearest");
+        else if (oldMode == QLatin1String("qt-smooth"))
+            m_scaleAlgorithm = QStringLiteral("smooth");
+        else
+            m_scaleAlgorithm = QStringLiteral("lanczos3");   // 其余一律按默认（原来的 balanced/auto）
+    }
     m_scanHidden    = o.value(QStringLiteral("scanHidden")).toBool(m_scanHidden);
     m_recurseDepth  = qBound(1, o.value(QStringLiteral("recurseDepth")).toInt(m_recurseDepth), 64);
     m_prefetchWindow = qBound(3, o.value(QStringLiteral("prefetchWindow")).toInt(m_prefetchWindow), 64);
@@ -80,13 +72,7 @@ void AppSettings::save()
     o.insert(QStringLiteral("themeMode"), m_themeMode);
     o.insert(QStringLiteral("intervalMs"), m_intervalMs);
     o.insert(QStringLiteral("defaultFitMode"), m_fitMode);
-    o.insert(QStringLiteral("scalerQuality"), m_scalerQuality);
-    o.insert(QStringLiteral("scalerMode"), m_scalerMode);
-    o.insert(QStringLiteral("scalerFilter"), m_scalerFilter);
-    o.insert(QStringLiteral("scalerLobes"), m_scalerLobes);
-    o.insert(QStringLiteral("scalerMitchellB"), m_scalerMitchellB);
-    o.insert(QStringLiteral("scalerMitchellC"), m_scalerMitchellC);
-    o.insert(QStringLiteral("scalerAntiring"), m_scalerAntiring);
+    o.insert(QStringLiteral("scaleAlgorithm"), m_scaleAlgorithm);
     o.insert(QStringLiteral("scanHidden"), m_scanHidden);
     o.insert(QStringLiteral("recurseDepth"), m_recurseDepth);
     o.insert(QStringLiteral("prefetchWindow"), m_prefetchWindow);

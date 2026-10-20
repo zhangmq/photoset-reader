@@ -14,29 +14,27 @@ namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
 
-// 核支撑：Box 0.5 / Mitchell 2.0 / Lanczos = lobes（与 CPU buildTaps 同一规则）
-float supportFor(const Params &p, int lobes)
-{
-    Filter f = p.filter;
-    if (f == Filter::Auto)
-        f = (p.quality == Quality::Fast) ? Filter::Box : Filter::Lanczos;
-    switch (f) {
-    case Filter::Box:      return 0.5f;
-    case Filter::Mitchell: return 2.0f;
-    default:                       return float(lobes);
-    }
-}
+// 每个算法展开成管线要的核参数（**唯一映射**：这里错了就是画面错了）
+struct KernelSpec {
+    int   filterIdx;     // 与 shader 的 flt 一致：0=lanczos 1=box 2=mitchell 3=nearest
+    float support;       // 核支撑（缩小按 scale 加宽）
+    int   lobes;         // 只对 lanczos 有意义
+    float mB, mC;        // 只对 mitchell 有意义
+    bool  useAR;         // 是否做 anti-ringing 钳位
+    bool  useLinearize;  // 是否过线性光（Pixel/Nearest 直通）
+};
 
-int filterIndexFor(const Params &p)
+KernelSpec specFor(Algorithm a)
 {
-    Filter f = p.filter;
-    if (f == Filter::Auto)
-        f = (p.quality == Quality::Fast) ? Filter::Box : Filter::Lanczos;
-    switch (f) {
-    case Filter::Box:      return 1;
-    case Filter::Mitchell: return 2;
-    default:                       return 0;
+    switch (a) {
+    case Algorithm::Nearest:  return { 3, 0.5f, 3, 1.0f / 3.0f, 1.0f / 3.0f, false, false };
+    case Algorithm::Bicubic:  return { 2, 2.0f, 3, 0.0f, 0.5f, false, true };   // a=-0.5
+    case Algorithm::Lanczos2: return { 0, 2.0f, 2, 1.0f / 3.0f, 1.0f / 3.0f, false, true };
+    case Algorithm::Lanczos3: return { 0, 3.0f, 3, 1.0f / 3.0f, 1.0f / 3.0f, true, true };
+    case Algorithm::Smooth:   break;   // 不由本模块实现（见 CpuScalerItem）；落到下面的默认
     }
+    // Smooth（以及任何未来值）：几何仍要算（CpuScalerItem 用同一份 makePlan），核参数不用
+    return { 0, 3.0f, 3, 1.0f / 3.0f, 1.0f / 3.0f, false, true };
 }
 
 QSize clampPositive(const QSize &s, int minW = 1, int minH = 1)
@@ -132,26 +130,24 @@ Plan makePlan(const QSize &src, const QSize &viewport, Fit fit, qreal zoom,
     //   缩放比一律由**完整输出尺寸** full 决定，pan 不许改变采样
     pl.fscaleX = std::max(1.0f, float(src.width()) / float(pl.full.width()));
     pl.fscaleY = std::max(1.0f, float(src.height()) / float(pl.full.height()));
-    const int lobes = qBound(2, p.lobes, 4);
-    pl.lobes = lobes;
-    pl.mB = float(p.mitchellB);
-    pl.mC = float(p.mitchellC);
-    pl.antiring = float(qBound(0.0, p.antiring, 1.0));
-    pl.useAR = (p.quality == Quality::Best);
 
-    if (p.mode == Mode::Nearest) {
+    // 算法 → 核参数（唯一映射）。**用户只有这一个旋钮**，没有第二级参数。
+    const KernelSpec ks = specFor(p.algorithm);
+    pl.filterIdx = ks.filterIdx;
+    pl.lobes = ks.lobes;
+    pl.mB = ks.mB;
+    pl.mC = ks.mC;
+    pl.useAR = ks.useAR;
+    pl.antiring = ks.useAR ? 1.0f : 0.0f;      // 只有开 AR 的算法才有意义；强度固定
+    pl.useLinearize = ks.useLinearize;
+
+    if (p.algorithm == Algorithm::Nearest) {
         // 像素完美通路：不做线性化、不来回转色彩空间，单抽头取最近像素
-        pl.filterIdx = 3;
         pl.fscaleX = pl.fscaleY = 1.0f;
         pl.radiusX = pl.radiusY = 0.5f;
-        pl.useAR = false;
-        pl.useLinearize = false;
     } else {
-        pl.filterIdx = filterIndexFor(p);
-        const float support = supportFor(p, lobes);
-        pl.radiusX = support * pl.fscaleX;
-        pl.radiusY = support * pl.fscaleY;
-        pl.useLinearize = true;
+        pl.radiusX = ks.support * pl.fscaleX;
+        pl.radiusY = ks.support * pl.fscaleY;
     }
     return pl;
 }
@@ -177,12 +173,8 @@ QByteArray tapBoundsBytes(int srcN, int fullN, int startOut, int count,
     // ★ 重采样边界规则（**double** 精度）
     const double scale = double(srcN) / double(fullN);
     const double fscale = std::max(1.0, scale);
-    Filter filt = p.filter;
-    if (filt == Filter::Auto)
-        filt = (p.quality == Quality::Fast) ? Filter::Box : Filter::Lanczos;
-    const double support = (filt == Filter::Box) ? 0.5
-                         : (filt == Filter::Mitchell) ? 2.0
-                                                              : double(qBound(2, p.lobes, 4));
+    // 支撑与 makePlan 同源（specFor）——这里只要"能不能到边界"，不需要别的参数
+    const double support = double(specFor(p.algorithm).support);
     const double radius = support * fscale;
 
     for (int j = 0; j < count; ++j) {
@@ -853,57 +845,39 @@ bool Pipeline::render(QRhiCommandBuffer *cb, QRhiResourceUpdateBatch *rub, const
     return true;
 }
 
-const char *modeName(Mode m)
+const char *algorithmKey(Algorithm a)
 {
-    switch (m) {
-    case Mode::Nearest:     return "nearest";
-    case Mode::QtSmooth:    return "qt-smooth";
-    case Mode::LinearLight: return "linear-light";
+    switch (a) {
+    case Algorithm::Nearest:  return "nearest";
+    case Algorithm::Smooth:   return "smooth";
+    case Algorithm::Bicubic:  return "bicubic";
+    case Algorithm::Lanczos2: return "lanczos2";
+    case Algorithm::Lanczos3: return "lanczos3";
     }
-    return "?";
+    return "lanczos3";
 }
 
-const char *filterName(Filter f)
+const char *algorithmLabel(Algorithm a)
 {
-    switch (f) {
-    case Filter::Auto:     return "auto";
-    case Filter::Box:      return "box";
-    case Filter::Lanczos:  return "lanczos";
-    case Filter::Mitchell: return "mitchell";
+    switch (a) {
+    case Algorithm::Nearest:  return "Nearest";
+    case Algorithm::Smooth:   return "Smooth (Qt)";   // 唯一由 Qt 实现的一项，标签要说明来源
+    case Algorithm::Bicubic:  return "Bicubic";
+    case Algorithm::Lanczos2: return "Lanczos 2";
+    case Algorithm::Lanczos3: return "Lanczos 3";
     }
-    return "?";
+    return "Lanczos 3";
 }
 
-// ── 预设（唯一事实源）────────────────────────────────────────
-Params paramsFromStrings(const QString &mode, const QString &quality, const QString &filter,
-                         int lobes, double mitchellB, double mitchellC, double antiring)
+Algorithm algorithmFromKey(const QString &key, Algorithm fallback)
 {
-    Params p;
-    p.mode = (mode == QLatin1String("nearest"))  ? Mode::Nearest
-           : (mode == QLatin1String("qt-smooth")) ? Mode::QtSmooth
-                                                  : Mode::LinearLight;
-    p.quality = (quality == QLatin1String("fast")) ? Quality::Fast
-              : (quality == QLatin1String("best")) ? Quality::Best
-                                                   : Quality::Balanced;
-    p.filter = (filter == QLatin1String("box"))      ? Filter::Box
-             : (filter == QLatin1String("lanczos"))  ? Filter::Lanczos
-             : (filter == QLatin1String("mitchell")) ? Filter::Mitchell
-                                                     : Filter::Auto;
-    p.lobes = qBound(2, lobes, 4);
-    p.mitchellB = mitchellB;
-    p.mitchellC = mitchellC;
-    p.antiring = qBound(0.0, antiring, 1.0);
-    return p;
-}
-
-const char *qualityName(Quality q)
-{
-    switch (q) {
-    case Quality::Fast:     return "fast";
-    case Quality::Balanced: return "balanced";
-    case Quality::Best:     return "best";
-    }
-    return "?";
+    const QString k = key.trimmed().toLower();
+    if (k == QLatin1String("nearest"))  return Algorithm::Nearest;
+    if (k == QLatin1String("smooth"))   return Algorithm::Smooth;
+    if (k == QLatin1String("bicubic"))  return Algorithm::Bicubic;
+    if (k == QLatin1String("lanczos2")) return Algorithm::Lanczos2;
+    if (k == QLatin1String("lanczos3")) return Algorithm::Lanczos3;
+    return fallback;
 }
 
 } // namespace gpuscale

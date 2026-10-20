@@ -33,14 +33,10 @@ struct AppSettings
     int  defaultFitMode() const { return m_fitMode; }           // 0 原始 1 适应屏幕 2 适应宽度 3 适应高度
 
     // 图像
-    // 图像 · 缩放（**参数才是真相**；预设只是命名组合，见 gpuscale::presets()）
-    QString scalerQuality() const { return m_scalerQuality; }   // fast | balanced | best
-    QString scalerMode() const { return m_scalerMode; }         // linear-light | nearest | qt-smooth
-    QString scalerFilter() const { return m_scalerFilter; }     // auto | box | lanczos | mitchell
-    int     scalerLobes() const { return m_scalerLobes; }       // Lanczos 瓣数 2/3/4
-    double  scalerMitchellB() const { return m_scalerMitchellB; }
-    double  scalerMitchellC() const { return m_scalerMitchellC; }
-    double  scalerAntiring() const { return m_scalerAntiring; } // 0–1
+    // 缩放算法（**唯一**的画质设置）：nearest | smooth | bicubic | lanczos2 | lanczos3
+    //   2026-10-20 收敛：原来的 mode/quality/filter/lobes/mitchellB/mitchellC/antiring 七个字段删掉，
+    //   只留"选哪个算法"——每个算法内部全固定（见 gpuscale::Algorithm）。
+    QString scaleAlgorithm() const { return m_scaleAlgorithm; }
 
     // 系统
     bool scanHidden() const { return m_scanHidden; }            // 默认关
@@ -57,16 +53,7 @@ struct AppSettings
     void setThemeMode(int v) { m_themeMode = v; save(); }
     void setIntervalMs(int v) { m_intervalMs = qMax(50, v); save(); }
     void setDefaultFitMode(int v) { m_fitMode = v; save(); }
-    void setScalerQuality(const QString &v) { m_scalerQuality = v; save(); }
-    void setScalerMode(const QString &v) { m_scalerMode = v; save(); }
-    void setScalerFilter(const QString &v) { m_scalerFilter = v; save(); }
-    void setScalerLobes(int v) { m_scalerLobes = qBound(2, v, 4); save(); }
-    void setScalerMitchellB(double v) { m_scalerMitchellB = v; save(); }
-    void setScalerMitchellC(double v) { m_scalerMitchellC = v; save(); }
-    void setScalerAntiring(double v) { m_scalerAntiring = qBound(0.0, v, 1.0); save(); }
-    // 一次写一整组参数（UI 选预设时用；只写一次盘）
-    void setScalerParams(const QString &mode, const QString &quality, const QString &filter,
-                         int lobes, double b, double c, double antiring);
+    void setScaleAlgorithm(const QString &v) { m_scaleAlgorithm = v; save(); }
     void setScanHidden(bool v) { m_scanHidden = v; save(); }
     void setRecurseDepth(int v) { m_recurseDepth = qBound(1, v, 64); save(); }
     void setPrefetchWindow(int v) { m_prefetchWindow = qBound(3, v, 64); save(); }
@@ -79,13 +66,7 @@ private:
     int  m_themeMode = 0;
     int  m_intervalMs = 300;
     int  m_fitMode = 1;
-    QString m_scalerQuality = QStringLiteral("balanced");
-    QString m_scalerMode = QStringLiteral("linear-light");
-    QString m_scalerFilter = QStringLiteral("auto");
-    int     m_scalerLobes = 3;
-    double  m_scalerMitchellB = 1.0 / 3.0;
-    double  m_scalerMitchellC = 1.0 / 3.0;
-    double  m_scalerAntiring = 1.0;
+    QString m_scaleAlgorithm = QStringLiteral("lanczos3");
     bool m_scanHidden = false;
     int  m_recurseDepth = 5;
     int  m_prefetchWindow = 8;
