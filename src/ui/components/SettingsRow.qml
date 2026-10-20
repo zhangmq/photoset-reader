@@ -40,7 +40,10 @@ Item {
         spacing: Theme.spaceLg
 
         ColumnLayout {
+            // ★ 标题**一律顶部对齐**（用户 2026-10-20）：有没有 description 都一样，
+            //   否则带描述的行使标题整体下沉半行，逐行看过去标题高低不齐。
             Layout.fillWidth: true
+            Layout.alignment: Qt.AlignTop
             spacing: Theme.spaceXs
 
             Text {
