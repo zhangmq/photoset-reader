@@ -190,9 +190,8 @@ void UiModel::goTo(Screen s, bool push)
     if (push) m_screenStack << m_screen;
     m_screen = s;
     if (s == Screen::Viewer) applyViewerDefaults();   // 进沉浸视图 = 按全局默认起一份阅读态
-    // ★ 循环模式**不持久化**（设计 01 §3.6）：**每次进入沉浸视图回到默认（不循环）**。
-    //   （换来源自然是新的 viewer ⇒ 也是默认。）
-    if (s == Screen::Viewer && m_src.vm) m_src.vm->setLoopMode(0);
+    //   ★ 循环等默认值**只在这里下发一次**（2026-10-20 修正：原来这里还硬置 `setLoopMode(0)`，
+    //     会把刚下发的"默认循环"覆盖掉）。
     // ★ T2c-2b-1：**离开浏览 / 查看 ⇒ 释放显示槽**（设计 14 §9.3）——
     //   图集查看 = 从磁盘读出的只读快照（重开＝读一次行）；会话来源 = 停 + 销毁。
     if (s == Screen::Library) releaseDisplaySlot();
@@ -553,7 +552,8 @@ void UiModel::installViewer(Source s)
     m_src = s;
     //   ★ 换来源 ⇒ 版面按**全局默认**重置（用户 2026-10-20：不同图集特征不同，跨来源交接没有意义）
     emit viewerChanged();            // ★ 先让 QML 换绑到新 viewer
-    if (m_src.vm) m_src.vm->setSequence(m_src.seq);      // ★ 立刻定 loading + 派活
+    if (m_src.vm) m_src.vm->setSequence(m_src.seq);
+    applyViewerDefaults();           // ★ 新建 viewer ⇒ 按全局默认起一份阅读态（直接打开也走这里）      // ★ 立刻定 loading + 派活
     if (m_browse) {
         // 浏览只吃序列 + 当前条目（不经过 viewer）
         m_browse->setSequence(m_src.seq);

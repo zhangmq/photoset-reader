@@ -21,6 +21,11 @@ Item {
     implicitHeight: Theme.controlMd
     activeFocusOnTab: true
 
+    // ★ 外部改 `value`（例如设置页的预设按钮）⇒ 文本框跟着变。
+    //   为什么不能只靠 `text: String(root.value)`：`commit()` / 滚轮会 imperative 赋值 `input.text`，
+    //   那一下就把绑定掐断了（2026-10-20 用户实测：点预设，框里数值不动）。
+    onValueChanged: input.text = String(root.value)
+
     function commit() {
         var v = parseInt(input.text)
         if (isNaN(v))

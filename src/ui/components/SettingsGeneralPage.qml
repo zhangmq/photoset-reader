@@ -29,8 +29,8 @@ Item {
         }
 
         SettingsRow {
-            label: "幻灯片间隔"
-            description: "幻灯片自动翻页间隔"
+            label: "默认幻灯片间隔"
+            description: "新打开资源时的幻灯片间隔（底栏切换只改当前阅读）"
             Row {
                 spacing: Theme.spaceXs
                 NumberField {
