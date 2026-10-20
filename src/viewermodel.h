@@ -212,7 +212,7 @@ private:
     };
 
     // ── 工作线程 ────────────────────────────────────────────────────────
-    //   只做两件：加载并解码（生产实现 = `Sequence::image`）；解完把结果 post 回主线程。
+    //   只做两件：加载并解码（生产实现 = `imageread::image`）；解完把结果 post 回主线程。
     //   ★ **不做取消**；解码失败（空图）当成"坏（不可读）"。
     void preload(const Sequence::Item &imageMeta, int slot);
 

@@ -66,6 +66,9 @@ add_library(ibcore STATIC
     src/natural.h
     src/sequence.cpp
     src/sequence.h
+    # ── 条目读取（位置 + 读图）：`Sequence` 只调用，不碰 QImageReader / QImage ──
+    src/imageread.cpp
+    src/imageread.h
     # ── 浏览的一层（`fetch::BrowseLayer` / `browseLayerOf`）：浏览界面直接从序列取 ──
     src/seqwindow.cpp
     src/seqwindow.h

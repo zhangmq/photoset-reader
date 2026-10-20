@@ -1,5 +1,7 @@
 #pragma once
 
+#include "imageread.h"      // 读取位置 + 读图（`Sequence` 只调用，不碰 QImageReader/QImage）
+
 #include <QByteArray>
 #include <QHash>
 #include <QImage>
@@ -106,7 +108,7 @@ public:
     //   默认值 = 旧设置项的默认值（`recurseDepth=5` / `scanHidden=false` 是 `startScan`
     //   既有形参的默认；`innerArchiveMaxMb` 这里默认 `512`，与 `AppSettings` 一致）。
     //   §7 以后会往这里加字段（enabled / total / cachePath），所以名字取通用的 `ScanOptions`。
-    static constexpr qint64 kDefaultInnerArchiveMaxMb = 512;
+    static constexpr qint64 kDefaultInnerArchiveMaxMb = imageread::kDefaultInnerArchiveMaxMb;
     // 恢复时"一批吃几行"（约 2048 × 138 B ≈ 280 KB；只影响流式批大小，不改语义）
     static constexpr int kRestoreBatchRows = 2048;
     struct ScanOptions {
@@ -141,23 +143,14 @@ public:
         int     lastIndex = -1;
     };
 
-    // ★★ v5：条目携带的**读取位置**（沿链解析）
-    //   · `diskPath` = 链上最外层容器的绝对路径；无容器 = 图片本身的路径
-    //   · `members`  = 容器成员链（长度 = 容器层数）；空 = 直接在盘上读
-    //   · `innerArchiveMaxMb` = 读这条时用的内层包上限（**随条目带**，因为
-    //     解码入口 `image()/imageSize()` 是静态的、拿不到序列实例 ⇒ 参数只能随位置传）
-    struct Location {
-        QString     diskPath;
-        QStringList members;
-        int         page = 0;
-        qint64      innerArchiveMaxMb = kDefaultInnerArchiveMaxMb;
-    };
+    // ★★ v5：条目携带的**读取位置** —— 类型与读取都在 `imageread.h`
+    //   （用户 2026-10-21 定案：它属于"图和读图"那个模块，序列只是**带着它**去问）
 
     struct Item {
         Kind kind = Kind::Image;
         QString label;           // 它在容器里的名字（页行 = 空串）
         QString displayName;     // 显示名（文件名 / 页行 = "file [k/N]"）
-        Location loc;            // ★ 读取位置（磁盘路径 + 容器成员链 + 页号）
+        imageread::Location loc;  // ★ 读取位置（磁盘路径 + 容器成员链 + 页号）
         QString folderLabel;     // 所属容器（显示用）
         int folderDepth = 0;
         bool missing = false;    // 惰性发现：已消失 / 读不到（**只在会话内**标记）
@@ -350,10 +343,6 @@ public:
     static QString encodeChain(const QStringList &chain);
     static QStringList decodeChain(const QString &encoded);
 
-    // ── ③ 条目读取（**唯一实现**：QImageReader；预载线程也用它解码）──
-    static QSize  imageSize(const Item &it);
-    static QImage image(const Item &it);
-
     // ── ④ 只读 ──────────────────────────────────────────────────
     //   ★★ **两个数量口径，别混用**（设计 14 §9.1「计数用已到达张数」）：
     //     · `count()`           = **可显示边界**（`m_decided`）—— 分组是**从头锚定 + 1 项前瞻**，
@@ -408,7 +397,7 @@ public:
 
     // ── ⑤c **行的读取位置**（沿链解析的**唯一实现**；库探针 / 封面 / 恢复共用）──
     //   `rows` 必须按 ord 升序、父行在前（DFS 前序）。返回与 rows 等长的位置表。
-    static QVector<Location> locateRows(const QString &rootPath, bool rootIsArchive,
+    static QVector<imageread::Location> locateRows(const QString &rootPath, bool rootIsArchive,
                                         const QVector<Row> &rows);
 
     void clear();

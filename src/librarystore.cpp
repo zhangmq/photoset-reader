@@ -602,7 +602,7 @@ int Store::itemIndexOfChain(qint64 collectionId, const QStringList &chain, int p
 //   · 候选的**祖先链里出现压缩包 ⇒ 跳过**（包内成员没有盘上绝对路径，当不了封面）；
 //   · 命中 ⇒ 只把"祖先链 + 它自己"这几行喂给 `locateRows`（沿链解析的唯一实现）。
 bool Store::coverRow(qint64 collectionId, const QString &rootPath, bool rootIsArchive,
-                     Sequence::Row *rowOut, Sequence::Location *locOut) const
+                     Sequence::Row *rowOut, imageread::Location *locOut) const
 {
     static constexpr int kAncestorGuard = 64;              // 防畸形环（真实目录不会这么深）
     QSqlDatabase db = QSqlDatabase::database(m_connName);
@@ -643,7 +643,7 @@ bool Store::coverRow(qint64 collectionId, const QString &rootPath, bool rootIsAr
         int at = -1;
         for (int i = 0; i < subset.size(); ++i)
             if (subset.at(i).ord == cand.ord) { at = i; break; }
-        const QVector<Sequence::Location> locs =
+        const QVector<imageread::Location> locs =
             Sequence::locateRows(rootPath, rootIsArchive, subset);
         if (at < 0 || at >= locs.size()) continue;
         if (locs.at(at).diskPath.isEmpty() || !locs.at(at).members.isEmpty()) continue;

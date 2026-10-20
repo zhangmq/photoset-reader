@@ -181,7 +181,7 @@ QString LibraryModel::coverFor(const library::Collection &c) const
     // ★ 2026-10-19：不再"每张卡片全量拉行 + 全量定位" —— 只问"封面那一行 + 它的读图位置"
     //   （`Store::coverRow`：按 ord 找第一个**盘上**的非目录行，祖先链里没有压缩包）。
     Sequence::Row row;
-    Sequence::Location loc;
+    imageread::Location loc;
     if (!m_store->coverRow(c.id, c.rootPath, library::rootIsArchive(c), &row, &loc)) return {};
     if (loc.diskPath.isEmpty() || !loc.members.isEmpty()) return {};
     if (row.kind == Sequence::Kind::Archive)

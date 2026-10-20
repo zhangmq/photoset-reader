@@ -580,7 +580,7 @@ void UiModel::buildViewer()
     });
     // ★ **建序列只有一条路**：`Sequence::startScan`（目录 / 压缩包 / 单图 / 多页 同一套；
     //   条目里的**磁盘路径 + 容器成员链 + 页号**由它派生 —— 那是解码
-    //   （`Sequence::image` → `EntryReader`）唯一认识的形态，也是"嵌套压缩包能读"的原因）。
+    //   （`imageread::image` → `EntryReader`）唯一认识的形态，也是"嵌套压缩包能读"的原因）。
     s.seq->startScan(m_path, m_settings.recurseDepth(), m_settings.scanHidden(),
                      Sequence::ScanOptions{ qint64(m_settings.innerArchiveMaxMb()) });
     // 本类只给 viewer **预取长度**（它不读设置）

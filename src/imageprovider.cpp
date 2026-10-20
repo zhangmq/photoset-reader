@@ -207,7 +207,7 @@ void ImageProvider::cachePut(const QString &key, const QImage &img)
 // requestImage：**只服务缩略图**（图集卡片封面 / 浏览网格的缩略图）
 //   ★ 定案（phase B）：本 provider **不再提供"页面取图"**（旧的 `view/<条目号>` /
 //     `slice/<条目号>/<片号>` 取图 URL 已删）—— 阅读屏的图由 viewer
-//     （`fetch::ViewerModel` / `Sequence::image`）直接给 QML，不走 image provider。
+//     （`fetch::ViewerModel` / `imageread::image`）直接给 QML，不走 image provider。
 //     provider 只留**缩略图能力**，保留 `src/thumburl.{h,cpp}` 那条（按路径取封面）。
 // ─────────────────────────────────────────────────────────────
 QImage ImageProvider::requestImage(const QString &id, QSize *size, const QSize &requestedSize)

@@ -148,12 +148,12 @@ static int runScanSelfTest()
     auto pathsOf = [&store, &seqRowsOf](qint64 cid) {
         const library::Collection c = store.collection(cid);
         const QVector<library::Item> rows = store.items(cid);
-        const QVector<Sequence::Location> locs =
+        const QVector<imageread::Location> locs =
             Sequence::locateRows(c.rootPath, c.kind == Sequence::Kind::Archive, seqRowsOf(cid));
         QStringList out;
         for (int i = 0; i < rows.size() && i < locs.size(); ++i) {
             if (rows.at(i).kind != Sequence::Kind::Image) continue;
-            const Sequence::Location &l = locs.at(i);
+            const imageread::Location &l = locs.at(i);
             if (l.members.isEmpty()) out << QDir(c.rootPath).relativeFilePath(l.diskPath);
             else out << (QFileInfo(l.diskPath).fileName() + QStringLiteral("!/")
                          + l.members.join(QStringLiteral("!/")));

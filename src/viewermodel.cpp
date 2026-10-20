@@ -48,7 +48,7 @@ ViewerModel::~ViewerModel()
 }
 
 // ══ 工作线程：加载并解码 → post 回主线程 ════════════════════════════════════
-//   只做两件：`Sequence::image`（唯一解码实现）；解完把结果 post 回主线程。
+//   只做两件：`imageread::image`（唯一解码实现）；解完把结果 post 回主线程。
 //   不做取消；解码失败（空图）当成"坏（不可读）"。
 //   ★ **不碰 `ViewerModel`、也不读 `valid` / `target`**：对象已销毁时该丢的由主线程那次检查丢掉
 //     （多投一次无害）；析构**不 join**，所以这里绝不会有"等对象"的事。
@@ -64,7 +64,7 @@ void ViewerModel::preload(const Sequence::Item &imageMeta, int slot)
     static QObject *const sink = new QObject;
 
     std::thread([poster, epoch, slot, meta] {
-        const QImage image = Sequence::image(meta);
+        const QImage image = imageread::image(meta.loc);
         //   ★ 工作线程到此为止：只投递、不看任何共享标志。丢掉与否在主线程判。
         QMetaObject::invokeMethod(sink, [poster, epoch, slot, image] {
             //   ★★ **第一步**：这份结果所属的那个 `ViewerModel` 还在不在？

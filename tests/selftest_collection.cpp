@@ -313,7 +313,7 @@ static int runCollectionSelfTest()
                       .arg(QFileInfo(it.diskPath()).fileName()));
             check(it.members().size() == 2 && it.members().first() == QLatin1String("inner.tar"),
                   QStringLiteral("成员链 = [inner.tar, %1]").arg(it.members().value(1)));
-            const QImage img = Sequence::image(it);
+            const QImage img = imageread::image(it.loc);
             check(!img.isNull() && img.width() > 0 && img.height() > 0,
                   QStringLiteral("★ **嵌套压缩包内的图真的解出来了**（%1×%2）")
                       .arg(img.width()).arg(img.height()));
@@ -334,14 +334,14 @@ static int runCollectionSelfTest()
               QStringLiteral("库行重建里能找到 `deep.tar!/inner.rar!/*` 的嵌套条目"));
         if (rarNested >= 0) {
             const Sequence::Item &it = rebuilt.at(rarNested);
-            const QImage img = Sequence::image(it);
+            const QImage img = imageread::image(it.loc);
             check(!img.isNull() && img.width() > 0 && img.height() > 0,
                   QStringLiteral("★ **嵌套 RAR 内的图真的解出来了**（%1×%2）—— openBytes 内部落临时文件")
                       .arg(img.width()).arg(img.height()));
             // 同一个内层 RAR 的下一张 ⇒ **区间内复用同一份物化产物**（不重新落临时文件）
             if (rarNested + 1 < rebuilt.count()
                 && rebuilt.at(rarNested + 1).members().value(0) == QLatin1String("inner.rar")) {
-                const QImage img2 = Sequence::image(rebuilt.at(rarNested + 1));
+                const QImage img2 = imageread::image(rebuilt.at(rarNested + 1).loc);
                 check(!img2.isNull(),
                       QStringLiteral("★ 同一内层 RAR 的下一张也解出来了（区间内复用同一份物化产物）"));
             }

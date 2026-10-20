@@ -169,9 +169,9 @@ public:
     // ★★ 卡片封面用的那一行 + 它的读图位置（**不做整份遍历**）：
     //   · 候选 = 按 ord 升序、跳过目录、跳过"多页文件的第 >0 页"的那些行；
     //   · 候选的**祖先链里出现压缩包 ⇒ 跳过**（包内成员没有盘上绝对路径，不能当封面）；
-    //   · 命中 ⇒ 返回它那一行与 `Sequence::Location`（只喂"祖先链 + 它自己"给 locateRows）。
+    //   · 命中 ⇒ 返回它那一行与 `imageread::Location`（只喂"祖先链 + 它自己"给 locateRows）。
     bool coverRow(qint64 collectionId, const QString &rootPath, bool rootIsArchive,
-                  Sequence::Row *rowOut, Sequence::Location *locOut) const;
+                  Sequence::Row *rowOut, imageread::Location *locOut) const;
     // ★ v6：**总数现算**（`GROUP BY`；界面要的"多少张图"）——一条查询覆盖所有集合
     QHash<qint64, int> itemCounts();
     int itemCount(qint64 collectionId);

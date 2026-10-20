@@ -11,7 +11,7 @@
 // ══ 缩略图 provider（**只服务缩略图**）════════════════════════════════════
 //   ★ 2026-10-19：这里**只剩缩略图能力**。此前那一整块"按条目号取图 + 自建序列 +
 //     预取 + 页面 / 条漫切片 + CPU 缩放参数"**已删** —— 阅读屏的图由
-//     `fetch::ViewerModel` / `Sequence::image` 直接给 QML（phase B 定案），
+//     `fetch::ViewerModel` / `imageread::image` 直接给 QML（phase B 定案），
 //     provider 只按**路径**出封面 / 缩略图（URL 拼法见 `src/thumburl.{h,cpp}`）。
 //
 //   取图 id（**编码的唯一实现**，别处不要手写字符串）：
