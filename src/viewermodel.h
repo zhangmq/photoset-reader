@@ -80,6 +80,9 @@ class ViewerModel : public QObject
     Q_PROPERTY(QString prevFolderName READ prevFolderName NOTIFY currentChanged)
     Q_PROPERTY(QString nextFolderName READ nextFolderName NOTIFY currentChanged)
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
+    //   当前这一屏的**文件名**（双幅两页时用 " · " 连起来；多页文件是 "file [k/N]"）——
+    //   顶栏显示用，派生值，不改任何状态
+    Q_PROPERTY(QString currentName READ currentName NOTIFY currentChanged)
     //   ★ 幻灯片（13 §九·补·二）：`playing` **只是一个状态**（没有幻灯片对象）
     Q_PROPERTY(bool playing READ playing WRITE setPlaying NOTIFY playingChanged)
     Q_PROPERTY(int cursor READ cursor WRITE setCursor NOTIFY currentChanged)  // 写 = 跳转；= 本屏起点
@@ -153,6 +156,7 @@ public:
     void setDoublePage(bool on);                    // 换版面（保留当前位置，屏重算）
     int  loopMode() const { return int(m_loop); }
     void setLoopMode(int mode);                     // 写 = 换循环模式（不写盘；进沉浸视图回默认）
+    QString currentName() const;
     QString prevFolderName() const;
     QString nextFolderName() const;
     bool loading() const { return m_loading; }
@@ -327,6 +331,7 @@ private:
     bool   m_zoomLocked = false;
     bool   m_osdVisible = false;
     QString m_scaleAlgorithm = QStringLiteral("lanczos3");
+    QString m_screenName;                     // 当前这一屏的文件名（上屏时按真实条目算）
     QTimer  *m_beat = nullptr;                // 单发闹钟（只负责"到点叫醒"，不参与节奏）
     NowFn    m_now;                           // 单调时钟（可注入；生产在构造里装）
     qint64   m_reqAt = 0;                     // 上一次"成为当前屏"的动作**被请求**的时刻

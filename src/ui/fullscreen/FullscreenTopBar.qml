@@ -17,6 +17,7 @@ Item {
 
     property bool   overlaysVisible: true
     property string progressText: ""      // 进度（序号/总数）——**属于顶栏，不属于 OSD**
+    property string fileName: ""          // 当前文件名（双幅时两页以 " · " 相连）
     property string relativePath: ""      // 当前文件相对**图集根**的路径（用户 2026-10-11 要求）
 
     signal libraryRequested()              // home → 图集库
@@ -68,6 +69,14 @@ Item {
                 visible: root.progressText !== ""
                 text: root.progressText
                 color: Theme.textPrimary
+            }
+            Text {   // 当前文件名（长名中间省略，保留首尾辨识度）
+                anchors.verticalCenter: parent.verticalCenter
+                visible: root.fileName !== ""
+                text: root.fileName
+                color: Theme.textPrimary
+                elide: Text.ElideMiddle
+                width: Math.min(implicitWidth, Theme.osdPathMaxW)
             }
             Text {   // 相对图集根的路径（长路径中间省略，保留首尾辨识度）
                 anchors.verticalCenter: parent.verticalCenter

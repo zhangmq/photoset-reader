@@ -285,6 +285,7 @@ Item {
         onBackRequested: root.backRequested()
         onSettingsRequested: root.settingsRequested()
         progressText: ui.viewer ? ((ui.viewer.currentPage + 1) + " / " + ui.viewer.totalPages) : ""
+        fileName: ui.viewer ? ui.viewer.currentName : ""
         relativePath: ""
     }
 

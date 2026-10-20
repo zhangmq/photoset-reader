@@ -257,6 +257,11 @@ QString ViewerModel::folderNameOfNode(int node) const
     return m_seq->tree().at(node).label;            // 容器**自己**那一层的名字（单段）
 }
 
+QString ViewerModel::currentName() const
+{
+    return m_screenName;
+}
+
 QString ViewerModel::prevFolderName() const
 {
     // ★ **文件夹内循环 ⇒ 两个按钮禁用置灰**（用户 2026-10-19）：既然只看这一个文件夹，
@@ -863,6 +868,17 @@ void ViewerModel::screen(int start, const QVector<int> &items)
 {
     m_imageA = imageOf(items.value(0, -1));
     m_imageB = imageOf(items.value(1, -1));
+    // 顶栏文件名：按**这一屏真实的条目**取（配对可能跳过坏条目，不能拿 cursor+1 推）
+    m_screenName.clear();
+    if (m_seq) {
+        const auto nameOf = [this](int idx) {
+            return (idx >= 0 && idx < m_seq->count()) ? m_seq->at(idx).displayName : QString();
+        };
+        m_screenName = nameOf(items.value(0, -1));
+        const QString b = nameOf(items.value(1, -1));
+        if (!b.isEmpty())
+            m_screenName += QStringLiteral(" · ") + b;
+    }
     m_keyCount = items.size();
     m_cursor = start;
     updateLoading();                          // 上屏之后也更新一次（浮层与新口径无关，只是不漏路径）
