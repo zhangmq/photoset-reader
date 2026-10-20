@@ -83,6 +83,20 @@ class ViewerModel : public QObject
     //   ★ 幻灯片（13 §九·补·二）：`playing` **只是一个状态**（没有幻灯片对象）
     Q_PROPERTY(bool playing READ playing WRITE setPlaying NOTIFY playingChanged)
     Q_PROPERTY(int cursor READ cursor WRITE setCursor NOTIFY currentChanged)  // 写 = 跳转；= 本屏起点
+
+    // ── 阅读视图态（**viewer 领域**，2026-10-20 定案）────────────────────────
+    //   随 viewer 生灭；**初值由上层从全局设置下发**（`UiModel::applyViewerDefaults`）。
+    //   UI（底栏）上的调整只改这里，**不回写**全局默认；只有设置对话框才落盘。
+    //   单位：zoom = 设备像素/源像素；pan = 设备像素；视口也是设备像素（QML 报逻辑尺寸 + dpr）。
+    Q_PROPERTY(int   fitMode READ fitMode WRITE setFitMode NOTIFY fitModeChanged)
+    Q_PROPERTY(qreal zoom READ zoom WRITE setZoom NOTIFY zoomChanged)
+    Q_PROPERTY(qreal panX READ panX WRITE setPanX NOTIFY panChanged)
+    Q_PROPERTY(qreal panY READ panY WRITE setPanY NOTIFY panChanged)
+    Q_PROPERTY(bool  zoomLocked READ zoomLocked WRITE setZoomLocked NOTIFY zoomLockedChanged)
+    Q_PROPERTY(bool  osdVisible READ osdVisible WRITE setOsdVisible NOTIFY osdVisibleChanged)
+    Q_PROPERTY(QString scaleAlgorithm READ scaleAlgorithm WRITE setScaleAlgorithm
+                                    NOTIFY scaleAlgorithmChanged)
+    Q_PROPERTY(int   intervalMs READ intervalMs WRITE setIntervalMs NOTIFY intervalChanged)
     Q_PROPERTY(int count READ itemCount NOTIFY currentChanged)             // 条目总数
     Q_PROPERTY(int totalPages READ totalPages NOTIFY currentChanged)       // = count（口径不变：按条目）
     Q_PROPERTY(int currentPage READ currentPage NOTIFY currentChanged)     // = cursor（本屏起点）
@@ -112,6 +126,26 @@ public:
     using NowFn = std::function<qint64()>;                   // 时间源（自检注入虚拟时钟）
     void setNowFn(NowFn fn) { m_now = std::move(fn); }
 
+    // ── 视图态（几何只有一处：zoom/pan + fit 命令，见 gpuscale.h）──────────
+    int   fitMode() const { return m_fitMode; }
+    void  setFitMode(int m);              // fit 是**命令**：算一次 zoom（pan=0）
+    qreal zoom() const { return m_zoom; }
+    void  setZoom(qreal v);
+    qreal panX() const { return m_panX; }
+    void  setPanX(qreal v);
+    qreal panY() const { return m_panY; }
+    void  setPanY(qreal v);
+    bool  zoomLocked() const { return m_zoomLocked; }
+    void  setZoomLocked(bool on);
+    bool  osdVisible() const { return m_osdVisible; }
+    void  setOsdVisible(bool on);
+    QString scaleAlgorithm() const { return m_scaleAlgorithm; }
+    void  setScaleAlgorithm(const QString &key);   // 键串（nearest|smooth|bicubic|lanczos2|lanczos3）
+    Q_INVOKABLE void setViewport(qreal logicalW, qreal logicalH, qreal dpr);
+    Q_INVOKABLE void applyFit();
+    Q_INVOKABLE void panBy(qreal dx, qreal dy);
+    Q_INVOKABLE void zoomAtPoint(qreal factor, qreal anchorX, qreal anchorY);
+
     QImage imageA() const { return m_imageA; }
     QImage imageB() const { return m_imageB; }      // 单幅 / 坏的空位：空图
     int  keyCount() const { return m_keyCount; }
@@ -133,6 +167,13 @@ Q_SIGNALS:
     void imageAChanged();
     void imageBChanged();
     void doublePageChanged();
+    void fitModeChanged();
+    void zoomChanged();
+    void panChanged();
+    void zoomLockedChanged();
+    void osdVisibleChanged();
+    void scaleAlgorithmChanged();
+    void intervalChanged();
     void loopModeChanged();
     void loadingChanged();
     void playingChanged();
@@ -274,7 +315,18 @@ private:
     qint64  nowMs() const { return m_now ? m_now() : 0; }
 
     bool     m_playing = false;               // ★ 只是一个状态（没有幻灯片对象）
-    int      m_intervalMs = 300;              // 间隔（下层只收上层下发的值）
+    int      m_intervalMs = 300;              // 间隔（初值由上层从全局默认下发；UI 改动不回写）
+
+    // ── 视图态（viewer 领域）──
+    QImage geometryImage() const;             // 双幅取有图的那一张
+    int    m_fitMode = 1;                     // 0 原始 / 1 适应屏幕 / 2 适应宽度 / 3 适应高度
+    qreal  m_zoom = 1.0, m_panX = 0.0, m_panY = 0.0;
+    QSize  m_viewport;                        // 设备像素
+    qreal  m_dpr = 1.0;
+    bool   m_freeZoom = false;                // zoom 被用户改过 ⇒ fit 不再接管（pan 不算）
+    bool   m_zoomLocked = false;
+    bool   m_osdVisible = false;
+    QString m_scaleAlgorithm = QStringLiteral("lanczos3");
     QTimer  *m_beat = nullptr;                // 单发闹钟（只负责"到点叫醒"，不参与节奏）
     NowFn    m_now;                           // 单调时钟（可注入；生产在构造里装）
     qint64   m_reqAt = 0;                     // 上一次"成为当前屏"的动作**被请求**的时刻

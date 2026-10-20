@@ -44,6 +44,8 @@ void AppSettings::load()
     m_themeMode     = o.value(QStringLiteral("themeMode")).toInt(m_themeMode);
     m_intervalMs    = qMax(50, o.value(QStringLiteral("intervalMs")).toInt(m_intervalMs));
     m_fitMode       = o.value(QStringLiteral("defaultFitMode")).toInt(m_fitMode);
+    m_layout        = qBound(0, o.value(QStringLiteral("defaultLayout")).toInt(m_layout), 1);
+    m_loop          = qBound(0, o.value(QStringLiteral("defaultLoop")).toInt(m_loop), 2);
     // 缩放算法：新键优先；没有就按旧键迁移（旧版是 mode/quality/filter/lobes/... 七个字段）
     if (o.contains(QStringLiteral("scaleAlgorithm"))) {
         m_scaleAlgorithm = o.value(QStringLiteral("scaleAlgorithm")).toString();
@@ -72,6 +74,8 @@ void AppSettings::save()
     o.insert(QStringLiteral("themeMode"), m_themeMode);
     o.insert(QStringLiteral("intervalMs"), m_intervalMs);
     o.insert(QStringLiteral("defaultFitMode"), m_fitMode);
+    o.insert(QStringLiteral("defaultLayout"), m_layout);
+    o.insert(QStringLiteral("defaultLoop"), m_loop);
     o.insert(QStringLiteral("scaleAlgorithm"), m_scaleAlgorithm);
     o.insert(QStringLiteral("scanHidden"), m_scanHidden);
     o.insert(QStringLiteral("recurseDepth"), m_recurseDepth);

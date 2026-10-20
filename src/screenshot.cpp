@@ -38,7 +38,7 @@ void setupShot(QGuiApplication &app, QQmlApplicationEngine &engine,
         // ★ 浏览的"高亮行 / 打开某行"都归 `ui.browse`
         auto *browse = uiModel ? uiModel->browse() : nullptr;
         if (immersive && browse) browse->open(browse->browseRow());
-        if (osdShown && uiModel) uiModel->setOsdVisible(true);
+        if (osdShown && vm) vm->setOsdVisible(true);   // OSD 归 viewer
         if (seekPage >= 0 && vm) {
             // 单幅版面下"第 N 页"== 第 N 个条目 ⇒ jump(N) 就是跳到第 N 页
             //   （多幅版面请用 `--dev-open-page`，见开发期 CLI）

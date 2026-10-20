@@ -47,8 +47,10 @@
 //         ★ `~ViewerModel` **不 join 工作线程**（只换个记号就走）⇒ 同步拆也是立刻返回。
 //
 //   ## 会话级 vs 设置级
-//     · 会话级（不写入磁盘）：zoomLocked / zoom / panX / panY / osdVisible / overlaysVisible /
-//       windowFullscreen / browseGrid / inputFromKeyboard ⇒ 本类成员。
+//     · 会话级（不写入磁盘）：overlaysVisible / windowFullscreen / browseGrid /
+//       inputFromKeyboard ⇒ 本类成员。
+//     · **阅读视图态**（fit/zoom/pan/锁定/版面/循环/间隔/算法/OSD）不在本类 —— 归 `ViewerModel`，
+//       本类只在建 viewer / 进沉浸视图时把**全局默认**下发一次（`applyViewerDefaults`）。
 //     · 设置级：themeMode / scanHidden / recurseDepth / prefetchWindow /
 //       scaler* ⇒ 读写本类持有的 `AppSettings`（`m_settings`），本类只发通知。
 //       `prefetchWindow`（预取长度 = viewer 的构造参数）、`scanHidden` / `recurseDepth`
@@ -107,24 +109,20 @@ public:
     Q_PROPERTY(int notificationSeq READ notificationSeq NOTIFY notificationChanged)
 
     // ── 适配 / 手势态（**归 ui**）──
+    //   ★ 2026-10-20：这些是**全局默认**（设置页写盘），不是当前阅读态 ——
+    //     当前态（fit/zoom/pan/锁定/版面/循环/间隔/算法/OSD）都在 `ui.viewer` 上。
     Q_PROPERTY(int   fitMode    READ fitMode    WRITE setFitMode    NOTIFY fitModeChanged)
-    Q_PROPERTY(bool  zoomLocked READ zoomLocked WRITE setZoomLocked NOTIFY zoomLockedChanged)
-    Q_PROPERTY(qreal zoom       READ zoom       WRITE setZoom       NOTIFY zoomChanged)
-    Q_PROPERTY(qreal panX       READ panX       WRITE setPanX       NOTIFY panXChanged)
-    Q_PROPERTY(qreal panY       READ panY       WRITE setPanY       NOTIFY panYChanged)
+    Q_PROPERTY(int   defaultLayout READ defaultLayout WRITE setDefaultLayout
+                                   NOTIFY defaultLayoutChanged)
+    Q_PROPERTY(int   defaultLoop READ defaultLoop WRITE setDefaultLoop NOTIFY defaultLoopChanged)
     // ── 视图状态（**只有 zoom + pan 两个数**；fit 是一条命令，见下）──
     //   ★ 2026-10-20 用户定案：**fit 不与 zoom/pan 共同作用**。选中某档 fit ⇒ 它只算一次 zoom、
     //     把 pan 归 0；之后渲染只认 zoom/pan（否则"当前几倍、偏移多少"说不清）。
     //   单位：zoom = 设备像素/源像素；pan = 设备像素（与 `Plan.off` 同义）。
-    Q_INVOKABLE void setViewport(qreal logicalW, qreal logicalH, qreal dpr);  // QML 报视口（逻辑尺寸 + dpr）
-    Q_INVOKABLE void applyFit();      // 把**当前 fitMode** 换算成 zoom（pan=0）——fit 的唯一出口
-    Q_INVOKABLE void panBy(qreal dx, qreal dy);                       // 逻辑位移（内容跟着指针走，自动夹取）
-    Q_INVOKABLE void zoomAtPoint(qreal factor, qreal anchorX, qreal anchorY);   // 逻辑锚点（鼠标位置）
 
     // ── UI 形态（**会话级**，不写入磁盘）──
     Q_PROPERTY(bool overlaysVisible READ overlaysVisible WRITE setOverlaysVisible
                                     NOTIFY overlaysVisibleChanged)
-    Q_PROPERTY(bool osdVisible READ osdVisible WRITE setOsdVisible NOTIFY osdVisibleChanged)
     Q_PROPERTY(bool windowFullscreen READ windowFullscreen WRITE setWindowFullscreen
                                     NOTIFY windowFullscreenChanged)
     Q_PROPERTY(bool browseGrid READ browseGrid WRITE setBrowseGrid NOTIFY browseGridChanged)
@@ -215,26 +213,19 @@ public:
 
     // ── 适配 / 手势态 ──
     int   fitMode() const;
+    int   defaultLayout() const;
+    void  setDefaultLayout(int v);
+    int   defaultLoop() const;
+    void  setDefaultLoop(int v);
     void  setFitMode(int m);
-    bool  zoomLocked() const { return m_zoomLocked; }
-    void  setZoomLocked(bool on);
-    qreal zoom() const { return m_zoom; }
-    void  setZoom(qreal v);
-    qreal panX() const { return m_panX; }
-    void  setPanX(qreal v);
-    qreal panY() const { return m_panY; }
-    void  setPanY(qreal v);
 
     // ── UI 形态 ──
     bool overlaysVisible() const { return m_overlaysVisible; }
     void setOverlaysVisible(bool on);
-    bool osdVisible() const { return m_osdVisible; }
-    void setOsdVisible(bool on);
     bool windowFullscreen() const { return m_windowFullscreen; }
     void setWindowFullscreen(bool on);
     bool browseGrid() const { return m_browseGrid; }
     void setBrowseGrid(bool on);
-    Q_INVOKABLE void toggleOsd();
 
     // ── 设置（读写；值都在本类持有的 `m_settings` 里）──
     int  themeMode() const;
@@ -264,12 +255,9 @@ Q_SIGNALS:
     void screenChanged();
     void slideshowIntervalMsChanged();
     void fitModeChanged();
-    void zoomLockedChanged();
-    void zoomChanged();
-    void panXChanged();
-    void panYChanged();
+    void defaultLayoutChanged();
+    void defaultLoopChanged();
     void overlaysVisibleChanged();
-    void osdVisibleChanged();
     void windowFullscreenChanged();
     void browseGridChanged();
     void themeModeChanged();
@@ -309,9 +297,8 @@ private:
     void onBrowseLayerChanged(int reason);   // 换层（0 = 上/面包屑；1 = 进入容器）
     void onBrowseRowSelected(int itemIndex); // 选中一条图 ⇒ 让 viewer 跳过去
     void onBrowseOpenRequested(int itemIndex);   // 打开那条图 ⇒ 切查看屏
-    void resetView();                   // 换画面复位手势态（zoomLocked 时保留）
-    QImage geometryImage() const;       // 当前屏算几何用的那张图（双幅取有图的那张）
-    void resetGestureForScreenChange(Screen from, Screen to);   // 离开查看屏归零 / 回来重算 fit
+    // 进沉浸视图 / 新建 viewer ⇒ 把全局默认下发一次（fit/间隔/版面/循环/算法/OSD）
+    void applyViewerDefaults();
     void goTo(Screen s, bool push);     // 屏切换（push = 压栈）
     void flushResume();                 // 阅读位置写入磁盘（**存 label 链 + 页号，不存下标**）
 
@@ -369,13 +356,7 @@ private:
     int     m_lastResumePage = 0;          // ★ v5：已写入磁盘的页号（多页文件停在第 k 页）
 
     // 会话状态（不写入磁盘）
-    bool  m_zoomLocked = false;
-    qreal m_zoom = 1.0, m_panX = 0.0, m_panY = 0.0;   // zoom=设备像素/源像素；pan=设备像素
-    QSize m_viewport;                 // 视口（**设备像素**；QML 报逻辑尺寸 + dpr）
-    qreal m_dpr = 1.0;
-    bool  m_freeZoom = false;         // 已经自由缩放过 ⇒ fit 不再自动接管（直到复位）
     bool  m_overlaysVisible = false;
-    bool  m_osdVisible = false;
     bool  m_windowFullscreen = false;
     bool  m_browseGrid = true;
     bool  m_inputFromKeyboard = false;  // 焦点环只在键盘导航时显示（UI 纪律 07 §五）

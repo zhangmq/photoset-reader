@@ -1,5 +1,7 @@
 #include "viewermodel.h"
 
+#include "gpuscale.h"
+
 #include <QDebug>
 #include <QMetaObject>
 #include <QTimer>
@@ -470,10 +472,128 @@ void ViewerModel::setIntervalMs(int ms)
     const int want = qMax(50, ms);
     if (m_intervalMs == want) return;
     m_intervalMs = want;
+    emit intervalChanged();
     if (m_playing) {
         cancelBeat();
         armBeat();
     }
+}
+
+// ══ 视图态（viewer 领域）：fit 只是命令，状态只有 zoom + pan ════════════════
+//   几何全部走 `gpuscale`（`zoomForFit` / `panForAnchoredZoom` / `makePlan`），本类只持有状态。
+QImage ViewerModel::geometryImage() const
+{
+    return !m_imageA.isNull() ? m_imageA : m_imageB;
+}
+
+void ViewerModel::setFitMode(int m)
+{
+    m = qBound(0, m, 3);
+    if (m_fitMode != m) {
+        m_fitMode = m;
+        emit fitModeChanged();
+    }
+    applyFit();          // 点 fit = 命令：算一次 zoom、pan 归 0
+}
+
+void ViewerModel::setZoom(qreal v)
+{
+    if (!(v > 0) || qFuzzyCompare(m_zoom, v)) return;
+    m_zoom = v;
+    emit zoomChanged();
+}
+
+void ViewerModel::setPanX(qreal v)
+{
+    if (qFuzzyCompare(m_panX, v)) return;
+    m_panX = v;
+    emit panChanged();
+}
+
+void ViewerModel::setPanY(qreal v)
+{
+    if (qFuzzyCompare(m_panY, v)) return;
+    m_panY = v;
+    emit panChanged();
+}
+
+void ViewerModel::setZoomLocked(bool on)
+{
+    if (m_zoomLocked == on) return;
+    m_zoomLocked = on;
+    emit zoomLockedChanged();
+}
+
+void ViewerModel::setOsdVisible(bool on)
+{
+    if (m_osdVisible == on) return;
+    m_osdVisible = on;
+    emit osdVisibleChanged();
+}
+
+void ViewerModel::setScaleAlgorithm(const QString &key)
+{
+    // 键串 → 枚举 → 规范化键（唯一映射在 gpuscale）
+    const QString k = QLatin1String(gpuscale::algorithmKey(gpuscale::algorithmFromKey(key)));
+    if (m_scaleAlgorithm == k) return;
+    m_scaleAlgorithm = k;
+    emit scaleAlgorithmChanged();
+}
+
+void ViewerModel::setViewport(qreal logicalW, qreal logicalH, qreal dpr)
+{
+    if (!(dpr > 0)) dpr = 1.0;
+    const QSize vp(qMax(1, qRound(logicalW * dpr)), qMax(1, qRound(logicalH * dpr)));
+    if (vp == m_viewport && qFuzzyCompare(dpr, m_dpr)) return;
+    m_viewport = vp;
+    m_dpr = dpr;
+    // 视口变了（窗口/版面）：还没自由缩放、也没锁定 ⇒ 按当前 fit 重算
+    if (!m_freeZoom && !m_zoomLocked) applyFit();
+}
+
+void ViewerModel::applyFit()
+{
+    const QImage img = geometryImage();
+    if (img.isNull() || m_viewport.isEmpty()) return;
+    const qreal z = gpuscale::zoomForFit(img.size(), m_viewport, gpuscale::Fit(m_fitMode));
+    m_freeZoom = false;
+    setZoom(z);
+    setPanX(0.0);
+    setPanY(0.0);
+}
+
+void ViewerModel::panBy(qreal dx, qreal dy)
+{
+    const QImage img = geometryImage();
+    if (img.isNull() || m_viewport.isEmpty()) return;
+    const QSize full(qRound(img.width() * m_zoom), qRound(img.height() * m_zoom));
+    const qreal slackX = qMax(0, full.width() - m_viewport.width());
+    const qreal slackY = qMax(0, full.height() - m_viewport.height());
+    // 先把旧 pan 夹回当前范围，再叠加本次位移 ⇒ 不会"空走一段"
+    const qreal baseX = qBound(qreal(0), m_panX, slackX);
+    const qreal baseY = qBound(qreal(0), m_panY, slackY);
+    // 内容跟着指针走 ⇒ pan 减小。★ pan 不取消 fit（适应高度/宽度/原始都要平移余量）
+    const qreal nx = qBound(qreal(0), baseX - dx * m_dpr, slackX);
+    const qreal ny = qBound(qreal(0), baseY - dy * m_dpr, slackY);
+    setPanX(nx);
+    setPanY(ny);
+}
+
+void ViewerModel::zoomAtPoint(qreal factor, qreal anchorX, qreal anchorY)
+{
+    if (!(factor > 0)) return;
+    const QImage img = geometryImage();
+    if (img.isNull() || m_viewport.isEmpty()) return;
+    const qreal oldZoom = m_zoom;
+    const qreal newZoom = qBound(qreal(0.02), oldZoom * factor, qreal(64.0));
+    if (qFuzzyCompare(newZoom, oldZoom)) return;
+    const QPointF np = gpuscale::panForAnchoredZoom(img.size(), m_viewport, oldZoom, newZoom,
+                                                    m_panX, m_panY,
+                                                    anchorX * m_dpr, anchorY * m_dpr);
+    m_freeZoom = true;              // 只有 **zoom** 变化才让 fit 让位
+    setZoom(newZoom);
+    setPanX(np.x());
+    setPanY(np.y());
 }
 
 // ══ 每个动作（stepPage / jump / 换版面）═════════════════════════════════════
@@ -749,6 +869,8 @@ void ViewerModel::screen(int start, const QVector<int> &items)
     emit imageAChanged();
     emit imageBChanged();
     emit currentChanged();
+    // 换画面 ⇒ 视图态复位（未锁定时按当前 fit 重算 zoom；锁定 ⇒ 保留 zoom/pan）
+    if (!m_zoomLocked) applyFit();
     onScreenUp();                             // ★ 幻灯片：上屏那一刻（唯一写点就在这里）
 }
 

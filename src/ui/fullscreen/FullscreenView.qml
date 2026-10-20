@@ -31,14 +31,20 @@ Item {
     //   ② 场景图后端是 software —— `QQuickRhiItem` 在软件后端下什么都不画，
     //      此时**无论选了什么算法**都降级成 Qt 平滑（画质不保证，见设计 16 §五）。
     //   ⇒ 两个项都建出来、按这个布尔切 `visible`（不画的那个不参与渲染）。
-    readonly property bool cpuScale: ui.scaleAlgorithm === "smooth" || ui.softwareBackend
+    readonly property bool cpuScale: (ui.viewer && ui.viewer.scaleAlgorithm === "smooth")
+                                     || ui.softwareBackend
 
     // 缩放状态（zoom/pan）在 `ui` 里是**设备像素**口径 ⇒ 视口要连 dpr 一起报上去。
     //   `fit` 不是属性：它只是"算一次 zoom"的命令（见 gpuscale.h / UiModel::applyFit）。
     readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
     function pushViewport() {
-        if (canvas.width > 0 && canvas.height > 0)
-            ui.setViewport(canvas.boxW, canvas.height, root.dpr)
+        if (ui.viewer && canvas.width > 0 && canvas.height > 0)
+            ui.viewer.setViewport(canvas.boxW, canvas.height, root.dpr)
+    }
+    // viewer 换了（新来源 / 重进查看屏）⇒ 把视口补推给它，否则它算不出 fit
+    Connections {
+        target: ui
+        function onViewerChanged() { root.pushViewport() }
     }
 
     // ── 浮层显隐：纯函数（照抄 vsr-player main.qml）──
@@ -126,12 +132,12 @@ Item {
                         anchors.horizontalCenterOffset: root.twoUp ? (parent.width - width) / 2 : 0
                         objectName: "imgA"
                         visible: !root.cpuScale
-                        algorithm: ui.scaleAlgorithm   // nearest | bicubic | lanczos2 | lanczos3
+                        algorithm: ui.viewer ? ui.viewer.scaleAlgorithm : "lanczos3"
                         viewport: Qt.size(canvas.boxW, canvas.height)
                         sourceImage: ui.viewer ? ui.viewer.imageA : null
-                        zoom: ui.zoom
-                        panX: ui.panX
-                        panY: ui.panY
+                        zoom: ui.viewer ? ui.viewer.zoom : 1.0
+                        panX: ui.viewer ? ui.viewer.panX : 0.0
+                        panY: ui.viewer ? ui.viewer.panY : 0.0
                     }
 
                     // 同一个位置的 CPU 版（只在 `cpuScale` 时可见）——几何用同一份 makePlan
@@ -142,9 +148,9 @@ Item {
                         visible: root.cpuScale
                         viewport: Qt.size(canvas.boxW, canvas.height)
                         sourceImage: ui.viewer ? ui.viewer.imageA : null
-                        zoom: ui.zoom
-                        panX: ui.panX
-                        panY: ui.panY
+                        zoom: ui.viewer ? ui.viewer.zoom : 1.0
+                        panX: ui.viewer ? ui.viewer.panX : 0.0
+                        panY: ui.viewer ? ui.viewer.panY : 0.0
                     }
                 }
                 Item {
@@ -158,12 +164,12 @@ Item {
                         anchors.horizontalCenterOffset: root.twoUp ? -(parent.width - width) / 2 : 0
                         objectName: "imgB"
                         visible: !root.cpuScale
-                        algorithm: ui.scaleAlgorithm
+                        algorithm: ui.viewer ? ui.viewer.scaleAlgorithm : "lanczos3"
                         viewport: Qt.size(canvas.boxW, canvas.height)
                         sourceImage: ui.viewer ? ui.viewer.imageB : null
-                        zoom: ui.zoom
-                        panX: ui.panX
-                        panY: ui.panY
+                        zoom: ui.viewer ? ui.viewer.zoom : 1.0
+                        panX: ui.viewer ? ui.viewer.panX : 0.0
+                        panY: ui.viewer ? ui.viewer.panY : 0.0
                     }
 
                     CpuScalerItem {
@@ -173,9 +179,9 @@ Item {
                         visible: root.cpuScale
                         viewport: Qt.size(canvas.boxW, canvas.height)
                         sourceImage: ui.viewer ? ui.viewer.imageB : null
-                        zoom: ui.zoom
-                        panX: ui.panX
-                        panY: ui.panY
+                        zoom: ui.viewer ? ui.viewer.zoom : 1.0
+                        panX: ui.viewer ? ui.viewer.panX : 0.0
+                        panY: ui.viewer ? ui.viewer.panY : 0.0
                     }
                 }
             }
@@ -193,14 +199,14 @@ Item {
                 if (!pressed) return
                 // 内容跟着指针走：**位移交给 ui 换算并夹取**（`panBy` 里知道"完整缩放后尺寸"）。
                 //   ★ 别在这里直接 `ui.panX -= dx`：没有夹取就会出现"拖过头、再拖回来要空走一段"。
-                ui.panBy(m.x - lastX, m.y - lastY)
+                if (ui.viewer) ui.viewer.panBy(m.x - lastX, m.y - lastY)
                 lastX = m.x
                 lastY = m.y
             }
             onWheel: (w) => {
                 const k = w.angleDelta.y > 0 ? 1.1 : (1 / 1.1)
                 // 以**鼠标位置**为锚点缩放（几何在 ui / gpuscale 里算，QML 只报位置）
-                ui.zoomAtPoint(k, w.x, w.y)
+                if (ui.viewer) ui.viewer.zoomAtPoint(k, w.x, w.y)
             }
         }
     }
@@ -291,30 +297,32 @@ Item {
         anchors.right: parent.right
         index: ui.viewer ? ui.viewer.cursor : 0
         count: ui.viewer ? ui.viewer.count : 0
-        fitMode: ui.fitMode
+        fitMode: ui.viewer ? ui.viewer.fitMode : 1
         doublePage: ui.viewer ? ui.viewer.doublePage : false
         loopMode: ui.viewer ? ui.viewer.loopMode : 0
         playing: ui.viewer ? ui.viewer.playing : false
-        intervalMs: ui.slideshowIntervalMs
+        intervalMs: ui.viewer ? ui.viewer.intervalMs : 300
         prevFolderName: ui.viewer ? ui.viewer.prevFolderName : ""
         nextFolderName: ui.viewer ? ui.viewer.nextFolderName : ""
-        zoomLocked: ui.zoomLocked
+        zoomLocked: ui.viewer ? ui.viewer.zoomLocked : false
         windowFullscreen: ui.windowFullscreen
-        osdVisible: ui.osdVisible
+        osdVisible: ui.viewer ? ui.viewer.osdVisible : false
         overlaysVisible: ui.overlaysVisible
         onPrevRequested: { if (ui.viewer) ui.viewer.stepPage(-1) }
         onNextRequested: { if (ui.viewer) ui.viewer.stepPage(1) }
-        onFitModeSelected: function (m) { ui.fitMode = m }
+        scaleAlgorithm: ui.viewer ? ui.viewer.scaleAlgorithm : "lanczos3"
+        onFitModeSelected: function (m) { if (ui.viewer) ui.viewer.fitMode = m }
+        onAlgorithmSelected: function (key) { if (ui.viewer) ui.viewer.scaleAlgorithm = key }
         onDoublePageSelected: function (on) { if (ui.viewer) ui.viewer.doublePage = on }
         onLoopModeSelected: function (m) { if (ui.viewer) ui.viewer.loopMode = m }
         onPlayToggled: { if (ui.viewer) ui.viewer.togglePlaying() }
-        onIntervalSelected: function (ms) { ui.slideshowIntervalMs = ms }
-        onIntervalStep: function (d) { ui.slideshowIntervalMs = ui.slideshowIntervalMs + d }
+        onIntervalSelected: function (ms) { if (ui.viewer) ui.viewer.intervalMs = ms }
+        onIntervalStep: function (d) { if (ui.viewer) ui.viewer.intervalMs = ui.viewer.intervalMs + d }
         onPrevFolderRequested: { if (ui.viewer) ui.viewer.stepFolder(-1) }
         onNextFolderRequested: { if (ui.viewer) ui.viewer.stepFolder(1) }
-        onZoomLockToggled: ui.zoomLocked = !ui.zoomLocked
+        onZoomLockToggled: { if (ui.viewer) ui.viewer.zoomLocked = !ui.viewer.zoomLocked }
         onWindowFullscreenToggled: ui.windowFullscreen = !ui.windowFullscreen
-        onOsdToggled: ui.toggleOsd()
+        onOsdToggled: { if (ui.viewer) ui.viewer.osdVisible = !ui.viewer.osdVisible }
         onSeeked: function (i) { if (ui.viewer) ui.viewer.cursor = i }
     }
 
@@ -324,7 +332,7 @@ Item {
         anchors.top: parent.top
         anchors.leftMargin: Theme.spaceLg
         anchors.topMargin: Theme.barH + Theme.spaceSm
-        osdVisible: ui.osdVisible
+        osdVisible: ui.viewer ? ui.viewer.osdVisible : false
         positionLabel: ui.viewer ? ((ui.viewer.currentPage + 1) + " / " + ui.viewer.totalPages) : ""
         fileLabel: ""
         pathLabel: ""
@@ -391,11 +399,12 @@ Item {
                                  event.accepted = true; break
         case Qt.Key_BracketRight: ui.slideshowIntervalMs = ui.slideshowIntervalMs + 10
                                  event.accepted = true; break
-        case Qt.Key_I:           ui.toggleOsd();             event.accepted = true; break
-        case Qt.Key_Plus:
-        case Qt.Key_Equal:       ui.zoom = Math.min(16, ui.zoom * 1.1)
+        case Qt.Key_I:           if (ui.viewer) ui.viewer.osdVisible = !ui.viewer.osdVisible;
                                  event.accepted = true; break
-        case Qt.Key_Minus:       ui.zoom = Math.max(0.1, ui.zoom / 1.1)
+        case Qt.Key_Plus:
+        case Qt.Key_Equal:       if (ui.viewer) ui.viewer.zoomAtPoint(1.1, canvas.boxW / 2, canvas.height / 2)
+                                 event.accepted = true; break
+        case Qt.Key_Minus:       if (ui.viewer) ui.viewer.zoomAtPoint(1 / 1.1, canvas.boxW / 2, canvas.height / 2)
                                  event.accepted = true; break
         }
     }

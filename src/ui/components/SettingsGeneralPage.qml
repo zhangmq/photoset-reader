@@ -2,7 +2,9 @@ import QtQuick
 import ImageBrowser
 
 // ══ 设置 · 常规页（**本文件自足：改这里不会影响别的页签**）══════
-//   项：主题 / 幻灯片间隔（数字 + **预设快速输入**）/ 默认画面缩放 / 默认阅读版面
+//   项：主题 / 幻灯片间隔（数字 + **预设快速输入**）/ 默认画面缩放 / 默认阅读版面 / 默认循环
+//   ★ 这些全是**全局默认**（2026-10-20 定案）：新建 viewer / 进沉浸视图时取一次；
+//     底栏上改的是当前阅读态，**不会**回写这里。
 //   行结构见 `SettingsRow.qml`（左「标题+描述」、右控件垂直居中、行底 hairline）
 //   ★ 值一律**读写 ui**（`ui.themeMode` / `ui.slideshowIntervalMs`）：
 //     设置是**语义状态**：值在 `Settings`，QML 面在 `ui`（本页不再存第二份占位属性）
@@ -58,5 +60,41 @@ Item {
             }
         }
 
+        // ── 以下三项是**新资源 / 重进查看屏时的默认值**（不是当前阅读态）──
+        SettingsRow {
+            label: "默认画面缩放"
+            description: "打开图片时的适配方式（底栏切换只影响当前阅读，不改这里）"
+            DropdownButton {
+                label: ["原始大小", "适应屏幕", "适应宽度", "适应高度"][ui.fitMode]
+                menuItems: [ { text: "原始大小", selected: ui.fitMode === 0 },
+                             { text: "适应屏幕", selected: ui.fitMode === 1 },
+                             { text: "适应宽度", selected: ui.fitMode === 2 },
+                             { text: "适应高度", selected: ui.fitMode === 3 } ]
+                onItemTriggered: function (i) { ui.fitMode = i }
+            }
+        }
+
+        SettingsRow {
+            label: "默认阅读版面"
+            description: "单幅 / 双幅（底栏切换只影响当前阅读，不改这里）"
+            DropdownButton {
+                label: ["单幅", "双幅"][ui.defaultLayout]
+                menuItems: [ { text: "单幅", selected: ui.defaultLayout === 0 },
+                             { text: "双幅", selected: ui.defaultLayout === 1 } ]
+                onItemTriggered: function (i) { ui.defaultLayout = i }
+            }
+        }
+
+        SettingsRow {
+            label: "默认循环方式"
+            description: "到头之后怎么办（底栏切换只影响当前阅读，不改这里）"
+            DropdownButton {
+                label: ["不循环", "全部循环", "文件夹内循环"][ui.defaultLoop]
+                menuItems: [ { text: "不循环",       selected: ui.defaultLoop === 0 },
+                             { text: "全部循环",     selected: ui.defaultLoop === 1 },
+                             { text: "文件夹内循环", selected: ui.defaultLoop === 2 } ]
+                onItemTriggered: function (i) { ui.defaultLoop = i }
+            }
+        }
     }
 }

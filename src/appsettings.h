@@ -28,9 +28,13 @@ struct AppSettings
     void save();
 
     // 常规
+    //   ★ 2026-10-20 定案：这里是**全局默认**，不是当前阅读态 —— 每次进沉浸视图新建 viewer 时取一次；
+    //     UI（底栏）上的调整只改 viewer，不回写这里。只有设置对话框才落盘。
     int  themeMode() const { return m_themeMode; }              // 0 跟随系统 / 1 浅 / 2 深
-    int  intervalMs() const { return m_intervalMs; }            // 幻灯片间隔，下限 50ms
+    int  intervalMs() const { return m_intervalMs; }            // 幻灯片间隔默认，下限 50ms
     int  defaultFitMode() const { return m_fitMode; }           // 0 原始 1 适应屏幕 2 适应宽度 3 适应高度
+    int  defaultLayout() const { return m_layout; }             // 0 单幅 / 1 双幅
+    int  defaultLoop() const { return m_loop; }                 // 0 不循环 / 1 全部循环 / 2 文件夹循环
 
     // 图像
     // 缩放算法（**唯一**的画质设置）：nearest | smooth | bicubic | lanczos2 | lanczos3
@@ -52,7 +56,9 @@ struct AppSettings
 
     void setThemeMode(int v) { m_themeMode = v; save(); }
     void setIntervalMs(int v) { m_intervalMs = qMax(50, v); save(); }
-    void setDefaultFitMode(int v) { m_fitMode = v; save(); }
+    void setDefaultFitMode(int v) { m_fitMode = qBound(0, v, 3); save(); }
+    void setDefaultLayout(int v) { m_layout = qBound(0, v, 1); save(); }
+    void setDefaultLoop(int v) { m_loop = qBound(0, v, 2); save(); }
     void setScaleAlgorithm(const QString &v) { m_scaleAlgorithm = v; save(); }
     void setScanHidden(bool v) { m_scanHidden = v; save(); }
     void setRecurseDepth(int v) { m_recurseDepth = qBound(1, v, 64); save(); }
@@ -66,6 +72,8 @@ private:
     int  m_themeMode = 0;
     int  m_intervalMs = 300;
     int  m_fitMode = 1;
+    int  m_layout = 0;                  // 默认版面：单幅
+    int  m_loop = 0;                    // 默认循环：不循环
     QString m_scaleAlgorithm = QStringLiteral("lanczos3");
     bool m_scanHidden = false;
     int  m_recurseDepth = 5;
