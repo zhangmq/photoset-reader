@@ -111,6 +111,10 @@ public:
     Q_PROPERTY(qreal zoom       READ zoom       WRITE setZoom       NOTIFY zoomChanged)
     Q_PROPERTY(qreal panX       READ panX       WRITE setPanX       NOTIFY panXChanged)
     Q_PROPERTY(qreal panY       READ panY       WRITE setPanY       NOTIFY panYChanged)
+    //   拖拽平移：**指针位移 → 新的 pan**（内容跟着指针走，并在边界处夹住）。
+    //   为什么不是一个纯 QML 的 `ui.panX -= dx`：夹取要知道"完整缩放后尺寸"，那要 src+viewport+fit+zoom；
+    //   放在这里才能只算一次、且不会出现"拖过头再拖回来要空走一段"的橡皮筋。
+    Q_INVOKABLE void panBy(qreal dx, qreal dy, qreal viewportW, qreal viewportH);
 
     // ── UI 形态（**会话级**，不写入磁盘）──
     Q_PROPERTY(bool overlaysVisible READ overlaysVisible WRITE setOverlaysVisible

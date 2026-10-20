@@ -181,8 +181,9 @@ Item {
             onPressed: (m) => { lastX = m.x; lastY = m.y }
             onPositionChanged: (m) => {
                 if (!pressed) return
-                ui.panX += m.x - lastX
-                ui.panY += m.y - lastY
+                // 内容跟着指针走：**位移交给 ui 换算并夹取**（`panBy` 里知道"完整缩放后尺寸"）。
+                //   ★ 别在这里直接 `ui.panX -= dx`：没有夹取就会出现"拖过头、再拖回来要空走一段"。
+                ui.panBy(m.x - lastX, m.y - lastY, canvas.boxW, canvas.height)
                 lastX = m.x
                 lastY = m.y
             }

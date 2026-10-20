@@ -737,6 +737,40 @@ void UiModel::setPanY(qreal v)
     emit panYChanged();
 }
 
+// 拖拽平移：把"指针位移"换成"窗口偏移"，**夹在合法范围内**
+//   · 语义：内容跟着指针走 ⇒ 指针往右下拖，窗口（= 看到的区域）要往左上移 ⇒ pan 减小
+//   · 尺寸口径：`fitSize` 用**逻辑像素**（与 ui.panX 同单位）；item 侧再乘 dpr，差 ≤1px 可忽略
+void UiModel::panBy(qreal dx, qreal dy, qreal viewportW, qreal viewportH)
+{
+    fetch::ViewerModel *vm = viewerCore();
+    if (!vm)
+        return;
+    const QImage img = !vm->imageA().isNull() ? vm->imageA() : vm->imageB();
+    if (img.isNull())
+        return;
+    const QSize vp(qMax(1, qRound(viewportW)), qMax(1, qRound(viewportH)));
+    const QSize full = gpuscale::fitSize(img.size(), vp, gpuscale::Fit(fitMode()), m_zoom);
+    if (full.isEmpty())
+        return;
+
+    // 只有"图比视口大"的那个方向才有可平移的余量；另一个方向恒为 0（内容居中）
+    const qreal slackX = qMax(0, full.width() - vp.width());
+    const qreal slackY = qMax(0, full.height() - vp.height());
+    // 先把旧 pan 夹回当前范围（缩放变小后旧值可能已越界），再叠加本次位移 ⇒ 不会"空走一段"
+    const qreal baseX = qBound(qreal(0), m_panX, slackX);
+    const qreal baseY = qBound(qreal(0), m_panY, slackY);
+    const qreal nx = qBound(qreal(0), baseX - dx, slackX);
+    const qreal ny = qBound(qreal(0), baseY - dy, slackY);
+    if (!qFuzzyCompare(nx, m_panX)) {
+        m_panX = nx;
+        emit panXChanged();
+    }
+    if (!qFuzzyCompare(ny, m_panY)) {
+        m_panY = ny;
+        emit panYChanged();
+    }
+}
+
 // 换画面复位：**只有没锁**才复位（锁定 ⇒ 缩放与 offset 跨画面保留）
 void UiModel::resetView()
 {
