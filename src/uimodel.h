@@ -58,6 +58,7 @@
 #include "appsettings.h"
 
 #include <QObject>
+#include <QSize>
 #include <QString>
 #include <QStringList>
 #include <QVariantList>
@@ -111,10 +112,14 @@ public:
     Q_PROPERTY(qreal zoom       READ zoom       WRITE setZoom       NOTIFY zoomChanged)
     Q_PROPERTY(qreal panX       READ panX       WRITE setPanX       NOTIFY panXChanged)
     Q_PROPERTY(qreal panY       READ panY       WRITE setPanY       NOTIFY panYChanged)
-    //   拖拽平移：**指针位移 → 新的 pan**（内容跟着指针走，并在边界处夹住）。
-    //   为什么不是一个纯 QML 的 `ui.panX -= dx`：夹取要知道"完整缩放后尺寸"，那要 src+viewport+fit+zoom；
-    //   放在这里才能只算一次、且不会出现"拖过头再拖回来要空走一段"的橡皮筋。
-    Q_INVOKABLE void panBy(qreal dx, qreal dy, qreal viewportW, qreal viewportH);
+    // ── 视图状态（**只有 zoom + pan 两个数**；fit 是一条命令，见下）──
+    //   ★ 2026-10-20 用户定案：**fit 不与 zoom/pan 共同作用**。选中某档 fit ⇒ 它只算一次 zoom、
+    //     把 pan 归 0；之后渲染只认 zoom/pan（否则"当前几倍、偏移多少"说不清）。
+    //   单位：zoom = 设备像素/源像素；pan = 设备像素（与 `Plan.off` 同义）。
+    Q_INVOKABLE void setViewport(qreal logicalW, qreal logicalH, qreal dpr);  // QML 报视口（逻辑尺寸 + dpr）
+    Q_INVOKABLE void applyFit();      // 把**当前 fitMode** 换算成 zoom（pan=0）——fit 的唯一出口
+    Q_INVOKABLE void panBy(qreal dx, qreal dy);                       // 逻辑位移（内容跟着指针走，自动夹取）
+    Q_INVOKABLE void zoomAtPoint(qreal factor, qreal anchorX, qreal anchorY);   // 逻辑锚点（鼠标位置）
 
     // ── UI 形态（**会话级**，不写入磁盘）──
     Q_PROPERTY(bool overlaysVisible READ overlaysVisible WRITE setOverlaysVisible
@@ -305,6 +310,7 @@ private:
     void onBrowseRowSelected(int itemIndex); // 选中一条图 ⇒ 让 viewer 跳过去
     void onBrowseOpenRequested(int itemIndex);   // 打开那条图 ⇒ 切查看屏
     void resetView();                   // 换画面复位手势态（zoomLocked 时保留）
+    QImage geometryImage() const;       // 当前屏算几何用的那张图（双幅取有图的那张）
     void goTo(Screen s, bool push);     // 屏切换（push = 压栈）
     void flushResume();                 // 阅读位置写入磁盘（**存 label 链 + 页号，不存下标**）
 
@@ -363,7 +369,10 @@ private:
 
     // 会话状态（不写入磁盘）
     bool  m_zoomLocked = false;
-    qreal m_zoom = 1.0, m_panX = 0.0, m_panY = 0.0;
+    qreal m_zoom = 1.0, m_panX = 0.0, m_panY = 0.0;   // zoom=设备像素/源像素；pan=设备像素
+    QSize m_viewport;                 // 视口（**设备像素**；QML 报逻辑尺寸 + dpr）
+    qreal m_dpr = 1.0;
+    bool  m_freeZoom = false;         // 已经自由缩放过 ⇒ fit 不再自动接管（直到复位）
     bool  m_overlaysVisible = false;
     bool  m_osdVisible = false;
     bool  m_windowFullscreen = false;

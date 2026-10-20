@@ -96,8 +96,7 @@ int runGpuScaleProbe()
     src.setPixel(7, 7, qRgb(0, 0, 255));      // 右下角标记
 
     gpuscale::Params p;   // 默认算法（Lanczos 3）—— 1:1 直通时核退化为恒等，正好验朝向/通道
-    const gpuscale::Plan plan = gpuscale::makePlan(src.size(), src.size(), gpuscale::Fit::Original,
-                                                   1.0, 0, 0, p);
+    const gpuscale::Plan plan = gpuscale::makePlan(src.size(), src.size(), 1.0, 0, 0, p);
     QImage gpu;
     if (!raw->render(src, plan, &gpu, &err)) {
         qWarning().noquote() << QStringLiteral("[probe] 渲染失败：%1").arg(err);

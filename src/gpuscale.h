@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QImage>
+#include <QPointF>
 #include <QSize>
 #include <QString>
 #include <QVector>
@@ -76,8 +77,28 @@ enum class Fit {
     FitHeight,   // 适应高度
 };
 
-// 目标盒：把 src 按 fit + zoom 得到的**完整**输出尺寸（设备像素，未裁剪）
-QSize fitSize(const QSize &src, const QSize &viewport, Fit fit, qreal zoom);
+// ══ 视图状态只有两个数：**zoom（绝对缩放比）+ pan（窗口偏移）** ══════════════════
+//
+//   ★ 2026-10-20 用户定案：**fit 不与 zoom/pan 共同作用** —— fit 只是**一条命令**：
+//     选中某一档 ⇒ 算出对应的 zoom（pan 归 0）写进状态；之后渲染只认 zoom/pan。
+//     否则"当前到底是几倍、偏移多少"说不清（fit 与 zoom 互相纠缠）。
+//
+//   单位一律**设备像素 / 源像素**：
+//     · zoom = 1.0 ⇒ 一个源像素 = 一个设备像素（"原始大小"）
+//     · 完整尺寸 full = round(src × zoom)；视口比 full 小时，窗口偏移 pan ∈ [0, full-视口]
+
+// fit 命令 → 绝对缩放比（这条命令唯一的出口）
+qreal zoomForFit(const QSize &src, const QSize &viewport, Fit fit);
+
+// ── 以视口内某点为锚点的缩放：返回**新的 pan**（设备像素）──
+//   `anchor` 是视口内坐标（设备像素，鼠标位置）。语义：缩放前后，锚点下面的**内容点**不动。
+//   两种情形都覆盖：
+//     · 完整尺寸 > 视口 ⇒ 窗口可平移，pan ∈ [0, 完整-视口]；
+//     · 完整尺寸 ≤ 视口 ⇒ 内容居中（等价于负偏移 -(视口-完整)/2），此时 pan 恒为 0。
+//   只做几何，不读任何状态（UiModel 与将来的触控缩放共用）。
+QPointF panForAnchoredZoom(const QSize &src, const QSize &viewport,
+                           qreal oldZoom, qreal newZoom, qreal panX, qreal panY,
+                           qreal anchorX, qreal anchorY);
 
 // ── 一次渲染的参数计划（**唯一事实源**）────────────────────────────────
 //   `full` 决定缩放比与核宽（← pan 不许改变采样），`dst` 是本次真正渲染出来的可见区域。
@@ -102,8 +123,8 @@ struct Plan {
     bool operator!=(const Plan &o) const { return !(*this == o); }
 };
 
-// 由「源尺寸 + 视口 + fit/zoom/pan + scaler 参数」算出一次渲染的完整计划
-Plan makePlan(const QSize &src, const QSize &viewport, Fit fit, qreal zoom,
+// 由「源尺寸 + 视口 + zoom/pan + 算法」算出一次渲染的完整计划（**没有 fit**）
+Plan makePlan(const QSize &src, const QSize &viewport, qreal zoom,
               qreal panX, qreal panY, const Params &p);
 
 // ── 每趟的 uniform（**单一事实源**：产品管线与离屏自检都用这一个）──────────

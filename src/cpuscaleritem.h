@@ -10,8 +10,8 @@
 
 // ══ CPU 缩放渲染组件（QML 可用）════════════════════════════════════════════
 //
-// 与 `GpuScalerItem` **同构**：同一批属性（`sourceImage` / `viewport` / `fit` / `zoom` /
-// `panX` / `panY` / `autoSize`），几何由**同一个** `gpuscale::makePlan()` 算出来，
+// 与 `GpuScalerItem` **同构**：同一批属性（`sourceImage` / `viewport` / `zoom` /
+// `panX` / `panY` / `autoSize`；fit 已不再是属性——它只是"算一次 zoom"的命令，见 gpuscale.h），几何由**同一个** `gpuscale::makePlan()` 算出来，
 // 只是执行者换成 **Qt 的内置平滑缩放**（`QPainter::drawImage` + `SmoothPixmapTransform`）。
 //
 // 两处用到它（设计 16 §五）：
@@ -38,7 +38,6 @@ class CpuScalerItem : public QQuickPaintedItem
 
     Q_PROPERTY(QImage sourceImage READ sourceImage WRITE setSourceImage NOTIFY sourceChanged)
     Q_PROPERTY(QSize viewport READ viewport WRITE setViewport NOTIFY viewportChanged)
-    Q_PROPERTY(Fit fit READ fit WRITE setFit NOTIFY fitChanged)
     Q_PROPERTY(qreal zoom READ zoom WRITE setZoom NOTIFY zoomChanged)
     Q_PROPERTY(qreal panX READ panX WRITE setPanX NOTIFY panChanged)
     Q_PROPERTY(qreal panY READ panY WRITE setPanY NOTIFY panChanged)
@@ -48,15 +47,6 @@ class CpuScalerItem : public QQuickPaintedItem
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
 
 public:
-    // 与 `GpuScalerItem::Fit` 对齐（值一一对应 `gpuscale::Fit` 这个单一事实源）
-    enum Fit {
-        Original  = int(gpuscale::Fit::Original),
-        Screen    = int(gpuscale::Fit::Screen),
-        FitWidth  = int(gpuscale::Fit::FitWidth),
-        FitHeight = int(gpuscale::Fit::FitHeight),
-    };
-    Q_ENUM(Fit)
-
     explicit CpuScalerItem(QQuickItem *parent = nullptr);
 
     void setSourceImage(const QImage &img);
@@ -64,9 +54,6 @@ public:
 
     QSize viewport() const { return m_viewport; }
     void setViewport(const QSize &s);
-
-    Fit fit() const { return m_fit; }
-    void setFit(Fit f);
 
     qreal zoom() const { return m_zoom; }
     void setZoom(qreal z);
@@ -88,7 +75,6 @@ public:
 Q_SIGNALS:
     void sourceChanged();
     void viewportChanged();
-    void fitChanged();
     void zoomChanged();
     void panChanged();
     void autoSizeChanged();
@@ -111,7 +97,6 @@ private:
 
     QImage m_source;
     QSize m_viewport = QSize(1, 1);
-    Fit m_fit = Fit::Screen;
     qreal m_zoom = 1.0;
     qreal m_panX = 0.0;
     qreal m_panY = 0.0;

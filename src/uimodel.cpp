@@ -704,9 +704,15 @@ int UiModel::fitMode() const { return m_settings.defaultFitMode(); }
 void UiModel::setFitMode(int m)
 {
     m = qBound(0, m, 3);
-    if (m_settings.defaultFitMode() == m) return;
-    m_settings.setDefaultFitMode(m);
-    emit fitModeChanged();
+    // ★ 点 fit 选项 = **命令**：回到这一档适配 ⇒ 交互缩放/平移一并复位（用户 2026-10-20）。
+    //   与 `zoomLocked` **无关**：锁定管的是"切页时保留"（见 `resetView()`），
+    //   用户主动点适配时以命令为准。就算点的就是当前那档（值没变）也要复位。
+    const bool changed = (m_settings.defaultFitMode() != m);
+    if (changed) {
+        m_settings.setDefaultFitMode(m);
+        emit fitModeChanged();
+    }
+    applyFit();      // fit 是命令：算一次 zoom（pan 归 0），与 zoomLocked 无关
 }
 
 void UiModel::setZoomLocked(bool on)
@@ -737,47 +743,94 @@ void UiModel::setPanY(qreal v)
     emit panYChanged();
 }
 
-// 拖拽平移：把"指针位移"换成"窗口偏移"，**夹在合法范围内**
-//   · 语义：内容跟着指针走 ⇒ 指针往右下拖，窗口（= 看到的区域）要往左上移 ⇒ pan 减小
-//   · 尺寸口径：`fitSize` 用**逻辑像素**（与 ui.panX 同单位）；item 侧再乘 dpr，差 ≤1px 可忽略
-void UiModel::panBy(qreal dx, qreal dy, qreal viewportW, qreal viewportH)
+// ── 视图状态：zoom（绝对）+ pan（窗口偏移），fit 只是一条命令 ────────────────
+//   单位：视口/pan 都是**设备像素**，zoom = 设备像素 / 源像素。
+//   QML 只报逻辑尺寸，乘 dpr 在这里做（一处）。
+
+// 当前这一屏"用来算几何的那张图"（双幅时取有图的那一张；两格共用同一套 zoom/pan）
+QImage UiModel::geometryImage() const
 {
     fetch::ViewerModel *vm = viewerCore();
     if (!vm)
-        return;
-    const QImage img = !vm->imageA().isNull() ? vm->imageA() : vm->imageB();
-    if (img.isNull())
-        return;
-    const QSize vp(qMax(1, qRound(viewportW)), qMax(1, qRound(viewportH)));
-    const QSize full = gpuscale::fitSize(img.size(), vp, gpuscale::Fit(fitMode()), m_zoom);
-    if (full.isEmpty())
-        return;
+        return QImage();
+    const QImage a = vm->imageA();
+    return !a.isNull() ? a : vm->imageB();
+}
 
-    // 只有"图比视口大"的那个方向才有可平移的余量；另一个方向恒为 0（内容居中）
-    const qreal slackX = qMax(0, full.width() - vp.width());
-    const qreal slackY = qMax(0, full.height() - vp.height());
+void UiModel::setViewport(qreal logicalW, qreal logicalH, qreal dpr)
+{
+    if (!(dpr > 0))
+        dpr = 1.0;
+    const QSize vp(qMax(1, qRound(logicalW * dpr)), qMax(1, qRound(logicalH * dpr)));
+    if (vp == m_viewport && qFuzzyCompare(dpr, m_dpr))
+        return;
+    m_viewport = vp;
+    m_dpr = dpr;
+    // 视口变了（窗口/版面变化）：还没自由缩放、也没锁定 ⇒ 按当前 fit 重新算 zoom
+    if (!m_freeZoom && !m_zoomLocked)
+        applyFit();
+}
+
+void UiModel::applyFit()
+{
+    const QImage img = geometryImage();
+    if (img.isNull() || m_viewport.isEmpty())
+        return;                       // 图或视口还没就绪：等 imageAChanged/setViewport 再来
+    const qreal z = gpuscale::zoomForFit(img.size(), m_viewport, gpuscale::Fit(fitMode()));
+    m_freeZoom = false;
+    setZoom(z);
+    setPanX(0.0);
+    setPanY(0.0);
+}
+
+void UiModel::panBy(qreal dx, qreal dy)
+{
+    const QImage img = geometryImage();
+    if (img.isNull() || m_viewport.isEmpty())
+        return;
+    const QSize full(qRound(img.width() * m_zoom), qRound(img.height() * m_zoom));
+    const qreal slackX = qMax(0, full.width() - m_viewport.width());
+    const qreal slackY = qMax(0, full.height() - m_viewport.height());
     // 先把旧 pan 夹回当前范围（缩放变小后旧值可能已越界），再叠加本次位移 ⇒ 不会"空走一段"
     const qreal baseX = qBound(qreal(0), m_panX, slackX);
     const qreal baseY = qBound(qreal(0), m_panY, slackY);
-    const qreal nx = qBound(qreal(0), baseX - dx, slackX);
-    const qreal ny = qBound(qreal(0), baseY - dy, slackY);
-    if (!qFuzzyCompare(nx, m_panX)) {
-        m_panX = nx;
-        emit panXChanged();
-    }
-    if (!qFuzzyCompare(ny, m_panY)) {
-        m_panY = ny;
-        emit panYChanged();
-    }
+    // 内容跟着指针走 ⇒ 指针往右下拖，窗口（看到的区域）往左上移 ⇒ pan 减小
+    const qreal nx = qBound(qreal(0), baseX - dx * m_dpr, slackX);
+    const qreal ny = qBound(qreal(0), baseY - dy * m_dpr, slackY);
+    if (!qFuzzyCompare(nx, m_panX) || !qFuzzyCompare(ny, m_panY))
+        m_freeZoom = true;
+    setPanX(nx);
+    setPanY(ny);
+}
+
+void UiModel::zoomAtPoint(qreal factor, qreal anchorX, qreal anchorY)
+{
+    if (!(factor > 0))
+        return;
+    const QImage img = geometryImage();
+    if (img.isNull() || m_viewport.isEmpty())
+        return;
+    const qreal oldZoom = m_zoom;
+    const qreal newZoom = qBound(qreal(0.02), oldZoom * factor, qreal(64.0));
+    if (qFuzzyCompare(newZoom, oldZoom))
+        return;
+    // 锚点（逻辑）→ 设备像素；几何在 gpuscale::panForAnchoredZoom（纯函数）里
+    const QPointF np = gpuscale::panForAnchoredZoom(img.size(), m_viewport, oldZoom, newZoom,
+                                                    m_panX, m_panY,
+                                                    anchorX * m_dpr, anchorY * m_dpr);
+    m_freeZoom = true;
+    m_zoom = newZoom;
+    emit zoomChanged();
+    setPanX(np.x());
+    setPanY(np.y());
 }
 
 // 换画面复位：**只有没锁**才复位（锁定 ⇒ 缩放与 offset 跨画面保留）
+//   复位 = 重新执行一次 fit 命令（zoom 由 fit 算出来，不是简单置 1）
 void UiModel::resetView()
 {
     if (m_zoomLocked) return;
-    setZoom(1.0);
-    setPanX(0.0);
-    setPanY(0.0);
+    applyFit();
 }
 
 // ── UI 形态（会话级）────────────────────────────────────────────────────

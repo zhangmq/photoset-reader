@@ -85,17 +85,6 @@ GpuScalerItem::GpuScalerItem(QQuickItem *parent)
     updatePlan();
 }
 
-const char *GpuScalerItem::fitName(Fit f)
-{
-    switch (f) {
-    case Fit::Original:  return "original";
-    case Fit::Screen:    return "screen";
-    case Fit::FitWidth:  return "width";
-    case Fit::FitHeight: return "height";
-    }
-    return "?";
-}
-
 void GpuScalerItem::setSourceImage(const QImage &img)
 {
     if (img.isNull()) {
@@ -121,15 +110,6 @@ void GpuScalerItem::setViewport(const QSize &s)
         return;
     m_viewport = v;
     emit viewportChanged();
-    updatePlan();
-}
-
-void GpuScalerItem::setFit(Fit f)
-{
-    if (f == m_fit)
-        return;
-    m_fit = f;
-    emit fitChanged();
     updatePlan();
 }
 
@@ -207,32 +187,6 @@ void GpuScalerItem::resetView()
     updatePlan();
 }
 
-void GpuScalerItem::zoomAt(qreal factor, qreal cx, qreal cy)
-{
-    if (factor <= 0)
-        return;
-    const qreal dpr = window() ? window()->effectiveDevicePixelRatio() : 1.0;
-    const QSize oldFull = m_plan.full;
-    const qreal newZoom = qBound(0.02, m_zoom * factor, 64.0);
-    if (qFuzzyCompare(newZoom, m_zoom))
-        return;
-    // 锚点在「完整缩放图」里的位置 = 平移量 + 视口内位置；缩放后保持它不动
-    const qreal ox = m_panX * dpr, oy = m_panY * dpr;
-    const qreal ax = cx * dpr, ay = cy * dpr;
-    const qreal oldZ = m_zoom;
-    m_zoom = newZoom;
-    updatePlan();
-    const QSize newFull = m_plan.full;
-    const qreal fx = oldFull.isEmpty() ? 1.0 : qreal(newFull.width()) / qreal(qMax(1, oldFull.width()));
-    const qreal fy = oldFull.isEmpty() ? 1.0 : qreal(newFull.height()) / qreal(qMax(1, oldFull.height()));
-    m_panX = ((ox + ax) * fx - ax) / dpr;
-    m_panY = ((oy + ay) * fy - ay) / dpr;
-    Q_UNUSED(oldZ);
-    emit zoomChanged();
-    emit panChanged();
-    updatePlan();
-}
-
 void GpuScalerItem::itemChange(ItemChange change, const ItemChangeData &value)
 {
     QQuickRhiItem::itemChange(change, value);
@@ -259,8 +213,8 @@ void GpuScalerItem::updatePlan()
     const qreal dpr = window() ? window()->effectiveDevicePixelRatio() : 1.0;
     const QSize viewportPx(qMax(1, qRound(m_viewport.width() * dpr)),
                            qMax(1, qRound(m_viewport.height() * dpr)));
-    m_plan = gpuscale::makePlan(m_source.size(), viewportPx, gpuscale::Fit(int(m_fit)), m_zoom,
-                                m_panX * dpr, m_panY * dpr, m_params);
+    //   pan 是**设备像素**（视图状态单位与 zoom 一致）；viewportPx 也是设备像素
+    m_plan = gpuscale::makePlan(m_source.size(), viewportPx, m_zoom, m_panX, m_panY, m_params);
 
     // 颜色缓冲 = 目标尺寸（设备像素）⇒ 合成 1:1，不产生第二次重采样
     if (!m_plan.dst.isEmpty()) {
@@ -281,7 +235,6 @@ void GpuScalerItem::updatePlan()
                       .arg(m_source.width()).arg(m_source.height())
                       .arg(m_plan.dst.width()).arg(m_plan.dst.height())
                       .arg(m_plan.full.width()).arg(m_plan.full.height())
-                      .arg(QLatin1String(fitName(m_fit)))
                       .arg(QLatin1String(gpuscale::algorithmLabel(m_params.algorithm)))
                       .arg(m_plan.offX || m_plan.offY
                                ? QStringLiteral(" · 窗(%1,%2)").arg(m_plan.offX).arg(m_plan.offY)

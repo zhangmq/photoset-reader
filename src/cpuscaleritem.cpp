@@ -42,15 +42,6 @@ void CpuScalerItem::setViewport(const QSize &s)
     updatePlan();
 }
 
-void CpuScalerItem::setFit(Fit f)
-{
-    if (f == m_fit)
-        return;
-    m_fit = f;
-    emit fitChanged();
-    updatePlan();
-}
-
 void CpuScalerItem::setZoom(qreal z)
 {
     const qreal nz = qBound(0.02, z, 64.0);
@@ -98,8 +89,8 @@ void CpuScalerItem::updatePlan()
     const QSize viewportPx(qMax(1, qRound(m_viewport.width() * dpr)),
                            qMax(1, qRound(m_viewport.height() * dpr)));
     gpuscale::Params p;                      // 算法对本项没有意义（永远是 Qt 平滑），只算几何
-    m_plan = gpuscale::makePlan(m_source.size(), viewportPx, gpuscale::Fit(int(m_fit)), m_zoom,
-                                m_panX * dpr, m_panY * dpr, p);
+    //   pan 是**设备像素**（与 zoom 同单位）；viewportPx 也是设备像素
+    m_plan = gpuscale::makePlan(m_source.size(), viewportPx, m_zoom, m_panX, m_panY, p);
 
     // 尺寸 = 目标尺寸（设备像素）/ dpr ⇒ 逻辑尺寸，绘制时 QPainter 已按 dpr 缩放
     if (!m_plan.dst.isEmpty() && m_autoSize) {

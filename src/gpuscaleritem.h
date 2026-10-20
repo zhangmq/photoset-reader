@@ -24,7 +24,8 @@
 //
 // ## 与 CPU 的对应关系
 //   `viewport`（逻辑像素）+ `fit` + `zoom` + `pan` ⇒ `gpuscale::Plan`（`makePlan`）
-//   ⇒ 三段 shader；**算法**是唯一参数（`algorithm`，键串 `nearest|bicubic|lanczos2|lanczos3`），
+//   ⇒ 三段 shader；视图状态只有 **zoom / pan**（fit 只是"算一次 zoom"的命令，见 gpuscale.h）；
+//   **算法**是唯一参数（`algorithm`，键串 `nearest|bicubic|lanczos2|lanczos3`），
 //   与 `gpuscale::Params` 一一对应（`params()` / `setParams()`）。
 //   ⚠️ `smooth` 不在本项的职责内：它由 Qt 执行（`CpuScalerItem`），本项收到它会照常算几何，
 //      但 QML 侧不会把它设为可见。
@@ -41,7 +42,6 @@ class GpuScalerItem : public QQuickRhiItem
     // 源图（C++ 与 **QML 绑定**都可用；QImage 隐式共享，零拷贝）
     Q_PROPERTY(QImage sourceImage READ sourceImage WRITE setSourceImage NOTIFY sourceChanged)
     Q_PROPERTY(QSize viewport READ viewport WRITE setViewport NOTIFY viewportChanged)
-    Q_PROPERTY(Fit fit READ fit WRITE setFit NOTIFY fitChanged)
     Q_PROPERTY(qreal zoom READ zoom WRITE setZoom NOTIFY zoomChanged)
     Q_PROPERTY(qreal panX READ panX WRITE setPanX NOTIFY panChanged)
     Q_PROPERTY(qreal panY READ panY WRITE setPanY NOTIFY panChanged)
@@ -55,15 +55,6 @@ class GpuScalerItem : public QQuickRhiItem
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
 
 public:
-    // QML 侧要能写 `GpuScalerItem.Screen`；**值一一对应 gpuscale::Fit（单一事实源）**
-    enum Fit {
-        Original  = int(gpuscale::Fit::Original),
-        Screen    = int(gpuscale::Fit::Screen),
-        FitWidth  = int(gpuscale::Fit::FitWidth),
-        FitHeight = int(gpuscale::Fit::FitHeight),
-    };
-    Q_ENUM(Fit)
-
     explicit GpuScalerItem(QQuickItem *parent = nullptr);
 
     // ── 源图（从 C++ 设；QImage 隐式共享，零拷贝）──
@@ -74,8 +65,6 @@ public:
     // ── 视口 / fit / 交互缩放 / 平移 ──
     QSize viewport() const { return m_viewport; }
     void setViewport(const QSize &s);
-    Fit fit() const { return m_fit; }
-    void setFit(Fit f);
     qreal zoom() const { return m_zoom; }
     void setZoom(qreal z);
     qreal panX() const { return m_panX; }
@@ -101,13 +90,9 @@ public:
 
     // ── 便利入口（QML 可调）──
     Q_INVOKABLE void resetView();                    // zoom=1、pan=0
-    Q_INVOKABLE void zoomAt(qreal factor, qreal cx, qreal cy);   // 以 (cx,cy) 为锚点缩放（逻辑像素）
-
-    static const char *fitName(Fit f);
 
 Q_SIGNALS:
     void viewportChanged();
-    void fitChanged();
     void zoomChanged();
     void panChanged();
     void autoSizeChanged();
@@ -129,7 +114,6 @@ private:
     quint64 m_sourceGen = 0;
 
     QSize m_viewport = QSize(1, 1);
-    Fit m_fit = Fit::Screen;
     qreal m_zoom = 1.0;
     qreal m_panX = 0.0;
     qreal m_panY = 0.0;

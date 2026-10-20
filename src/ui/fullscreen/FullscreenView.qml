@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import ImageBrowser
 
 // ══ 全屏（沉浸）视图 ══════════════════════════════════════════
@@ -31,6 +32,14 @@ Item {
     //      此时**无论选了什么算法**都降级成 Qt 平滑（画质不保证，见设计 16 §五）。
     //   ⇒ 两个项都建出来、按这个布尔切 `visible`（不画的那个不参与渲染）。
     readonly property bool cpuScale: ui.scaleAlgorithm === "smooth" || ui.softwareBackend
+
+    // 缩放状态（zoom/pan）在 `ui` 里是**设备像素**口径 ⇒ 视口要连 dpr 一起报上去。
+    //   `fit` 不是属性：它只是"算一次 zoom"的命令（见 gpuscale.h / UiModel::applyFit）。
+    readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+    function pushViewport() {
+        if (canvas.width > 0 && canvas.height > 0)
+            ui.setViewport(canvas.boxW, canvas.height, root.dpr)
+    }
 
     // ── 浮层显隐：纯函数（照抄 vsr-player main.qml）──
     readonly property bool showUi: root.debugForceUi
@@ -70,6 +79,11 @@ Item {
         //   缩放约束只是 uiModel 与 GPU 缩放器之间的事，viewer 不需要知道。
         //   换画面复位由 `UiModel` 自己做（QML 里不再有那段逻辑）。
         readonly property real boxW: root.twoUp ? Math.floor(width / 2) : width
+
+        // 视口变了（窗口尺寸 / 单双幅）⇒ 告诉 ui；它会决定"要不要按当前 fit 重算 zoom"
+        onWidthChanged: root.pushViewport()
+        onHeightChanged: root.pushViewport()
+        Component.onCompleted: root.pushViewport()
 
         // ── 空库屏守卫（2026-10-14）───────────────────────────────────────────
         //   `ui.viewer` 为空时（图集库屏 / 还没打开任何来源）**不建** GpuScalerItem：
@@ -115,7 +129,6 @@ Item {
                         algorithm: ui.scaleAlgorithm   // nearest | bicubic | lanczos2 | lanczos3
                         viewport: Qt.size(canvas.boxW, canvas.height)
                         sourceImage: ui.viewer ? ui.viewer.imageA : null
-                        fit: ui.fitMode              // 0 原始 / 1 适应屏幕 / 2 适应宽度 / 3 适应高度
                         zoom: ui.zoom
                         panX: ui.panX
                         panY: ui.panY
@@ -129,7 +142,6 @@ Item {
                         visible: root.cpuScale
                         viewport: Qt.size(canvas.boxW, canvas.height)
                         sourceImage: ui.viewer ? ui.viewer.imageA : null
-                        fit: ui.fitMode
                         zoom: ui.zoom
                         panX: ui.panX
                         panY: ui.panY
@@ -149,7 +161,6 @@ Item {
                         algorithm: ui.scaleAlgorithm
                         viewport: Qt.size(canvas.boxW, canvas.height)
                         sourceImage: ui.viewer ? ui.viewer.imageB : null
-                        fit: ui.fitMode
                         zoom: ui.zoom
                         panX: ui.panX
                         panY: ui.panY
@@ -162,7 +173,6 @@ Item {
                         visible: root.cpuScale
                         viewport: Qt.size(canvas.boxW, canvas.height)
                         sourceImage: ui.viewer ? ui.viewer.imageB : null
-                        fit: ui.fitMode
                         zoom: ui.zoom
                         panX: ui.panX
                         panY: ui.panY
@@ -183,13 +193,14 @@ Item {
                 if (!pressed) return
                 // 内容跟着指针走：**位移交给 ui 换算并夹取**（`panBy` 里知道"完整缩放后尺寸"）。
                 //   ★ 别在这里直接 `ui.panX -= dx`：没有夹取就会出现"拖过头、再拖回来要空走一段"。
-                ui.panBy(m.x - lastX, m.y - lastY, canvas.boxW, canvas.height)
+                ui.panBy(m.x - lastX, m.y - lastY)
                 lastX = m.x
                 lastY = m.y
             }
             onWheel: (w) => {
                 const k = w.angleDelta.y > 0 ? 1.1 : (1 / 1.1)
-                ui.zoom = Math.max(0.1, Math.min(16, ui.zoom * k))
+                // 以**鼠标位置**为锚点缩放（几何在 ui / gpuscale 里算，QML 只报位置）
+                ui.zoomAtPoint(k, w.x, w.y)
             }
         }
     }

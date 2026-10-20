@@ -71,41 +71,67 @@ QShader loadShader(const QString &path)
 
 // ── Fit / Plan ───────────────────────────────────────────────────────
 
-QSize fitSize(const QSize &src, const QSize &viewport, Fit fit, qreal zoom)
+qreal zoomForFit(const QSize &src, const QSize &viewport, Fit fit)
 {
     if (src.isEmpty())
-        return QSize();
-    if (zoom <= 0)
-        zoom = 1.0;
+        return 1.0;
     const qreal w = src.width();
     const qreal h = src.height();
-    qreal outW = w, outH = h;
     const qreal vw = std::max(1, viewport.width());
     const qreal vh = std::max(1, viewport.height());
     switch (fit) {
     case Fit::Original:
-        break;
-    case Fit::Screen: {
-        // ★ 视口适配口径（原与 CPU 参照实现同式）：fitInside 就是
-        //   `src.scaled(box, Qt::KeepAspectRatio)`，这里直接委托 Qt，避免自己重写取整规则而分叉
-        const QSize base = src.scaled(QSize(int(vw), int(vh)), Qt::KeepAspectRatio);
-        outW = base.width();
-        outH = base.height();
-        break;
-    }
+        return 1.0;
+    case Fit::Screen:
+        // 精确的"装进视口"比例：两个方向的限制比取小者。**不借 `scaled()` 的取整盒**——
+        // 那个盒子会把某一个方向的取整误差放大成一个各向异性的比例（旧实现就是 1419×950，
+        // 宽高比与源差 0.05%）。这里一个 zoom 走两轴，最多差 1px，但比例是准的。
+        return std::min(vw / w, vh / h);
     case Fit::FitWidth:
-        outW = vw;
-        outH = h * (vw / w);
-        break;
+        return vw / w;
     case Fit::FitHeight:
-        outH = vh;
-        outW = w * (vh / h);
-        break;
+        return vh / h;
     }
-    return clampPositive(QSize(qRound(outW * zoom), qRound(outH * zoom)));
+    return 1.0;
 }
 
-Plan makePlan(const QSize &src, const QSize &viewport, Fit fit, qreal zoom,
+namespace {
+// 窗口在完整图里的**生效偏移**：图比视口小 ⇒ 内容居中（负偏移）；否则是夹过的 pan
+qreal effectiveOffset(int full, int viewport, qreal pan)
+{
+    if (full <= viewport)
+        return -(viewport - full) / 2.0;
+    return qBound(qreal(0), pan, qreal(full - viewport));
+}
+} // namespace
+
+QPointF panForAnchoredZoom(const QSize &src, const QSize &viewport,
+                           qreal oldZoom, qreal newZoom, qreal panX, qreal panY,
+                           qreal anchorX, qreal anchorY)
+{
+    if (src.isEmpty() || viewport.isEmpty() || !(oldZoom > 0) || !(newZoom > 0))
+        return QPointF(panX, panY);
+    const auto fullFor = [&src](qreal z) {
+        return QSize(qMax(1, qRound(src.width() * z)), qMax(1, qRound(src.height() * z)));
+    };
+    const QSize oldFull = fullFor(oldZoom);
+    const QSize newFull = fullFor(newZoom);
+
+    const qreal rx = qreal(newFull.width()) / qreal(oldFull.width());
+    const qreal ry = qreal(newFull.height()) / qreal(oldFull.height());
+    const qreal ox = effectiveOffset(oldFull.width(), viewport.width(), panX);
+    const qreal oy = effectiveOffset(oldFull.height(), viewport.height(), panY);
+
+    // 锚点在**旧**完整图上的内容坐标 → 在**新**完整图上的位置 → 反算窗口偏移
+    const qreal cx = (anchorX + ox) * rx;
+    const qreal cy = (anchorY + oy) * ry;
+    const qreal slackX = qMax(qreal(0), qreal(newFull.width() - viewport.width()));
+    const qreal slackY = qMax(qreal(0), qreal(newFull.height() - viewport.height()));
+    return QPointF(qBound(qreal(0), cx - anchorX, slackX),
+                   qBound(qreal(0), cy - anchorY, slackY));
+}
+
+Plan makePlan(const QSize &src, const QSize &viewport, qreal zoom,
               qreal panX, qreal panY, const Params &p)
 {
     Plan pl;
@@ -115,7 +141,9 @@ Plan makePlan(const QSize &src, const QSize &viewport, Fit fit, qreal zoom,
         return pl;
 
     const QSize vs = QSize(std::max(1, viewport.width()), std::max(1, viewport.height()));
-    pl.full = clampPositive(fitSize(src, vs, fit, zoom));
+    if (!(zoom > 0))
+        zoom = 1.0;
+    pl.full = clampPositive(QSize(qRound(src.width() * zoom), qRound(src.height() * zoom)));
 
     // 可见窗口：图像比视口小 → 全幅；否则 = 视口大小，起点由 pan 决定（夹在合法范围内）
     const int dw = std::min(pl.full.width(), vs.width());
