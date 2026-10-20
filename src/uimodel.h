@@ -47,8 +47,8 @@
 //         ★ `~ViewerModel` **不 join 工作线程**（只换个记号就走）⇒ 同步拆也是立刻返回。
 //
 //   ## 会话级 vs 设置级
-//     · 会话级（不写入磁盘）：overlaysVisible / windowFullscreen / browseGrid /
-//       inputFromKeyboard ⇒ 本类成员。
+//     · 会话级（不写入磁盘）：windowFullscreen / browseGrid / inputFromKeyboard ⇒ 本类成员。
+//     · 控件条显隐（`showUi`）**不在任何 model 里**：纯 UI 派生（鼠标热区），归 QML。
 //     · **阅读视图态**（fit/zoom/pan/锁定/版面/循环/间隔/算法/OSD）不在本类 —— 归 `ViewerModel`，
 //       本类只在建 viewer / 进沉浸视图时把**全局默认**下发一次（`applyViewerDefaults`）。
 //     · 设置级：themeMode / scanHidden / recurseDepth / prefetchWindow /
@@ -121,8 +121,6 @@ public:
     //   单位：zoom = 设备像素/源像素；pan = 设备像素（与 `Plan.off` 同义）。
 
     // ── UI 形态（**会话级**，不写入磁盘）──
-    Q_PROPERTY(bool overlaysVisible READ overlaysVisible WRITE setOverlaysVisible
-                                    NOTIFY overlaysVisibleChanged)
     Q_PROPERTY(bool windowFullscreen READ windowFullscreen WRITE setWindowFullscreen
                                     NOTIFY windowFullscreenChanged)
     Q_PROPERTY(bool browseGrid READ browseGrid WRITE setBrowseGrid NOTIFY browseGridChanged)
@@ -220,8 +218,6 @@ public:
     void  setFitMode(int m);
 
     // ── UI 形态 ──
-    bool overlaysVisible() const { return m_overlaysVisible; }
-    void setOverlaysVisible(bool on);
     bool windowFullscreen() const { return m_windowFullscreen; }
     void setWindowFullscreen(bool on);
     bool browseGrid() const { return m_browseGrid; }
@@ -257,7 +253,6 @@ Q_SIGNALS:
     void fitModeChanged();
     void defaultLayoutChanged();
     void defaultLoopChanged();
-    void overlaysVisibleChanged();
     void windowFullscreenChanged();
     void browseGridChanged();
     void themeModeChanged();
@@ -356,7 +351,6 @@ private:
     int     m_lastResumePage = 0;          // ★ v5：已写入磁盘的页号（多页文件停在第 k 页）
 
     // 会话状态（不写入磁盘）
-    bool  m_overlaysVisible = false;
     bool  m_windowFullscreen = false;
     bool  m_browseGrid = true;
     bool  m_inputFromKeyboard = false;  // 焦点环只在键盘导航时显示（UI 纪律 07 §五）

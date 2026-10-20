@@ -9,7 +9,8 @@ import ImageBrowser
 //   · 自动隐藏**照抄 vsr-player，不用计时器**：
 //       `showUi = 顶栏热区 || 底栏热区 || 弹层打开`，状态写回 ViewModel
 //     （vsr-player main.qml 原话："移出热区立即隐藏，无计时器"）
-//   · 状态单一来源：`ui.overlaysVisible` / `ui.*` 全部走 ViewModel，QML 不存第二份
+//   · 控件条显隐是**纯 UI 本地状态**（鼠标热区派生）：只在本文件里算，不进任何 model
+//     （用户 2026-10-20：它只是"鼠标 hover 影响的行为"，不是业务状态）
 Item {
     id: root
 
@@ -51,9 +52,7 @@ Item {
     readonly property bool showUi: root.debugForceUi
                                    || topBar.mouseInRegion || bottomBar.mouseInRegion
                                    || bottomBar.popupOpen
-    onShowUiChanged: ui.overlaysVisible = showUi
     Component.onCompleted: {
-        ui.overlaysVisible = showUi          // 启动即按当前状态应用
         if (root.debugOpenSettings) {
             settingsDialog.tab = root.debugSettingsTab
             settingsDialog.open()
@@ -281,7 +280,7 @@ Item {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        overlaysVisible: ui.overlaysVisible
+        overlaysVisible: root.showUi
         onLibraryRequested: root.libraryRequested()
         onBackRequested: root.backRequested()
         onSettingsRequested: root.settingsRequested()
@@ -307,7 +306,7 @@ Item {
         zoomLocked: ui.viewer ? ui.viewer.zoomLocked : false
         windowFullscreen: ui.windowFullscreen
         osdVisible: ui.viewer ? ui.viewer.osdVisible : false
-        overlaysVisible: ui.overlaysVisible
+        overlaysVisible: root.showUi
         onPrevRequested: { if (ui.viewer) ui.viewer.stepPage(-1) }
         onNextRequested: { if (ui.viewer) ui.viewer.stepPage(1) }
         scaleAlgorithm: ui.viewer ? ui.viewer.scaleAlgorithm : "lanczos3"

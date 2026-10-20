@@ -739,12 +739,6 @@ void UiModel::applyViewerDefaults()
 }
 
 // ── UI 形态（会话级）────────────────────────────────────────────────────
-void UiModel::setOverlaysVisible(bool on)
-{
-    if (m_overlaysVisible == on) return;
-    m_overlaysVisible = on;
-    emit overlaysVisibleChanged();
-}
 void UiModel::setWindowFullscreen(bool on)
 {
     if (m_windowFullscreen == on) return;
