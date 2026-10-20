@@ -7,6 +7,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QColorSpace>
 #include <QImageReader>
 #include <QImageWriter>
 #include <QImageIOHandler>
@@ -396,7 +397,13 @@ QImage ImageProvider::pathThumb(const QString &id, QSize *outSize)
             reader.setScaledSize(QSize(srcSize.width() / denom, srcSize.height() / denom));
     }
 
-    const QImage raw = reader.read();
+    QImage raw = reader.read();
+    // 缩略图同样要"色彩正确"（成本低：缩略图很小；只在带非 sRGB profile 时转一次）
+    if (!raw.isNull() && raw.colorSpace().isValid() && raw.colorSpace() != QColorSpace::SRgb) {
+        const QImage conv = raw.convertedToColorSpace(QColorSpace::SRgb);
+        if (!conv.isNull())
+            raw = conv;
+    }
     if (raw.isNull()) {
         qWarning().noquote() << QStringLiteral("[cover] 解码失败(%1): %2")
                                     .arg(reader.errorString(), cs.itemKey);

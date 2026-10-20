@@ -6,6 +6,7 @@
 #include "sevenzcheck.h"
 
 #include <QBuffer>
+#include <QColorSpace>
 #include <QDir>
 #include <QDirIterator>
 #include <QElapsedTimer>
@@ -169,6 +170,22 @@ QByteArray readLocation(const Sequence::Location &loc)
 }
 
 // ── 把条目打开成 `QImageReader` 的**唯一实现**（读尺寸 / 解码都走它）──
+// ── 正确显示色彩（**唯一一处**）：非 sRGB 的输入按它自己的 ICC 转到 sRGB ─────────
+//   ★ 用户 2026-10-20 校正口径：**"不做色彩处理"指的是编辑/调色**（白平衡、饱和度、HDR 调色
+//     这些不在本项目），**不是"色彩可以不正确显示"**。文件声明了什么色域，就按它如实呈现。
+//   · 只在解码这一处做一次 ⇒ 缓存里存的就是 sRGB，GPU 与 CPU 两条渲染路径看到的是同一批像素；
+//   · 没有任何"处理"：不调白平衡、不调饱和、不做风格化；
+//   · Qt 因 ICC 头非法而丢弃 profile 的情况（日志 `qt.gui.icc: Invalid ICC illuminant`）
+//     无从转换 —— 此时按 sRGB 处理（也就是 Qt 的默认假设）。
+static QImage toSrgb(const QImage &in)
+{
+    if (in.isNull()) return in;
+    const QColorSpace cs = in.colorSpace();
+    if (!cs.isValid() || cs == QColorSpace::SRgb) return in;
+    const QImage out = in.convertedToColorSpace(QColorSpace::SRgb);
+    return out.isNull() ? in : out;      // 转换失败（Qt 不支持的 profile）⇒ 保持原样
+}
+
 class EntryReader
 {
 public:
@@ -191,7 +208,7 @@ public:
 
     bool ok() const { return m_ok; }
     QSize size() { return m_ok ? m_r.size() : QSize(); }
-    QImage read() { return m_ok ? m_r.read() : QImage(); }
+    QImage read() { return m_ok ? toSrgb(m_r.read()) : QImage(); }
 
 private:
     QByteArray   m_bytes;
