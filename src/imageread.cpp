@@ -195,17 +195,32 @@ QByteArray readLocation(const Location &loc)
                        loc.members.last(), loc.innerArchiveMaxMb * 1024 * 1024);
 }
 
-Probe probe(const Location &loc)
+QByteArray headBytes(const Location &loc, int maxBytes)
+{
+    if (maxBytes <= 0) return {};
+    if (loc.members.isEmpty()) {
+        QFile f(loc.diskPath);
+        if (!f.open(QIODevice::ReadOnly)) return {};
+        return f.read(maxBytes);
+    }
+    const QByteArray all = readLocation(loc);
+    return all.size() > maxBytes ? all.left(maxBytes) : all;
+}
+
+Probe probe(const Location &loc, int headMax)
 {
     Probe out;
+    if (headMax <= 0) headMax = 0;
     QByteArray all;
     if (loc.members.isEmpty()) {
         QFileInfo fi(loc.diskPath);
         out.bytes = fi.size();
+        QFile f(loc.diskPath);
+        if (f.open(QIODevice::ReadOnly)) out.head = f.read(headMax);
     } else {
         all = readLocation(loc);
         out.bytes = all.isEmpty() ? -1 : all.size();
-        out.memberBytes = all;          // 成员本来整份在内存：交给 EXIF 用（不截断）
+        out.head = all.size() > headMax ? all.left(headMax) : all;
     }
 
     QImageReader reader;

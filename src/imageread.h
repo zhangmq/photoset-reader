@@ -10,8 +10,7 @@
 //   「图在哪里、怎么读」全是本模块的知识（用户 2026-10-21 定案）：
 //     · `Sequence` **只调用**本模块拿尺寸 / 页数，自己**不碰 `QImageReader` / `QImage`**；
 //     · 查看屏的解码（`fetch::ViewerModel` 的工作线程）同样只调这里；
-//     · OSD 的 EXIF / ICC **不走这里截头字节**：解析器（Exiv2）自己按需 seek，
-//       只有包内成员才把整份字节递过去（`Probe::memberBytes`）—— 见 exifmeta.h。
+//     · OSD 要的 EXIF / ICC 也从这里取**头字节**（`headBytes`），不经解码。
 //
 //   容器解析 = 「沿链读字节」：从盘上最外层的压缩包逐层下钻（详见 imageread.cpp 的注释）；
 //   内层包有**进程级单槽物化**，翻页 / 预取 / 缩略图反复读都复用它。
@@ -34,17 +33,21 @@ struct Location {
 // 整条字节（解码用）。空 = 读不到（容器打不开 / 成员不存在 / 超过内层包上限）
 QByteArray readLocation(const Location &loc);
 
-// 条目探测（**一次拿全**，不解码）：容器格式 + 显示尺寸 + 页数 + 字节数
-//   ★ 给 OSD 用：磁盘文件不必取字节（解析器自己 seek）；包内成员交出整份（已在内存）
+// 头 `maxBytes` 字节（**不解码**；EXIF / ICC 这类信息性数据用它 —— 普通文件只读这一截，
+//   包内成员本来就要解出整条，再截断）
+QByteArray headBytes(const Location &loc, int maxBytes);
+
+// 条目探测（**一次拿全**，不解码）：头字节 + 容器格式 + 显示尺寸 + 页数 + 字节数
+//   ★ 给 OSD 用：`head` 交 `exifmeta`，其余是"图像"那组的行；一次取，不重复开容器
 struct Probe {
-    QByteArray memberBytes;   // 包内成员：整份字节（磁盘文件为空）—— 交给 `exifmeta`
+    QByteArray head;
     QString    format;        // "jpeg" / "png" / …（QImageReader 报的，空 = 读不到）
     QSize      size;          // **显示尺寸**（已按 EXIF 旋转）
     bool       rotated = false;
     int        pages = 1;
     qint64     bytes = -1;    // 文件大小 / 成员大小
 };
-Probe probe(const Location &loc);
+Probe probe(const Location &loc, int headMax);
 
 // 解码（**唯一实现**）。空图 = 不可读
 QImage image(const Location &loc);
