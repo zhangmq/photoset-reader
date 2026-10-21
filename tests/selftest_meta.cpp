@@ -10,7 +10,7 @@
 #include "exifmeta.h"
 
 // ══ 元数据（EXIF + 色彩空间）自检（ib-test-meta）══════════════════════════════
-//   设计 17：`exifmeta` 是**纯函数**（头字节 → 行 + 色彩空间判词），不碰解码、不进状态。
+//   设计 17：`exifmeta` 是**纯函数**（来源 → 行 + 色彩空间判词），不碰解码、不进状态。
 //   这里只用 `.testdata` 的真实素材 + 一个自己造的 EXIF 块，验证：
 //     ① 漫画页（JPEG + sRGB ICC）：色彩空间 = `sRGB`，动态行里有 `软件`，
 //        且**结构噪声**（Orientation / DPI / PixelXDimension）被过滤掉；
@@ -20,11 +20,18 @@
 //     ⑤ Display P3 的 PNG：判词 = `Display P3 → 已转 sRGB`（与解码点同一个解析器）。
 namespace {
 
-QByteArray headOf(const QString &path, int n = 256 * 1024)
+exifmeta::Info readPath(const QString &path)
 {
-    QFile f(path);
-    if (!f.open(QIODevice::ReadOnly)) return {};
-    return f.read(n);
+    exifmeta::Source src;
+    src.path = path;
+    return exifmeta::read(src);
+}
+
+exifmeta::Info readBytes(const QByteArray &bytes)
+{
+    exifmeta::Source src;
+    src.bytes = bytes;
+    return exifmeta::read(src);
 }
 
 bool hasRow(const exifmeta::Info &info, const QString &key, const QString &value = QString())
@@ -112,7 +119,7 @@ static int runMetaSelfTest()
 
     // ① 漫画页：sRGB ICC + Software，噪声被过滤
     {
-        const exifmeta::Info info = exifmeta::read(headOf(manga), QStringLiteral("jpeg"));
+        const exifmeta::Info info = readPath(manga);
         check(info.colorSpace == QStringLiteral("sRGB"),
               QStringLiteral("漫画页色彩空间 = sRGB（实际：%1）").arg(info.colorSpace));
         check(hasRow(info, QStringLiteral("软件"), QStringLiteral("Adobe Photoshop CS2 Windows")),
@@ -128,7 +135,7 @@ static int runMetaSelfTest()
     {
         const QByteArray jpeg = jpegWithExif(exifRot);
         check(!jpeg.isEmpty(), QStringLiteral("造出带 EXIF 的 JPEG（%1 字节）").arg(jpeg.size()));
-        const exifmeta::Info info = exifmeta::read(jpeg, QStringLiteral("jpeg"));
+        const exifmeta::Info info = readBytes(jpeg);
         check(hasRow(info, QStringLiteral("相机厂商"), QStringLiteral("TestCam")),
               QStringLiteral("Make → 「相机厂商」"));
         check(hasRow(info, QStringLiteral("机型"), QStringLiteral("Model X")),
@@ -139,7 +146,7 @@ static int runMetaSelfTest()
 
     // ③ 无 ICC 的 JPEG：全是噪声 ⇒ 0 行
     {
-        const exifmeta::Info info = exifmeta::read(headOf(exifRot), QStringLiteral("jpeg"));
+        const exifmeta::Info info = readPath(exifRot);
         check(info.colorSpace == QStringLiteral("sRGB（无 profile）"),
               QStringLiteral("无 ICC ⇒ 「sRGB（无 profile）」（实际：%1）").arg(info.colorSpace));
         check(info.rows.isEmpty(), QStringLiteral("只有噪声标签 ⇒ 0 行（实际：%1）").arg(info.rows.size()));
@@ -147,7 +154,7 @@ static int runMetaSelfTest()
 
     // ④ PNG 无 EXIF
     {
-        const exifmeta::Info info = exifmeta::read(headOf(plainPng), QStringLiteral("png"));
+        const exifmeta::Info info = readPath(plainPng);
         check(info.rows.isEmpty(), QStringLiteral("PNG 没有 EXIF ⇒ 0 行"));
     }
 
@@ -159,9 +166,27 @@ static int runMetaSelfTest()
         img.fill(QColor(128, 64, 32));
         img.setColorSpace(QColorSpace(QColorSpace::DisplayP3));
         check(img.save(p3), QStringLiteral("生成 Display P3 的 PNG"));
-        const exifmeta::Info info = exifmeta::read(headOf(p3), QStringLiteral("png"));
+        const exifmeta::Info info = readPath(p3);
         check(info.colorSpace == QStringLiteral("Display P3 → 已转 sRGB"),
               QStringLiteral("P3 判词（实际：%1）").arg(info.colorSpace));
+    }
+
+    // ⑥ HEIC（BMFF 容器）：Exif 在 box 表里，由 libheif 取 —— 路径源与字节源结果一致
+    const QString heic = QStringLiteral(".testdata/edge/exif.heic");
+    if (QFileInfo::exists(heic)) {
+        const exifmeta::Info byPath = readPath(heic);
+        check(hasRow(byPath, QStringLiteral("相机厂商"), QStringLiteral("TestCam")),
+              QStringLiteral("HEIC 走路径源：Make → 「相机厂商」（%1 行）").arg(byPath.rows.size()));
+        check(hasRow(byPath, QStringLiteral("机型"), QStringLiteral("X100V")),
+              QStringLiteral("HEIC：Model → 「机型」"));
+        QFile f(heic);
+        const QByteArray bytes = f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+        const exifmeta::Info byBytes = readBytes(bytes);
+        check(byBytes.rows == byPath.rows,
+              QStringLiteral("HEIC：路径源与字节源结果一致（%1 / %2 行）")
+                  .arg(byPath.rows.size()).arg(byBytes.rows.size()));
+    } else {
+        check(true, QStringLiteral("HEIC 样例缺失（.testdata/edge/exif.heic）—— 跳过"));
     }
 
     return check.finish();

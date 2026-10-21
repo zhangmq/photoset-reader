@@ -895,10 +895,10 @@ void ViewerModel::screen(int start, const QVector<int> &items)
 
 // ══ OSD 信息行（**按需读取**，无状态；用户 2026-10-21 定案）═════════════════
 //   · OSD / EXIF 不归 `Sequence`（它只描述序列），也不做 VM 状态 ⇒ 界面要时才读；
-//   · 一次读 = 一次条目探测（头字节 + 格式 + 尺寸 + 页数，**不解码**）+ EXIF/ICC 解析；
-//   · 普通文件只读头 256 KB；包内成员复用内层包单槽（`imageread`）。
+//   · 一次读 = 一次条目探测（格式 + 尺寸 + 页数，**不解码**）+ 元数据解析；
+//   · 元数据不截头字节：磁盘文件把**路径**交给解析器（它自己 seek），
+//     包内成员给整份字节（本来就在内存）—— 详见 exifmeta.h。
 namespace {
-constexpr int kOsdHeadBytes = 256 * 1024;
 const QString kSecFile  = QStringLiteral("文件");
 const QString kSecImage = QStringLiteral("图像");
 const QString kSecExif  = QStringLiteral("EXIF");
@@ -952,7 +952,7 @@ QVariantList ViewerModel::osdColumn(int idx)
     add(QStringLiteral("图集"), m_collectionLabel, kSecFile);
 
     // ── 图像（一次探测，不解码）──
-    const imageread::Probe pb = imageread::probe(it.loc, kOsdHeadBytes);
+    const imageread::Probe pb = imageread::probe(it.loc);
     if (pb.size.isValid()) {
         const QString dims = QStringLiteral("%1×%2").arg(pb.size.width()).arg(pb.size.height());
         add(QStringLiteral("分辨率"), pb.rotated ? dims + QStringLiteral("（已按 EXIF 旋转）") : dims,
@@ -964,8 +964,11 @@ QVariantList ViewerModel::osdColumn(int idx)
     add(QStringLiteral("类型"), kind, kSecImage);
     add(QStringLiteral("尺寸"), humanBytes(pb.bytes), kSecImage);
 
-    // ── EXIF + 色彩空间（纯函数解析头字节）──
-    const exifmeta::Info info = exifmeta::read(pb.head, pb.format);
+    // ── EXIF + 色彩空间（磁盘给路径、成员给整份字节；HEIC/AVIF 走 libheif）──
+    exifmeta::Source src;
+    if (it.loc.members.isEmpty()) src.path = it.loc.diskPath;
+    else                          src.bytes = pb.memberBytes;
+    const exifmeta::Info info = exifmeta::read(src, pb.format);
     add(QStringLiteral("色彩空间"), info.colorSpace, kSecImage);
     for (const auto &row : info.rows) add(row.first, row.second, kSecExif);
     if (info.total > info.rows.size())

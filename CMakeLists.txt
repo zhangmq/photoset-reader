@@ -20,6 +20,9 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBARCHIVE REQUIRED libarchive)
 # EXIF 解析：libexif（LGPL-2.1，动态链接）—— Qt 不向外暴露任何 EXIF 标签（见设计 17 §二）
 pkg_check_modules(LIBEXIF REQUIRED libexif)
+# HEIC/AVIF 的 Exif/ICC 在 BMFF box 表里：用 libheif（LGPL-3.0）按需取，不自己解容器
+#   ★ 不用 Exiv2（GPL-2.0+）—— 项目要能按宽松许可分发（用户 2026-10-21 定案）
+pkg_check_modules(LIBHEIF REQUIRED libheif)
 find_package(ZLIB REQUIRED)
 
 # libunrar：只读 RAR 用途；无 pkg-config，手动找
@@ -119,11 +122,12 @@ target_link_libraries(ibcore PUBLIC
     Qt6::GuiPrivate
     ${LIBARCHIVE_LIBRARIES}
     ${LIBEXIF_LIBRARIES}
+    ${LIBHEIF_LIBRARIES}
     ZLIB::ZLIB
     LibLZMA::LibLZMA
     ${UNRAR_LIBRARY})
 target_include_directories(ibcore PUBLIC ${LIBARCHIVE_INCLUDE_DIRS} ${LIBEXIF_INCLUDE_DIRS}
-                                        ${UNRAR_INCLUDE_DIR})
+                                        ${LIBHEIF_INCLUDE_DIRS} ${UNRAR_INCLUDE_DIR})
 
 # ══ testsupport：测试脚手架**独立成库**（设计 14 §11）════════════════════════
 #   `check` / `waitFor` / `TempFixture` / `pipetest` / 套件入口 —— 只有**测试**该碰它，

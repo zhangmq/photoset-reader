@@ -1,9 +1,11 @@
 #include "exifmeta.h"
 
 #include <QColorSpace>
+#include <QFile>
 #include <QMap>
 
 #include <libexif/exif-data.h>
+#include <libheif/heif.h>
 
 #include <zlib.h>
 
@@ -13,8 +15,27 @@ namespace exifmeta {
 
 namespace {
 
+// OSD 只读这么多就够定位容器里的 EXIF/ICC；HEIC/AVIF 例外（走 libheif 的路径/整份）
+constexpr int kHeadBytes = 256 * 1024;
+
 // ══ 容器嗅探（不信扩展名，只认字节）═════════════════════════════════════════
-enum class Container { Unknown, Jpeg, Png, WebP, Tiff };
+enum class Container { Unknown, Jpeg, Png, WebP, Tiff, Heif };
+
+// HEIF/AVIF = ISO BMFF（box 树）：`ftyp` 在偏移 4，品牌写在它里面
+bool isHeifBrand(const QByteArray &h)
+{
+    static const char *kBrands[] = { "heic", "heix", "heim", "heis", "hevc", "hevx",
+                                     "mif1", "msf1", "avif", "avis" };
+    if (h.size() >= 12 && h.mid(4, 4) == "ftyp") {
+        for (const char *b : kBrands) {
+            if (h.mid(8, 4) == b) return true;                 // major brand
+            for (int p = 16; p + 4 <= h.size(); p += 4)        // compatible brands
+                if (h.mid(p, 4) == b) return true;
+        }
+        return false;
+    }
+    return false;
+}
 
 Container sniff(const QByteArray &h)
 {
@@ -22,6 +43,7 @@ Container sniff(const QByteArray &h)
     if (h.size() >= 8 && h.startsWith("\x89PNG\r\n\x1a\n")) return Container::Png;
     if (h.size() >= 12 && h.startsWith("RIFF") && h.mid(8, 4) == "WEBP") return Container::WebP;
     if (h.size() >= 4 && (h.startsWith("II*\0") || h.startsWith("MM\0*"))) return Container::Tiff;
+    if (isHeifBrand(h)) return Container::Heif;
     return Container::Unknown;
 }
 
@@ -330,11 +352,60 @@ QString colorSpaceText(const QByteArray &icc, bool hasIcc)
     return desc + QStringLiteral(" → 已转 sRGB");
 }
 
+// ── HEIF/AVIF：Exif 块与 ICC 都在 BMFF 的 box 表里，交给 libheif ──────────────
+//   ★ 磁盘文件按**路径**打开（libheif 自己 seek，不读全文）；包内成员给整份字节
+//   ★ Exif 载荷的前 4 字节是"TIFF 头在本块内的偏移"（HEIF 规范）；跳过它才是 `Exif\0\0…`
+void readHeif(const Source &src, JpegParts *out)
+{
+    heif_context *ctx = heif_context_alloc();
+    if (!ctx) return;
+    const QByteArray path = src.path.toUtf8();
+    const heif_error err = !src.path.isEmpty()
+        ? heif_context_read_from_file(ctx, path.constData(), nullptr)
+        : heif_context_read_from_memory_without_copy(
+              ctx, src.bytes.constData(), size_t(src.bytes.size()), nullptr);
+    if (err.code == heif_error_Ok) {
+        heif_image_handle *handle = nullptr;
+        if (heif_context_get_primary_image_handle(ctx, &handle).code == heif_error_Ok && handle) {
+            heif_item_id id = 0;
+            if (heif_image_handle_get_list_of_metadata_block_IDs(handle, "Exif", &id, 1) > 0) {
+                const size_t size = heif_image_handle_get_metadata_size(handle, id);
+                if (size > 4) {
+                    QByteArray blob;
+                    blob.resize(int(size));
+                    if (heif_image_handle_get_metadata(handle, id, blob.data()).code == heif_error_Ok)
+                        out->exif = blob.mid(4);
+                }
+            }
+            const size_t iccSize = heif_image_handle_get_raw_color_profile_size(handle);
+            if (iccSize > 0) {
+                QByteArray icc;
+                icc.resize(int(iccSize));
+                if (heif_image_handle_get_raw_color_profile(handle, icc.data()).code == heif_error_Ok) {
+                    out->icc = icc;
+                    out->hasIcc = true;
+                }
+            }
+            heif_image_handle_release(handle);
+        }
+    }
+    heif_context_free(ctx);
+}
+
 }  // namespace
 
-Info read(const QByteArray &head, const QString &format)
+Info read(const Source &src, const QString &format)
 {
     Info info;
+    // 容器嗅探只看头部；包内成员的整份已在内存，直接从它切
+    QByteArray head;
+    if (!src.path.isEmpty()) {
+        QFile f(src.path);
+        if (f.open(QIODevice::ReadOnly)) head = f.read(kHeadBytes);
+    } else {
+        head = src.bytes.left(kHeadBytes);
+    }
+
     const Container c = sniff(head);
     const QString fmt = format.toLower();
 
@@ -346,6 +417,7 @@ Info read(const QByteArray &head, const QString &format)
     case Container::Png:  scanPng(head, &parts);  break;
     case Container::WebP: scanWebp(head, &parts); break;
     case Container::Tiff: parts.exif = head; icc = tiffIcc(head); hasIcc = !icc.isEmpty(); break;
+    case Container::Heif: readHeif(src, &parts); break;          // ★ BMFF：交给 libheif
     case Container::Unknown: break;
     }
     if (icc.isEmpty()) icc = parts.icc;
