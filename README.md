@@ -14,3 +14,10 @@
   等真有素材进来再按需补。
 - 读不到时**整组不出现**（不显示 "—"，也不猜值），**不影响看图**。
 - 没有 ICC profile 的文件，色彩空间一行显示 `sRGB（无 profile）`。
+
+## 许可证
+
+本项目按 **MIT** 发布，见 [LICENSE](LICENSE)。
+
+运行时依赖 Qt、libarchive、libexif、libheif、libunrar 等第三方组件，各自的许可与义务
+（含 LGPL 的动态链接说明、UnRAR 的声明原文）见 [THIRD-PARTY.md](THIRD-PARTY.md)。
