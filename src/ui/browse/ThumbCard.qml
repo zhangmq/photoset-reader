@@ -14,7 +14,8 @@ Item {
     property string thumb: ""
     property string kind: "image"        // image | archive | folder
     property bool   missing: false
-    property bool   selected: false
+    property bool   selected: false      // **选中**（单击；不是进度）
+    property bool   isProgress: false    // **进度**落在这张卡上（"当前进度"标签）
 
     signal activated()
     signal openRequested()
@@ -78,6 +79,15 @@ Item {
             // 漫画文件名公共前缀很长，区分度在**尾部页码** → 用 ElideLeft 保留尾部
             elide: Text.ElideLeft
             horizontalAlignment: Text.AlignHCenter
+        }
+
+        // 左上角：**当前进度**（文本标签；与"选中描边"是两件事）
+        Badge {
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.margins: Theme.spaceSm
+            visible: root.isProgress
+            label: "当前进度"
         }
 
         // 右上角小标记：类型图标（非图片）+ 缺失角标

@@ -209,8 +209,15 @@ void UiModel::goLibrary()
     emit screenChanged();
 }
 
+void UiModel::continueReading()
+{
+    if (!m_src.vm) return;
+    goTo(Screen::Viewer, true);                 // 只看屏、不动游标
+}
+
 void UiModel::back()
 {
+    const Screen from = m_screen;
     stopPlaybackLeavingViewer();                // ★ 离开查看屏 ⇒ 先停播
     if (m_screenStack.isEmpty()) {
         if (m_screen == Screen::Library) return;
@@ -222,6 +229,9 @@ void UiModel::back()
     const Screen prev = m_screenStack.takeLast();
     if (prev == m_screen) return;
     m_screen = prev;
+    //   ★ 从查看屏退回浏览 ⇒ **定位到当前阅读位置**（用户 2026-10-24）：
+    //     层换成"进度所在的那一层"，界面再按 `browseRow` 滚到那一行。
+    if (from == Screen::Viewer && prev == Screen::Browse && m_browse) m_browse->revealProgress();
     if (prev == Screen::Library) releaseDisplaySlot();   // ★ 落到库屏才释放
     emit screenChanged();
 }

@@ -170,6 +170,8 @@ public:
     Screen screen() const { return m_screen; }
     LibraryModel *library() const { return m_library; }
     Q_INVOKABLE void goLibrary();       // 清屏栈直接回图集库
+    // 从原进度继续阅读：进查看屏，**不改游标**（用户 2026-10-24）
+    Q_INVOKABLE void continueReading();
     Q_INVOKABLE void back();            // 出栈：Viewer → Browse → Library
     //   ⚠️ T2d-1b：`openRow / enterRow / isContainerRow`（**按浏览行号解释**）已**搬到新家**
     //      `app::BrowseModel`（QML 的 `ui.browse`）—— 浏览语义只有一处实现（AGENTS.md）。

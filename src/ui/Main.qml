@@ -46,15 +46,12 @@ ApplicationWindow {
         debugSettingsTab: devSettingsTab
 
         onLibraryRequested: ui.goLibrary()                    // [返回图集库]
-        // 单击 = 选中：图行 ⇒ 移动那个唯一的游标；**容器行不在这里进入**
-        //   （⚠️ `MouseArea` 的双击会**先发 clicked 再发 doubleClicked** —— 若单击就进容器，
-        //     随后那次 doubleClicked 会拿同一个行号在**新的一层**上再进一次 ⇒ 进错层。
-        //     容器只在双击时进入，见下。）
+        // 单击 = **只选中**（任何行都一样）：不动进度、不解码、不进入（用户 2026-10-24 定案）
         onItemActivated: function (index) {
-            if (ui.browse && !ui.browse.isContainerRow(index)) ui.browse.activate(index)
+            if (ui.browse) ui.browse.selectRow(index)
         }
-        // 双击 = 进入：容器（文件夹 / 压缩包 / 多页）→ 进入并留在浏览屏；
-        //                图 → 切「图像查看」并跳到它
+        // 双击 = 进入：容器（文件夹 / 压缩包 / 多页）→ 进入那一层，**不改阅读状态**；
+        //                图 → **设置当前进度**并切「图像查看」
         onItemOpened: function (index) {
             if (!ui.browse) return
             if (ui.browse.isContainerRow(index)) ui.browse.activate(index)   // 进入容器（留在浏览屏）

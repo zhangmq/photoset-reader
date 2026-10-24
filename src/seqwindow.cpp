@@ -25,11 +25,20 @@ BrowseLayer browseLayerOf(const Sequence &seq, int node, int cursor)
     out.node = bnode;
 
     // 面包屑：从根到当前层（首段 = **锁死的根**，见 Breadcrumb 契约 [{label, locked}]）
+    //   ★ 首段是"打开时的根"这个**路径**（用户 2026-10-24），不是根节点名
     for (int x = bnode; x >= 0 && x < tree.size(); x = tree.at(x).parent) out.chain.prepend(x);
-    for (int i = 0; i < out.chain.size(); ++i)
+    for (int i = 0; i < out.chain.size(); ++i) {
+        QString label;
+        if (i == 0) {
+            label = seq.rootPath();
+            if (label.isEmpty()) label = tree.at(out.chain.at(i)).label;
+        } else {
+            label = tree.at(out.chain.at(i)).label;
+        }
         out.crumbs.append(QVariantMap{
-            { QStringLiteral("label"), tree.at(out.chain.at(i)).label },
+            { QStringLiteral("label"), label },
             { QStringLiteral("locked"), i == 0 } });
+    }
 
     out.canGoUp = (bnode >= 0 && tree.at(bnode).parent >= 0);
     out.rangeLabel = (bnode >= 0 && !tree.at(bnode).label.isEmpty())

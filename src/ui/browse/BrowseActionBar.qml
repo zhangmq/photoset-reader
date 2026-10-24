@@ -14,6 +14,7 @@ Item {
     signal libraryRequested()
     signal favoriteToggled()
     signal settingsRequested()
+    signal continueRequested()      // 从原进度继续阅读（不改进度）
 
     implicitHeight: Theme.barH
 
@@ -34,6 +35,15 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             text: root.rangeLabel
             color: Theme.textSecondary
+        }
+        // ★ 从原进度继续阅读：进查看屏、**不改阅读进度**（用户 2026-10-24）
+        //   与"双击图 = 设进度并进入"分开：这是"我走开过，接着看"
+        Button {
+            anchors.verticalCenter: parent.verticalCenter
+            label: "继续阅读"
+            glyph: Theme.icPlay
+            enabled: ui.viewer !== null
+            onClicked: root.continueRequested()
         }
     }
 

@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import ImageBrowser
 
@@ -32,10 +33,27 @@ Item {
     property string filterText: ""
     property bool   debugOpenSettings: false      // 调试：截图时自动打开设置
     property int    debugSettingsTab: 0           // 调试：设置弹框开在哪一页（0常规/1图像/2系统/3快捷键）
+    // 回到浏览屏 / 进度变了 ⇒ 滚到**进度那一行**（"定位到当前阅读位置"）
+    function scrollToProgress() {
+        const v = contentLoader.item
+        if (!v || !v.scrollTo || root.progressRow < 0) return
+        v.scrollTo(root.progressRow)
+    }
+    onProgressRowChanged: scrollToProgress()
+    Connections {
+        target: ui
+        function onScreenChanged() {
+            if (ui.screen === UiModel.Browse) root.scrollToProgress()
+        }
+    }
+
     // 面包屑：首段 = **锁死的根**（整体，不拆）；后续 = 当前条目所在的子层级
     //   —— **派生**自来源（设计 07 §三：能派生的不许存）
     property var crumbs: ui.browse ? ui.browse.crumbs : []
-    property int currentIndex: ui.browse ? ui.browse.browseRow : 0   // 高亮行 = **派生**（当前条目落在哪一行）
+    //   ★ 两个状态分开（用户 2026-10-24）：**选中** = 单击那一行（只在本屏）；
+    //     **进度** = 阅读位置落在哪一行（派生自 viewer 游标，用"当前进度"标签标出来）
+    property int selectedRow: ui.browse ? ui.browse.selectedRow : -1
+    property int progressRow: ui.browse ? ui.browse.browseRow : -1
 
     signal libraryRequested()
     signal settingsRequested()
@@ -63,6 +81,7 @@ Item {
                 onLibraryRequested: root.libraryRequested()
                 onFavoriteToggled: root.favoriteToggled()
                 onSettingsRequested: root.settingsRequested()
+                onContinueRequested: ui.continueReading()
             }
 
             // ══ bar 2：路径条（面包屑 + 过滤 + 上一级/视图切换）══
@@ -81,9 +100,11 @@ Item {
 
             // ══ 内容 ══
             Loader {
+                id: contentLoader
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 sourceComponent: root.gridMode ? gridComp : listComp
+                onLoaded: root.scrollToProgress()
             }
         }
     }
@@ -103,6 +124,7 @@ Item {
         GridView {
             id: grid
             clip: true
+            function scrollTo(row) { positionViewAtIndex(row, GridView.Contain) }
             model: ui.browse ? ui.browse.items : null
             // ★ GridView **自己会把内容居中**（实测：leftMargin=0 时首卡仍在 x=160）。
             //   所以不能自己再算 sidePad（两套居中打架）。
@@ -126,9 +148,29 @@ Item {
                 thumb: model.thumb
                 kind: model.kind
                 missing: model.missing
-                selected: index === root.currentIndex
+                selected: index === root.selectedRow
+                isProgress: index === root.progressRow
                 onActivated: root.itemActivated(index)
                 onOpenRequested: root.itemOpened(index)
+            }
+
+            // 滚动条：hover 才显，拖动时保持可见（用户 2026-10-24：常隐但拖动时在）
+            HoverHandler { id: gridHover }
+            ScrollBar.vertical: ScrollBar {
+                id: gridBar
+                policy: ScrollBar.AsNeeded
+                opacity: (gridHover.hovered || gridBar.hovered || gridBar.pressed) ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: Theme.durFast } }
+                contentItem: Rectangle {
+                    implicitWidth: Theme.scrollBarW
+                    radius: width / 2
+                    color: gridBar.pressed ? Theme.textSecondary : Theme.borderL2
+                }
+                background: Rectangle {
+                    implicitWidth: Theme.scrollBarW
+                    radius: width / 2
+                    color: Theme.hoverFill
+                }
             }
         }
     }
@@ -138,6 +180,7 @@ Item {
         id: listComp
         ColumnLayout {
             spacing: 0
+            function scrollTo(row) { list.positionViewAtIndex(row, ListView.Contain) }
 
             // 表头（组件；列几何与行共用 Theme 的 col* token）
             FileListHeader {
@@ -165,9 +208,28 @@ Item {
                     thumb: model.thumb
                     missing: model.missing
                     depth: model.depth
-                    selected: index === root.currentIndex
+                    selected: index === root.selectedRow
+                    isProgress: index === root.progressRow
                     onActivated: root.itemActivated(index)
                     onOpenRequested: root.itemOpened(index)
+                }
+
+                HoverHandler { id: listHover }
+                ScrollBar.vertical: ScrollBar {
+                    id: listBar
+                    policy: ScrollBar.AsNeeded
+                    opacity: (gridHover.hovered || gridBar.hovered || gridBar.pressed) ? 1 : 0
+                    Behavior on opacity { NumberAnimation { duration: Theme.durFast } }
+                    contentItem: Rectangle {
+                        implicitWidth: Theme.scrollBarW
+                        radius: width / 2
+                        color: listBar.pressed ? Theme.textSecondary : Theme.borderL2
+                    }
+                    background: Rectangle {
+                        implicitWidth: Theme.scrollBarW
+                        radius: width / 2
+                        color: Theme.hoverFill
+                    }
                 }
             }
         }

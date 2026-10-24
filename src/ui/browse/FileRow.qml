@@ -13,7 +13,8 @@ Item {
     property string kind: "image"        // image | archive | folder
     property string thumb: ""
     property bool   missing: false
-    property bool   selected: false
+    property bool   selected: false      // **选中**（单击；不是进度）
+    property bool   isProgress: false    // **进度**落在这一行（"当前进度"标签）
     property int    depth: 0
 
     signal activated()
@@ -78,7 +79,10 @@ Item {
 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    width: Math.min(implicitWidth, parent.width - typeBadge.width - Theme.spaceSm)
+                    width: Math.min(implicitWidth,
+                                    parent.width
+                                        - (typeBadge.visible ? typeBadge.width + Theme.spaceSm : 0)
+                                        - (progressBadge.visible ? progressBadge.width + Theme.spaceSm : 0))
                     text: root.name
                     color: root.missing ? Theme.danger : Theme.textPrimary
                     elide: Text.ElideMiddle
@@ -89,6 +93,13 @@ Item {
                     visible: !root.isImage
                     glyph: root.kindGlyph
                     label: root.kindLabel
+                }
+                // **进度**（不是选中）：文本标签，随行
+                Badge {
+                    id: progressBadge
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.isProgress
+                    label: "当前进度"
                 }
             }
         }

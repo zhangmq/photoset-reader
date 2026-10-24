@@ -223,6 +223,7 @@ QtObject {
     readonly property int progressH:    4      // 进度条高度
     readonly property int badgePadH:   Theme.spaceMd   // 徽标左右内边距（合计）← DSH rowTag: padding 1px 6px
     readonly property int hairline:     1      // 分割线
+    readonly property int scrollBarW:   6      // 滚动条宽度（hover 才显，拖动时保持）
     readonly property int borderW:      1      // 描边宽
     readonly property int borderSelW:   2      // 选中态描边宽（卡片；**不是**焦点环）
     readonly property int cardPadH:    Theme.spaceMd   // 卡片左右内边距

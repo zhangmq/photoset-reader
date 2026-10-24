@@ -42,8 +42,11 @@ class BrowseModel : public QObject
     Q_PROPERTY(QVariantList crumbs READ crumbs NOTIFY changed)
     Q_PROPERTY(bool canGoUp READ canGoUp NOTIFY changed)
     Q_PROPERTY(QString rangeLabel READ rangeLabel NOTIFY changed)
-    //   `browseRow` = **当前层里高亮的那一行**（**派生**自"当前条目"，不另存状态）
+    //   `browseRow` = **进度**落在哪一行（**派生**自"当前条目"，不另存状态）
     Q_PROPERTY(int browseRow READ browseRow NOTIFY changed)
+    //   `selectedRow` = **本屏选中**的那一行（用户单击；-1 = 没选中）。
+    //     ★ 与 `browseRow` 是两件事：选中**不改变任何阅读状态**（存档台账 L24 / L25）。
+    Q_PROPERTY(int selectedRow READ selectedRow NOTIFY selectedChanged)
 
 public:
     explicit BrowseModel(QObject *parent = nullptr);
@@ -61,6 +64,10 @@ public:
     void refresh();
     // 换来源 / 回库屏：清空（行 / 面包屑 / 高亮 / 序列）—— 免得留着上一条来源的层
     void clear();
+    // 单击一行 = **只选中**（不碰 viewer、不改进度）；越界 / 换层后自动清掉
+    Q_INVOKABLE void selectRow(int row);
+    // 把"当前层"对到**进度所在的那一层**（从 viewer 退回浏览时用：不回到文件夹根）
+    void revealProgress();
 
     int  node() const { return m_node; }
 
@@ -70,9 +77,10 @@ public:
     bool canGoUp() const { return m_canGoUp; }
     QString rangeLabel() const { return m_rangeLabel; }
     int  browseRow() const { return m_browseRow; }
+    int  selectedRow() const { return m_selectedRow; }
 
     // ── 动作（QML 调；语义见下）────────────────────────────────────────
-    //   容器 ⇒ 进入那一层（留在浏览屏）；图 ⇒ **选中**（= 请 `UiModel` 移动那个唯一的游标）
+    //   容器 ⇒ 进入那一层（留在浏览屏）；图 ⇒ 移动那个唯一的游标（= 设置进度）
     Q_INVOKABLE bool activate(int row);
     //   打开那条图（图 ⇒ 选中 + 切查看屏；容器 ⇒ 与 `activate` 同义）
     Q_INVOKABLE bool open(int row);
@@ -83,6 +91,7 @@ public:
 
 Q_SIGNALS:
     void changed();                       // 这一层（行 / 面包屑 / 高亮）变了
+    void selectedChanged();               // **本屏选中**换了（与进度无关）
     void rowSelected(int itemIndex);      // 图行被选中 ⇒ `UiModel` 让 viewer 跳过去
     void openRequested(int itemIndex);    // 打开那条图 ⇒ `UiModel` 切到查看屏
     //   换层（`reason`：0 = 上一级 / 面包屑；1 = 进入容器）
@@ -94,7 +103,8 @@ private:
     const Sequence *m_seq = nullptr;                   // 序列（非拥有；归 `UiModel` / core）
     int m_node = -1;             // 当前层（-1 = 根 / 整条序列）
     bool m_needsReset = false;   // 换来源 / 清空 ⇒ 下一次 refresh 必须整表重建
-    int m_cursor = 0;                                  // 当前条目下标（高亮行用）
+    int m_cursor = 0;                                  // 当前条目下标（进度行用）
+    int m_selectedRow = -1;                            // 本屏选中（用户单击；-1 = 没选中）
     QVector<int> m_chain;                              // 根 → 当前层的节点下标（`up` / `crumb` 用）
     QVariantList m_crumbs;
     bool m_canGoUp = false;

@@ -11,7 +11,27 @@ void BrowseModel::setSequence(const Sequence *seq)
 {
     m_seq = seq;
     m_needsReset = true;          // 换了来源 ⇒ 上一次的行全部作废
+    m_selectedRow = -1;           // 选中是**本屏**的，换来源即失效
     refresh();
+}
+
+//   ★ 单击 = **只选中**：不碰 viewer、不改进度、不解码（用户 2026-10-24 定案）。
+//     真正的"进入"在双击：容器 ⇒ 进那一层；图 ⇒ 设进度并切查看屏。
+//  ★ 从 viewer 退回浏览：**定位到当前阅读位置**（用户 2026-10-24）——
+//     把层换成"拥有当前游标条目的那个节点"，而不是停在（或回到）文件夹根。
+void BrowseModel::revealProgress()
+{
+    if (!m_seq || m_seq->count() <= 0) return;
+    const int idx = qBound(0, m_cursor, m_seq->count() - 1);
+    setNode(m_seq->at(idx).parentNode);      // -1 = 根那一层（正是它所属的层）
+}
+
+void BrowseModel::selectRow(int row)
+{
+    const int want = (row >= 0 && row < m_rows.count()) ? row : -1;
+    if (want == m_selectedRow) return;
+    m_selectedRow = want;
+    emit selectedChanged();
 }
 
 void BrowseModel::setCursor(int itemIndex)
@@ -45,12 +65,17 @@ void BrowseModel::refresh()
     const fetch::BrowseLayer layer = fetch::browseLayerOf(*m_seq, m_node, m_cursor);
     const bool newLayer = m_needsReset || layer.node != prevNode;
     m_needsReset = false;
+    if (newLayer && m_selectedRow >= 0) { m_selectedRow = -1; emit selectedChanged(); }
     m_node = layer.node;                  // 取回来的是**解析后**的层（陈旧 / 越界 ⇒ 根）
     m_chain = layer.chain;
     // ★ 换层 / 换来源才整表重建；**同一层又长了**走增量（只插入新增的行 / 只刷变化的字段）
     //   —— 否则扫描期间每来一批就把列表推倒重来，滚动位置与高亮全丢（L10 / L14）。
     if (newLayer) m_rows.setRows(layer.rows);
     else          m_rows.patchRows(layer.rows);
+    if (m_selectedRow >= m_rows.count()) {          // 行少了 ⇒ 选中失效
+        m_selectedRow = -1;
+        emit selectedChanged();
+    }
     m_crumbs = layer.crumbs;
     m_canGoUp = layer.canGoUp;
     m_rangeLabel = layer.rangeLabel;
@@ -61,6 +86,7 @@ void BrowseModel::refresh()
 void BrowseModel::clear()
 {
     m_needsReset = true;
+    if (m_selectedRow >= 0) { m_selectedRow = -1; emit selectedChanged(); }
     if (m_rows.count() > 0) m_rows.setRows({});
     m_seq = nullptr;
     m_node = -1;
