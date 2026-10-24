@@ -47,6 +47,8 @@ class BrowseModel : public QObject
     //   `selectedRow` = **本屏选中**的那一行（用户单击；-1 = 没选中）。
     //     ★ 与 `browseRow` 是两件事：选中**不改变任何阅读状态**（存档台账 L24 / L25）。
     Q_PROPERTY(int selectedRow READ selectedRow NOTIFY selectedChanged)
+    //   过滤词（空 = 不过滤）：**只筛当前这一层**；序列不动（用户 2026-10-24）
+    Q_PROPERTY(QString filter READ filter WRITE setFilter NOTIFY filterChanged)
 
 public:
     explicit BrowseModel(QObject *parent = nullptr);
@@ -68,6 +70,9 @@ public:
     Q_INVOKABLE void selectRow(int row);
     // 把"当前层"对到**进度所在的那一层**（从 viewer 退回浏览时用：不回到文件夹根）
     void revealProgress();
+    // 面包屑下拉：直接进同层的另一个容器（等价于 `setNode`，只是给 QML 一个入口）
+    Q_INVOKABLE void goNode(int node) { setNode(node); }
+    void setFilter(const QString &text);
 
     int  node() const { return m_node; }
 
@@ -78,6 +83,7 @@ public:
     QString rangeLabel() const { return m_rangeLabel; }
     int  browseRow() const { return m_browseRow; }
     int  selectedRow() const { return m_selectedRow; }
+    QString filter() const { return m_filter; }
 
     // ── 动作（QML 调；语义见下）────────────────────────────────────────
     //   容器 ⇒ 进入那一层（留在浏览屏）；图 ⇒ 移动那个唯一的游标（= 设置进度）
@@ -92,6 +98,7 @@ public:
 Q_SIGNALS:
     void changed();                       // 这一层（行 / 面包屑 / 高亮）变了
     void selectedChanged();               // **本屏选中**换了（与进度无关）
+    void filterChanged();                 // 过滤词变了
     void rowSelected(int itemIndex);      // 图行被选中 ⇒ `UiModel` 让 viewer 跳过去
     void openRequested(int itemIndex);    // 打开那条图 ⇒ `UiModel` 切到查看屏
     //   换层（`reason`：0 = 上一级 / 面包屑；1 = 进入容器）
@@ -105,6 +112,7 @@ private:
     bool m_needsReset = false;   // 换来源 / 清空 ⇒ 下一次 refresh 必须整表重建
     int m_cursor = 0;                                  // 当前条目下标（进度行用）
     int m_selectedRow = -1;                            // 本屏选中（用户单击；-1 = 没选中）
+    QString m_filter;                                  // 过滤词（只作用于当前这一层）
     QVector<int> m_chain;                              // 根 → 当前层的节点下标（`up` / `crumb` 用）
     QVariantList m_crumbs;
     bool m_canGoUp = false;

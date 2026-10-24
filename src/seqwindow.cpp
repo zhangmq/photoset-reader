@@ -12,7 +12,7 @@ namespace fetch {
 
 // 浏览的一层：**唯一一份实现**（`app::BrowseModel` 每次换层 / 序列变了 / 游标变了就向它取一次）。
 //   高亮语义：先按 `itemIndex == cursor` 命中，再按 `nodeIndex` 的子树范围命中。
-BrowseLayer browseLayerOf(const Sequence &seq, int node, int cursor)
+BrowseLayer browseLayerOf(const Sequence &seq, int node, int cursor, const QString &filter)
 {
     BrowseLayer out;
     const QVector<Sequence::TreeNode> &tree = seq.tree();
@@ -35,9 +35,27 @@ BrowseLayer browseLayerOf(const Sequence &seq, int node, int cursor)
         } else {
             label = tree.at(out.chain.at(i)).label;
         }
+        // ★ 同层其他容器（供面包屑下拉，用户 2026-10-24）：= 父节点的**元素**子容器，按 ord 排。
+        //   根段没有兄弟（root 之上没有层）。
+        QVariantList siblings;
+        if (i > 0) {
+            const int parent = tree.at(out.chain.at(i)).parent;
+            for (int k = 0; k < tree.size(); ++k)
+                if (tree.at(k).parent == parent && seq.isElement(k))
+                    siblings << QVariantMap{ { QStringLiteral("label"), tree.at(k).label },
+                                             { QStringLiteral("node"), k },
+                                             { QStringLiteral("ord"), tree.at(k).ord } };
+            std::sort(siblings.begin(), siblings.end(),
+                      [](const QVariant &a, const QVariant &b) {
+                          return a.toMap().value(QStringLiteral("ord")).toInt()
+                               < b.toMap().value(QStringLiteral("ord")).toInt();
+                      });
+        }
         out.crumbs.append(QVariantMap{
             { QStringLiteral("label"), label },
-            { QStringLiteral("locked"), i == 0 } });
+            { QStringLiteral("locked"), i == 0 },
+            { QStringLiteral("node"), out.chain.at(i) },
+            { QStringLiteral("siblings"), siblings } });
     }
 
     out.canGoUp = (bnode >= 0 && tree.at(bnode).parent >= 0);
@@ -129,6 +147,17 @@ BrowseLayer browseLayerOf(const Sequence &seq, int node, int cursor)
             if (lr.itemIndex >= 0) addImage(lr.itemIndex);
             else                   addNode(lr.nodeIndex);
         }
+    }
+
+    // ★ 过滤（用户 2026-10-24）：**只筛当前这一层**，按每行自己的名字匹配；序列本身不动。
+    //   容器行也参与（否则一过滤文件夹全没了、没法往下点）。
+    const QString needle = filter.trimmed();
+    if (!needle.isEmpty()) {
+        QVector<BrowseModel::Row> kept;
+        kept.reserve(out.rows.size());
+        for (const BrowseModel::Row &r : out.rows)
+            if (r.name.contains(needle, Qt::CaseInsensitive)) kept << r;
+        out.rows = kept;
     }
 
     // 高亮行 = 当前层里含"当前条目"的那一行（**派生**；唯一一处）

@@ -67,6 +67,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         items: root.crumbs
         onActivated: function (index) { root.crumbClicked(index) }
+        onSiblingActivated: function (node) { if (ui.browse) ui.browse.goNode(node) }
     }
 
     // ── 下边框（bar 自持）──

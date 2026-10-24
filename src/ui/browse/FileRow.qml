@@ -100,6 +100,9 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: root.isProgress
                     label: "当前进度"
+                    tone: Theme.brandFg
+                    toneBg: Theme.brand
+                    toneLine: Theme.brand
                 }
             }
         }

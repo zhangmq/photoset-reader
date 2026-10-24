@@ -88,6 +88,9 @@ Item {
             anchors.margins: Theme.spaceSm
             visible: root.isProgress
             label: "当前进度"
+            tone: Theme.brandFg          // 主色底 + 反色字（够醒目）
+            toneBg: Theme.brand
+            toneLine: Theme.brand
         }
 
         // 右上角小标记：类型图标（非图片）+ 缺失角标

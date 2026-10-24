@@ -26,6 +26,16 @@ void BrowseModel::revealProgress()
     setNode(m_seq->at(idx).parentNode);      // -1 = 根那一层（正是它所属的层）
 }
 
+//   ★ 过滤：词一变就重算这一层（只筛行，序列不动）。空词 = 不过滤。
+void BrowseModel::setFilter(const QString &text)
+{
+    const QString t = text.trimmed();
+    if (t == m_filter) return;
+    m_filter = t;
+    emit filterChanged();
+    refresh();
+}
+
 void BrowseModel::selectRow(int row)
 {
     const int want = (row >= 0 && row < m_rows.count()) ? row : -1;
@@ -62,7 +72,7 @@ void BrowseModel::refresh()
         return;
     }
     const int prevNode = m_node;
-    const fetch::BrowseLayer layer = fetch::browseLayerOf(*m_seq, m_node, m_cursor);
+    const fetch::BrowseLayer layer = fetch::browseLayerOf(*m_seq, m_node, m_cursor, m_filter);
     const bool newLayer = m_needsReset || layer.node != prevNode;
     m_needsReset = false;
     if (newLayer && m_selectedRow >= 0) { m_selectedRow = -1; emit selectedChanged(); }

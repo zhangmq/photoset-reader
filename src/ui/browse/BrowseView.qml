@@ -29,8 +29,8 @@ Item {
     property bool canGoUp: false
     // 范围指示（设计 §04）：在图集内 → 图集《名》；直接打开 → 未收藏 · 本次不记进度
     property string rangeLabel: ui.browse ? ui.browse.rangeLabel : ""
-    // 当前路径下的过滤词（**仅用于定位，不改变序列** —— 序列始终是完整的那一份）
-    property string filterText: ""
+    // 当前路径下的过滤词：**挂在 `ui.browse` 上**、只筛当前这一层（序列不动）
+    property string filterText: ui.browse ? ui.browse.filter : ""
     property bool   debugOpenSettings: false      // 调试：截图时自动打开设置
     property int    debugSettingsTab: 0           // 调试：设置弹框开在哪一页（0常规/1图像/2系统/3快捷键）
     // 回到浏览屏 / 进度变了 ⇒ 滚到**进度那一行**（"定位到当前阅读位置"）
@@ -93,7 +93,7 @@ Item {
                 canGoUp: root.canGoUp
                 gridMode: root.gridMode
                 onCrumbClicked: (i) => root.crumbClicked(i)
-                onFilterChanged: (text) => root.filterText = text
+                onFilterChanged: (text) => { if (ui.browse) ui.browse.filter = text }
                 onUpRequested: root.upRequested()
                 onViewModeSelected: (grid) => ui.browseGrid = grid
             }
@@ -113,9 +113,11 @@ Item {
     SettingsDialog {
         id: settingsDialog
     }
-    Component.onCompleted: if (root.debugOpenSettings) {
-        settingsDialog.tab = root.debugSettingsTab;
-        settingsDialog.open();
+    Component.onCompleted: {
+        if (root.debugOpenSettings) {
+            settingsDialog.tab = root.debugSettingsTab;
+            settingsDialog.open();
+        }
     }
 
     // ── 网格视图 ──

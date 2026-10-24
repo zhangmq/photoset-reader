@@ -13,8 +13,9 @@ import ImageBrowser
 Item {
     id: root
 
-    property var items: []              // [{ label, locked }]
+    property var items: []              // [{ label, locked, siblings:[{label,node}] }]
     signal activated(int index)
+    signal siblingActivated(int node)   // 下拉里选了同层的另一个容器
 
     implicitHeight: Theme.crumbItemH
 
@@ -70,6 +71,8 @@ Item {
                         activeFocusOnTab: true
 
                         readonly property bool isRoot: modelData.locked === true
+                        readonly property var siblings: modelData.siblings || []
+                        readonly property int selfNode: modelData.node === undefined ? -1 : modelData.node
                         readonly property bool isCurrent: index === root.items.length - 1
 
                         function jump() { root.activated(index) }
@@ -105,6 +108,26 @@ Item {
                                                                                 : Theme.textSecondary
                             }
                         }
+                        // ★ 下拉箭头：同层还有其他容器时出现（用户 2026-10-24）——
+                        //   点箭头列同层容器，点文字仍是"跳到该层"
+                        Text {
+                            id: caret
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: seg.siblings.length > 1
+                            text: Theme.icChevronD
+                            font.family: iconFont
+                            font.pixelSize: Theme.iconSm
+                            renderType: Text.NativeRendering
+                            color: caretMa.containsMouse ? Theme.textPrimary : Theme.textCaption
+                            MouseArea {
+                                id: caretMa
+                                anchors.fill: parent
+                                anchors.margins: -Theme.space2xs
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: segMenu.visible ? segMenu.close() : segMenu.open()
+                            }
+                        }
                         HintBubble {
                             anchors.fill: parent
                             text: modelData.label
@@ -118,6 +141,18 @@ Item {
                             cursorShape: Qt.PointingHandCursor
                             onPressed: seg.forceActiveFocus()
                             onClicked: seg.jump()
+                        }
+                        PopupMenu {
+                            id: segMenu
+                            anchorTarget: seg
+                            items: seg.siblings.map(function (x) {
+                                return { text: x.label, selected: x.node === seg.selfNode }
+                            })
+                            onItemTriggered: function (i) {
+                                const sib = seg.siblings[i]
+                                segMenu.close()
+                                if (sib) root.siblingActivated(sib.node)
+                            }
                         }
                         Keys.onReturnPressed: seg.jump()
                         Keys.onEnterPressed: seg.jump()
