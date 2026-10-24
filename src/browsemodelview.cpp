@@ -7,26 +7,10 @@ namespace app {
 
 BrowseModel::BrowseModel(QObject *parent) : QObject(parent) {}
 
-// 行**只在内容真的变了**时才重设（否则每换一屏 / 每动一次游标都重置模型 =
-// 界面重新建卡片，白费）
-static bool sameRows(const QVector<::BrowseModel::Row> &a, const ::BrowseModel &b)
-{
-    if (a.size() != b.count()) return false;
-    for (int i = 0; i < a.size(); ++i) {
-        const ::BrowseModel::Row *r = b.rowAt(i);
-        if (!r) return false;
-        const ::BrowseModel::Row &x = a.at(i);
-        if (r->name != x.name || r->kind != x.kind || r->missing != x.missing
-            || r->sizeText != x.sizeText || r->resText != x.resText || r->thumb != x.thumb
-            || r->itemIndex != x.itemIndex || r->nodeIndex != x.nodeIndex)
-            return false;
-    }
-    return true;
-}
-
 void BrowseModel::setSequence(const Sequence *seq)
 {
     m_seq = seq;
+    m_needsReset = true;          // 换了来源 ⇒ 上一次的行全部作废
     refresh();
 }
 
@@ -57,10 +41,16 @@ void BrowseModel::refresh()
         emit changed();
         return;
     }
+    const int prevNode = m_node;
     const fetch::BrowseLayer layer = fetch::browseLayerOf(*m_seq, m_node, m_cursor);
+    const bool newLayer = m_needsReset || layer.node != prevNode;
+    m_needsReset = false;
     m_node = layer.node;                  // 取回来的是**解析后**的层（陈旧 / 越界 ⇒ 根）
     m_chain = layer.chain;
-    if (!sameRows(layer.rows, m_rows)) m_rows.setRows(layer.rows);
+    // ★ 换层 / 换来源才整表重建；**同一层又长了**走增量（只插入新增的行 / 只刷变化的字段）
+    //   —— 否则扫描期间每来一批就把列表推倒重来，滚动位置与高亮全丢（L10 / L14）。
+    if (newLayer) m_rows.setRows(layer.rows);
+    else          m_rows.patchRows(layer.rows);
     m_crumbs = layer.crumbs;
     m_canGoUp = layer.canGoUp;
     m_rangeLabel = layer.rangeLabel;
@@ -70,6 +60,7 @@ void BrowseModel::refresh()
 
 void BrowseModel::clear()
 {
+    m_needsReset = true;
     if (m_rows.count() > 0) m_rows.setRows({});
     m_seq = nullptr;
     m_node = -1;

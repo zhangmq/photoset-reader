@@ -39,6 +39,10 @@ BrowseLayer browseLayerOf(const Sequence &seq, int node, int cursor)
     auto addImage = [&](int itemIndex) {
         const Sequence::Item &it = seq.at(itemIndex);
         BrowseModel::Row r;
+        // ★ 元素路径（key）：容器链 + 自己的名字；**页行的 label 是空串**（页号由 `loc.page` 表达）
+        //   ⇒ 同一多页文件的每一页路径相同，必须补页号才能区分（sequence.cpp:1209-1214）
+        r.key = Sequence::encodeChain(seq.chainAt(itemIndex));
+        if (it.label.isEmpty()) r.key += QStringLiteral("#%1").arg(it.loc.page);
         r.name = it.displayName.isEmpty() ? it.label : it.displayName;
         r.kind = Sequence::Kind::Image;
         r.missing = it.missing;
@@ -60,6 +64,12 @@ BrowseLayer browseLayerOf(const Sequence &seq, int node, int cursor)
     auto addNode = [&](int nodeIndex) {
         const Sequence::TreeNode &n = tree.at(nodeIndex);
         BrowseModel::Row r;
+        // ★ 元素路径（key）：与 `Sequence::chainAt` 同一套写法（沿 parent 上溯、**不含根**）
+        QStringList chain;
+        for (int x = nodeIndex; x >= 0 && x < tree.size() && tree.at(x).parent >= 0;
+             x = tree.at(x).parent)
+            chain.prepend(tree.at(x).label);
+        r.key = Sequence::encodeChain(chain);
         r.name = n.label;
         r.kind = n.kind;                       // 节点种类 = 同一个枚举
         r.nodeIndex = nodeIndex;

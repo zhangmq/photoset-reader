@@ -92,7 +92,8 @@ Q_SIGNALS:
 private:
     ::BrowseModel m_rows;                              // 行模型（对象恒定：QML 绑定不换对象）
     const Sequence *m_seq = nullptr;                   // 序列（非拥有；归 `UiModel` / core）
-    int m_node = -1;                                   // 当前层（-1 = 根 / 整条序列）
+    int m_node = -1;             // 当前层（-1 = 根 / 整条序列）
+    bool m_needsReset = false;   // 换来源 / 清空 ⇒ 下一次 refresh 必须整表重建
     int m_cursor = 0;                                  // 当前条目下标（高亮行用）
     QVector<int> m_chain;                              // 根 → 当前层的节点下标（`up` / `crumb` 用）
     QVariantList m_crumbs;

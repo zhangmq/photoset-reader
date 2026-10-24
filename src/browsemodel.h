@@ -39,6 +39,9 @@ public:
     };
 
     struct Row {
+        // ★ 元素路径（`Sequence::encodeChain`，页行再补页号）—— **换一批时用来认出"哪一行还是原来那一行"**：
+        //   扫描期新行只会追加（L10），靠它就能只插入新增的那几行；没有它只能整表重建（视图随之重置）。
+        QString key;
         QString name;
         QString sizeText;
         QString resText;
@@ -64,11 +67,18 @@ public:
     QHash<int, QByteArray> roleNames() const override;
 
     // 换一批行（**本对象线程**调用：驱动线程算好 → post 回来 → 在这里落地）
+    //   · `patchRows`：同一个层内容又长了 / 字段变了 ⇒ 只发 `rowsInserted` / `dataChanged`
+    //   · `setRows`  ：换层 / 换来源 ⇒ 整表重建（调用方知道这是另一层才用）
+    void patchRows(QVector<Row> rows);
     void setRows(QVector<Row> rows);
 
     const Row *rowAt(int i) const;      // 越界返回 nullptr
     int count() const { return m_rows.size(); }
 
 private:
+    // 逐行比字段，把**连续变化的行**合并成一段发 `dataChanged`（roles 取并集）
+    void emitFieldDiff(const QVector<Row> &old, const QVector<Row> &cur,
+                       int oldFrom, int curFrom, int count);
+
     QVector<Row> m_rows;
 };

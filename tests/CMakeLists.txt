@@ -69,6 +69,11 @@ qt_add_executable(ib-test-meta
 )
 target_link_libraries(ib-test-meta PRIVATE testsupport)
 
+qt_add_executable(ib-test-browse
+    selftest_browse.cpp
+)
+target_link_libraries(ib-test-browse PRIVATE testsupport)
+
 # ── ctest：相对 `.testdata` 的套件在**源码根**跑 ──────────────────────────
 add_test(NAME ib-test-library COMMAND ib-test-library
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
@@ -85,6 +90,8 @@ add_test(NAME ib-test-reset COMMAND ib-test-reset
 add_test(NAME ib-test-uicore COMMAND ib-test-uicore
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME ib-test-meta COMMAND ib-test-meta
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME ib-test-browse COMMAND ib-test-browse
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 # ── 可能**整条套件跳过**（夹具 / 环境不具备 ⇒ rc 77）：ctest 显示 skipped ──────
