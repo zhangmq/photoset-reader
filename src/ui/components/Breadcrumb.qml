@@ -76,6 +76,16 @@ Item {
                         readonly property bool isCurrent: index === root.items.length - 1
 
                         function jump() { root.activated(index) }
+                        //   ★ 有同层兄弟 ⇒ **整段点开下拉**（用户 2026-10-24）；
+                        //     没有兄弟 ⇒ 仍然是"跳到这一层"
+                        function toggle() {
+                            if (siblings.length > 1) {
+                                if (segMenu.visible) segMenu.close()
+                                else segMenu.open()
+                            } else {
+                                jump()
+                            }
+                        }
 
                         Behavior on color { ColorAnimation { duration: Theme.durFast } }
 
@@ -94,38 +104,36 @@ Item {
                                 renderType: Text.NativeRendering
                                 color: Theme.textCaption
                             }
-                            Text {
-                                id: labelText
+                            // ★ 文本 + 下拉箭头**成组**：箭头紧跟文本、间距用**最小那一档**
+                            //   （用户 2026-10-24；此前箭头挂在段上、没有横向位置 ⇒ 压在文字下面看不见）
+                            Row {
                                 anchors.verticalCenter: parent.verticalCenter
-                                // 限宽 + **中间省略**（路径尾部信息量最大）；tooltip 显示全名
-                                // 锁死的根段是整条路径、通常最长 → 单独压一档（crumbRootMaxW）
-                                width: Math.min(implicitWidth,
-                                                seg.isRoot ? Theme.crumbRootMaxW : Theme.crumbMaxW)
-                                text: modelData.label
-                                elide: Text.ElideMiddle
-                                color: seg.isCurrent ? Theme.textPrimary
-                                     : (segMa.containsMouse || seg.activeFocus) ? Theme.textPrimary
-                                                                                : Theme.textSecondary
-                            }
-                        }
-                        // ★ 下拉箭头：同层还有其他容器时出现（用户 2026-10-24）——
-                        //   点箭头列同层容器，点文字仍是"跳到该层"
-                        Text {
-                            id: caret
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: seg.siblings.length > 1
-                            text: Theme.icChevronD
-                            font.family: iconFont
-                            font.pixelSize: Theme.iconSm
-                            renderType: Text.NativeRendering
-                            color: caretMa.containsMouse ? Theme.textPrimary : Theme.textCaption
-                            MouseArea {
-                                id: caretMa
-                                anchors.fill: parent
-                                anchors.margins: -Theme.space2xs
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: segMenu.visible ? segMenu.close() : segMenu.open()
+                                spacing: Theme.space2xs
+                                Text {
+                                    id: labelText
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    // 限宽 + **中间省略**（路径尾部信息量最大）；tooltip 显示全名
+                                    // 锁死的根段是整条路径、通常最长 → 单独压一档（crumbRootMaxW）
+                                    width: Math.min(implicitWidth,
+                                                    seg.isRoot ? Theme.crumbRootMaxW : Theme.crumbMaxW)
+                                    text: modelData.label
+                                    elide: Text.ElideMiddle
+                                    color: seg.isCurrent ? Theme.textPrimary
+                                         : (segMa.containsMouse || seg.activeFocus) ? Theme.textPrimary
+                                                                                    : Theme.textSecondary
+                                }
+                                // 同层还有其他容器时才出现；**整段都是点击区**（它自己不收点击）
+                                Text {
+                                    id: caret
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: seg.siblings.length > 1
+                                    text: Theme.icChevronD
+                                    font.family: iconFont
+                                    font.pixelSize: Theme.iconSm
+                                    renderType: Text.NativeRendering
+                                    color: (segMa.containsMouse || seg.activeFocus) ? Theme.textPrimary
+                                                                                    : Theme.textCaption
+                                }
                             }
                         }
                         HintBubble {
@@ -140,7 +148,7 @@ Item {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onPressed: seg.forceActiveFocus()
-                            onClicked: seg.jump()
+                            onClicked: seg.toggle()
                         }
                         PopupMenu {
                             id: segMenu
