@@ -39,8 +39,13 @@ Item {
             spacing: 0
 
             Repeater {
-                model: root.items
+                // ★ 用**段数**当 model：扫描期 `items` 每批都换新数组（兄弟容器在长），
+                //   若直接拿数组当 model，Repeater 会把所有段销毁重建 ⇒ 按下与抬起之间
+                //   目标消失，dropdown **点不着**（用户 2026-10-24 实测）。
+                //   段数（= 层深度）在扫描中不变 ⇒ 段不重建，只重新求值绑定。
+                model: root.items.length
                 delegate: Row {
+                    readonly property var crumbData: root.items[index] || ({})
                     spacing: 0
                     anchors.verticalCenter: parent.verticalCenter
 
@@ -70,9 +75,9 @@ Item {
                         border.color: Theme.brand
                         activeFocusOnTab: true
 
-                        readonly property bool isRoot: modelData.locked === true
-                        readonly property var siblings: modelData.siblings || []
-                        readonly property int selfNode: modelData.node === undefined ? -1 : modelData.node
+                        readonly property bool isRoot: crumbData.locked === true
+                        readonly property var siblings: crumbData.siblings || []
+                        readonly property int selfNode: crumbData.node === undefined ? -1 : crumbData.node
                         readonly property bool isCurrent: index === root.items.length - 1
 
                         function jump() { root.activated(index) }
@@ -116,7 +121,7 @@ Item {
                                     // 锁死的根段是整条路径、通常最长 → 单独压一档（crumbRootMaxW）
                                     width: Math.min(implicitWidth,
                                                     seg.isRoot ? Theme.crumbRootMaxW : Theme.crumbMaxW)
-                                    text: modelData.label
+                                    text: crumbData.label
                                     elide: Text.ElideMiddle
                                     color: seg.isCurrent ? Theme.textPrimary
                                          : (segMa.containsMouse || seg.activeFocus) ? Theme.textPrimary
@@ -138,7 +143,7 @@ Item {
                         }
                         HintBubble {
                             anchors.fill: parent
-                            text: modelData.label
+                            text: crumbData.label
                             // 只在**被省略**时才提示，否则纯噪音
                             hovered: segMa.containsMouse && labelText.truncated
                         }

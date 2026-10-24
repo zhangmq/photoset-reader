@@ -63,7 +63,6 @@ UiModel::UiModel(library::Store *store, QObject *parent)
     // ★★ T2d-1b：**浏览界面的模型**（QML 的 `ui.browse`）—— 它只认序列，不认 viewer。
     //   动作在这里接线：换层 ⇒ 落到这一层的首条；选中 ⇒ viewer 跳过去；打开 ⇒ 切查看屏。
     m_browse = new BrowseModel(this);
-    connect(m_browse, &BrowseModel::layerChanged, this, &UiModel::onBrowseLayerChanged);
     connect(m_browse, &BrowseModel::rowSelected, this, &UiModel::onBrowseRowSelected);
     connect(m_browse, &BrowseModel::openRequested, this, &UiModel::onBrowseOpenRequested);
 
@@ -241,21 +240,6 @@ void UiModel::back()
 //      `app::BrowseModel`（QML 的 `ui.browse`）—— 行语义只有一处实现。
 //      本类只做"认识 viewer 与抢占屏"的那部分接线（下面四个槽）。
 //   ⚠️ 浏览行由 `ui.browse` 自己从序列取那一层；这里只剩"进入容器 ⇒ 位置落到那一支的第一条"。
-void UiModel::onBrowseLayerChanged(int reason)
-{
-    if (!m_browse || !m_src.seq || !m_src.vm) return;
-    // **进入容器**时，当前条目不在这一层里 ⇒ 把游标落到它的第一条图（否则这一层没有高亮行）。
-    //   判定条件直接用序列的子树记录（= 浏览行同一份口径；节点下标由浏览模型给）。
-    if (reason != 1) return;
-    const int node = m_browse->node();
-    if (node < 0) return;
-    const int first = m_src.seq->subtreeFirst(node);
-    const int count = m_src.seq->subtreeCount(node);
-    if (count <= 0 || first < 0) return;
-    const int cur = m_src.vm->cursor();
-    if (cur < first || cur >= first + count) m_src.vm->jump(first);
-}
-
 // 选中一条图 = **移动那个唯一的游标**（查看页也跟着走）
 void UiModel::onBrowseRowSelected(int itemIndex)
 {

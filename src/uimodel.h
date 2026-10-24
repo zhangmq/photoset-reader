@@ -175,8 +175,8 @@ public:
     Q_INVOKABLE void back();            // 出栈：Viewer → Browse → Library
     //   ⚠️ T2d-1b：`openRow / enterRow / isContainerRow`（**按浏览行号解释**）已**搬到新家**
     //      `app::BrowseModel`（QML 的 `ui.browse`）—— 浏览语义只有一处实现（AGENTS.md）。
-    //      换层 / 打开 / 选中的**接线**在 .cpp 的 `onBrowseLayerChanged` /
-    //      `onBrowseRowSelected` / `onBrowseOpenRequested`（本类认识 viewer 与抢占屏）。
+    //      打开 / 选中的**接线**在 .cpp 的 `onBrowseRowSelected` / `onBrowseOpenRequested`
+    //      （本类认识 viewer 与抢占屏）。换层（进容器 / 上一级 / 面包屑）**不改阅读状态**。
 
     // ── 图集库动作（库是真相，值全在 SQLite）──
     Q_INVOKABLE qint64 collectionIdAt(int row) const;
@@ -291,7 +291,6 @@ private:
     //   浏览那一层由 `app::BrowseModel` 自己从序列取。
     void pumpSession();                 // 会话序列：drain 到空 + 通知（发布钩子的消费者）
     void onSequenceChanged();           // 序列长了 / 收尾了 ⇒ 通知 viewer + 浏览模型重算
-    void onBrowseLayerChanged(int reason);   // 换层（0 = 上/面包屑；1 = 进入容器）
     void onBrowseRowSelected(int itemIndex); // 选中一条图 ⇒ 让 viewer 跳过去
     void onBrowseOpenRequested(int itemIndex);   // 打开那条图 ⇒ 切查看屏
     // 进沉浸视图 / 新建 viewer ⇒ 把全局默认下发一次（fit/间隔/版面/循环/算法/OSD）
