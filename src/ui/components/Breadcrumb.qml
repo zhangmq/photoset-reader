@@ -1,4 +1,6 @@
 import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
 import ImageBrowser
 
 // ══ 标准面包屑 ═══════════════════════════════════════════════
@@ -155,16 +157,97 @@ Item {
                             onPressed: seg.forceActiveFocus()
                             onClicked: seg.toggle()
                         }
-                        PopupMenu {
+                        // ★ 同层容器选择器（用户 2026-10-24）：**自带过滤 + 内部滚动 + 限高**。
+                        //   兄弟多时不能靠菜单自然撑开（会被窗口裁掉）。
+                        PopupPanel {
                             id: segMenu
                             anchorTarget: seg
-                            items: seg.siblings.map(function (x) {
-                                return { text: x.label, selected: x.node === seg.selfNode }
-                            })
-                            onItemTriggered: function (i) {
-                                const sib = seg.siblings[i]
-                                segMenu.close()
-                                if (sib) root.siblingActivated(sib.node)
+                            padding: Theme.spaceSm
+                            width: Theme.siblingPanelW
+                            height: topPadding + filterField.implicitHeight + Theme.spaceXs
+                                    + listH + bottomPadding
+
+                            readonly property int rowH: Theme.controlMd
+                            readonly property var shown: {
+                                const q = filterField.text.trim().toLowerCase()
+                                if (q === "") return seg.siblings
+                                return seg.siblings.filter(function (x) {
+                                    return String(x.label).toLowerCase().indexOf(q) >= 0
+                                })
+                            }
+                            readonly property int listH:
+                                Math.min(Theme.siblingPanelMaxH, Math.max(1, shown.length) * rowH)
+
+                            onOpened: filterField.text = ""
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: Theme.spaceXs
+
+                                SearchField {
+                                    id: filterField
+                                    Layout.fillWidth: true
+                                    placeholder: "过滤同层容器…"
+                                }
+
+                                ListView {
+                                    id: sibList
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    clip: true
+                                    spacing: 0
+                                    model: segMenu.shown
+                                    boundsBehavior: Flickable.StopAtBounds
+
+                                    delegate: Item {
+                                        id: sibRow
+                                        required property var modelData
+                                        width: sibList.width
+                                        height: segMenu.rowH
+                                        readonly property bool current: modelData.node === seg.selfNode
+
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: Theme.radiusMd
+                                            color: sibMa.containsMouse ? Theme.hoverFill : "transparent"
+                                        }
+                                        Text {
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: Theme.spaceSm
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: Theme.spaceSm
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: modelData.label
+                                            elide: Text.ElideMiddle
+                                            color: sibRow.current ? Theme.brand : Theme.textPrimary
+                                        }
+                                        MouseArea {
+                                            id: sibMa
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                const node = sibRow.modelData.node
+                                                segMenu.close()
+                                                root.siblingActivated(node)
+                                            }
+                                        }
+                                    }
+
+                                    ScrollBar.vertical: ScrollBar {
+                                        policy: ScrollBar.AsNeeded
+                                        contentItem: Rectangle {
+                                            implicitWidth: Theme.scrollBarW
+                                            radius: width / 2
+                                            color: Theme.borderL2
+                                        }
+                                        background: Rectangle {
+                                            implicitWidth: Theme.scrollBarW
+                                            radius: width / 2
+                                            color: Theme.hoverFill
+                                        }
+                                    }
+                                }
                             }
                         }
                         Keys.onReturnPressed: seg.jump()
