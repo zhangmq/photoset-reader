@@ -168,17 +168,24 @@ Item {
                                     + listH + bottomPadding
 
                             readonly property int rowH: Theme.controlMd
+                            // ★ **打开那一刻的快照**（用户 2026-10-24）：`crumbs` 在扫描期每批都换新数组，
+                            //   直接绑它 ⇒ 列表每批重建 ⇒ hover 一直闪。浮层打开后不再跟随扫描刷新。
+                            property var snapshot: []
                             readonly property var shown: {
+                                const src = snapshot
                                 const q = filterField.text.trim().toLowerCase()
-                                if (q === "") return seg.siblings
-                                return seg.siblings.filter(function (x) {
+                                if (q === "") return src
+                                return src.filter(function (x) {
                                     return String(x.label).toLowerCase().indexOf(q) >= 0
                                 })
                             }
                             readonly property int listH:
                                 Math.min(Theme.siblingPanelMaxH, Math.max(1, shown.length) * rowH)
 
-                            onOpened: filterField.text = ""
+                            onOpened: {
+                                snapshot = seg.siblings.slice()   // 冻结：以打开时的同层容器为准
+                                filterField.text = ""
+                            }
 
                             ColumnLayout {
                                 anchors.fill: parent
