@@ -376,7 +376,7 @@ bool ArchiveSource::openUnrarBytes(const QByteArray &bytes, const QString &label
                                    const QString &password, Entries entries,
                                    const ProgressFn &progress)
 {
-    m_temp = new QTemporaryFile(QDir::tempPath() + QStringLiteral("/ib-wire-inner-XXXXXX.rar"));
+    m_temp = new QTemporaryFile(QDir::tempPath() + QStringLiteral("/photoset-reader-inner-XXXXXX.rar"));
     if (!m_temp->open()) {
         qWarning().noquote() << QStringLiteral("[archive/libunrar] 内存容器落临时文件失败: %1")
                                     .arg(m_temp->errorString());
