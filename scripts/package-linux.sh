@@ -10,8 +10,8 @@
 #   ⇒ 若自建 Qt 加 -no-icu -no-openssl，可省约 45 MB（见 docs/research/08）
 set -euo pipefail
 
-BIN=build/image-browser
-OUT=${1:-dist/image-browser-linux}
+BIN=build/photoset-reader
+OUT=${1:-dist/photoset-reader-linux}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 
@@ -63,7 +63,7 @@ done
 
 # ② 重写 RPATH（$ORIGIN/../lib + Qt 子目录）
 if command -v patchelf >/dev/null; then
-  patchelf --set-rpath '$ORIGIN/../lib:$ORIGIN/../lib/qt6/qml' "$OUT/bin/image-browser"
+  patchelf --set-rpath '$ORIGIN/../lib:$ORIGIN/../lib/qt6/qml' "$OUT/bin/photoset-reader"
   for f in "$OUT"/lib/*.so*; do [ -f "$f" ] && patchelf --set-rpath '$ORIGIN' "$f" 2>/dev/null || true; done
   echo "  RPATH 已重写（patchelf）"
 else
@@ -75,7 +75,7 @@ echo "  自检："
 PASS=$(QT_FORCE_STDERR_LOGGING=1 QT_PLUGIN_PATH="$OUT/lib/qt6/plugins" \
        QML2_IMPORT_PATH="$OUT/lib/qt6/qml" LD_LIBRARY_PATH="$OUT/lib" \
        QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
-       "$OUT/bin/image-browser" --selftest 2>&1 | grep -c PASS || true)
+       "$OUT/bin/photoset-reader" --selftest 2>&1 | grep -c PASS || true)
 echo "    selftest PASS: $PASS"
 [ "$PASS" -ge 9 ] || { echo "  ✗ 打包自检未通过"; exit 1; }
 

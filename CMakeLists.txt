@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(image-browser LANGUAGES CXX)
+project(photoset-reader LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -39,7 +39,7 @@ find_path(UNRAR_INCLUDE_DIR NAMES unrar/dll.hpp REQUIRED)
 
 
 # ══ ibcore：应用与测试**共用同一份实现**（设计 14 §11）════════════════════════
-#   除 `src/main.cpp` 外的全部源都在这里；`image-browser` 与各 `ib-test-*` 都链它。
+#   除 `src/main.cpp` 外的全部源都在这里；`photoset-reader` 与各 `ib-test-*` 都链它。
 add_library(ibcore STATIC
     src/sevenzcheck.cpp
     src/sevenzcheck.h
@@ -161,7 +161,7 @@ target_compile_definitions(ibcore PUBLIC
 #               `src/screenshot.{h,cpp}`（`--shot` 截图机制；原名 `debugview.{h,cpp}`，
 #                 随旧调试一屏（`debugview`）删除后改名保留）、
 #               `src/main.cpp`（启动 + 参数解析 + dispatch）。
-qt_add_executable(image-browser
+qt_add_executable(photoset-reader
     src/main.cpp
     src/devcli.cpp
     src/devcli.h
@@ -172,7 +172,7 @@ qt_add_executable(image-browser
 )
 # ★ 套件全部搬去 `tests/`（T0 第四批）后，应用**不再链 `testsupport`**（设计 14 §11）：
 #   `main.cpp` 里 0 个 `run*SelfTest` / 0 个套件 dispatch；dev CLI 与截图机制自带工具函数。
-target_link_libraries(image-browser PRIVATE ibcore)
+target_link_libraries(photoset-reader PRIVATE ibcore)
 
 # ══ QML 模块 + 图标字体资源：挂在**每个要加载 `qrc:/qt/qml/AppUi` 的可执行**上 ══
 #   设计 14 §11：每个测试目标各自独立 ⇒ 谁需要 QML 谁带一份（静态库里的 QML 模块在
@@ -247,13 +247,13 @@ function(ib_add_qml_resources target)
     )
 endfunction()
 
-ib_add_qml_resources(image-browser)
+ib_add_qml_resources(photoset-reader)
 
 
 # ══ 开发工具：`ib-iconpicker`（设计 14 §11.1）══════════════════════════════════
 #   自带 `main()` 的独立可执行（**不是测试**：不进 `tests/`、不挂 `add_test`）。
 #   ★ 放**子目录**定义：`qt_add_qml_module` 的 `qmake_<URI>.qrc` 生成在
-#     `${CMAKE_CURRENT_BINARY_DIR}/.qt/rcc/` —— 与 `image-browser` 同目录会让两个
+#     `${CMAKE_CURRENT_BINARY_DIR}/.qt/rcc/` —— 与 `photoset-reader` 同目录会让两个
 #     目标的 QML 模块共用同一个 qrc（qmldir 里 `typeinfo` 指向谁就看谁最后配置）。
 #     子目录 = 独立二进制目录 = 每个目标一份真资源（与 `tests/` 同一手法）。
 add_subdirectory(tools)

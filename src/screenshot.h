@@ -5,7 +5,7 @@
 //   的验收截图还在用。
 //   ★ 2026-10-31：只有一个查看界面 ⇒ `--immersive`（切查看屏）**已删**；
 //     保留 `--shot` / `--delay` / `--index` / `--show-interval-popup` / `--show-osd` / `--seek-test`。
-//   ★ 不是测试：随 `image-browser` 一起编（不进 `ibcore`、不链 `testsupport`）。
+//   ★ 不是测试：随 `photoset-reader` 一起编（不进 `ibcore`、不链 `testsupport`）。
 
 #include <QString>
 

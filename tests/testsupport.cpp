@@ -8,7 +8,7 @@
 
 namespace testsupport {
 
-// ── 套件入口：旧的 `image-browser --selftest-*` 在 dispatch 之前做的事，一模一样 ──
+// ── 套件入口：旧的 `photoset-reader --selftest-*` 在 dispatch 之前做的事，一模一样 ──
 int suiteMain(int argc, char *argv[], const std::function<int()> &suite)
 {
     // ★ 强制系统原生文件对话框（用户要求 #1）；必须在 QGuiApplication 构造之前设置

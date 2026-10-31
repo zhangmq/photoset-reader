@@ -2,7 +2,7 @@
 
 // ══ 开发 / 验收用的 CLI（设计 14 §10）════════════════════════════════════════
 //   `main.cpp` 只留启动 + `QCommandLineOption` 的声明/解析；**实现全在这里**。
-//   ★ 它们**不是测试**：随 `image-browser` 一起编（不进 `ibcore`、不链 `testsupport`）。
+//   ★ 它们**不是测试**：随 `photoset-reader` 一起编（不进 `ibcore`、不链 `testsupport`）。
 //
 //   2026-10-31：随「浏览 / 图集库」删除，`--dev-add-collection` / `--dev-open-collection` /
 //   `--dev-open-page` / `--dev-enter-row` 一并删掉（它们全部建在那两个界面上）；

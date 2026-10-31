@@ -3,7 +3,7 @@
 #   · 源仍平铺在 `src/`（`src/iconpicker.{h,cpp}`）；这里只定义目标。
 #   · ★ 本目录只为**独立的二进制目录**存在：`qt_add_qml_module` 的
 #     `qmake_AppUi.qrc` 落在 `${CMAKE_CURRENT_BINARY_DIR}/.qt/rcc/`，
-#     与根目录的 `image-browser` 同目录会共用同一个 qrc（qmldir 的 `typeinfo`
+#     与根目录的 `photoset-reader` 同目录会共用同一个 qrc（qmldir 的 `typeinfo`
 #     只有一个赢家）⇒ 放到 `build/tools/` 下，各拿一份。
 
 # 二进制仍落在构建根（`./build/ib-iconpicker`），与 `tests/` 同一约定

@@ -82,7 +82,7 @@ int main(int argc, char *argv[])
     QCoreApplication::setApplicationVersion(QStringLiteral("0.1-dev"));
 
     QCommandLineParser parser;
-    parser.setApplicationDescription(QStringLiteral("image-browser（开发期最小壳）"));
+    parser.setApplicationDescription(QStringLiteral("photoset-reader（开发期最小壳）"));
     parser.addHelpOption();
     QCommandLineOption dirOpt({QStringLiteral("d"), QStringLiteral("dir")},
                               QStringLiteral("图片目录"), QStringLiteral("path"),

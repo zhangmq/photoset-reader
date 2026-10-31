@@ -16,7 +16,7 @@
 //   原 `src/debugview.cpp` 的截图辅助，随 `--debug-view` 全家删除后独立保留。
 //
 // 开发期自检：离屏运行时把窗口内容截图存盘，供人工/自动核对。
-//   用法： QT_QPA_PLATFORM=offscreen ./image-browser -d <dir> --shot out.png [--delay ms]
+//   用法： QT_QPA_PLATFORM=offscreen ./photoset-reader -d <dir> --shot out.png [--delay ms]
 
 namespace screenshot {
 

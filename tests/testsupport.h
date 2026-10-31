@@ -22,7 +22,7 @@
 
 namespace testsupport {
 
-// ══ 套件入口：与旧的 `image-browser --selftest-*` 路径同一形态 ══════════════
+// ══ 套件入口：与旧的 `photoset-reader --selftest-*` 路径同一形态 ══════════════
 //   QApplication + 应用名/版本；`argv` 直接透传给 Qt（`-platform offscreen` 等照常可用）。
 //   每个套件仍有自己的 `main()`，只是把入口样板收在这里（设计 14 §11）。
 int suiteMain(int argc, char *argv[], const std::function<int()> &suite);
