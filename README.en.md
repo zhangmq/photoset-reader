@@ -9,11 +9,11 @@ Just another image viewer, focused on fast browsing of **manga** or **very large
 ## Features
 
 - **Progress saving**: keep progress in the built-in favorites, or save it as a progress file.
-- **Paging through large sets**: folders and archives open directly; with prefetch ready, turning a
-  page does not wait.
 - **Slideshow**: intervals below 500 ms are supported, currently clamped to 50 ms and up (it can
   probably go faster), useful for replaying burst sequences.
 - **Image scaling algorithms**: currently Nearest, Smooth (Qt), Bicubic, Lanczos 2 and Lanczos 3.
+- **Image formats**: JPEG, PNG, GIF, BMP, WebP, TIFF, ICO, TGA, SVG, AVIF, JXL, QOI, PNM.
+- **Archive formats**: ZIP/CBZ, RAR/CBR, 7Z/CB7, TAR/CBT.
 
 ## Platforms
 
@@ -33,8 +33,10 @@ ctest --test-dir build --output-on-failure
 
 ## Known limitations
 
-- EXIF / color space in the info panel: available for JPEG, PNG, WebP, TIFF, HEIC/HEIF and AVIF;
+- EXIF / color space in the info panel: available for JPEG, PNG, WebP, TIFF and AVIF;
   not yet for CR3, JP2 or JXL (images still display fine).
+- HEIC/HEIF is not supported: its pixels need an HEVC decoder, and HEVC is patent-encumbered,
+  so no decoder is shipped with the app.
 - Images without an ICC profile show `sRGB (no profile)` in the color space row.
 
 ## License

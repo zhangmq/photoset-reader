@@ -9,9 +9,10 @@
 ## 功能
 
 - **进度保存**：可使用内置收藏夹，或存为进度文件。
-- **大图集翻页**：文件夹、压缩包打开就能翻，预取到位时翻页不用等。
 - **幻灯片**：间隔支持 500 ms 以下的设置，目前限制在 50 ms 以上（可能可以更快），可用于连拍镜头回放。
 - **图像缩放算法**：目前支持 Nearest、Smooth (Qt)、Bicubic、Lanczos 2、Lanczos 3。
+- **文件格式支持**：JPEG、PNG、GIF、BMP、WebP、TIFF、ICO、TGA、SVG、AVIF、JXL、QOI、PNM。
+- **压缩文件支持**：ZIP/CBZ、RAR/CBR、7Z/CB7、TAR/CBT。
 
 ## 平台
 
@@ -31,8 +32,8 @@ ctest --test-dir build --output-on-failure
 
 ## 已知限制
 
-- 信息面板里的 EXIF / 色彩空间：JPEG、PNG、WebP、TIFF、HEIC/HEIF、AVIF 有；
-  CR3、JP2、JXL 还没有（不影响看图）。
+- 信息面板里的 EXIF / 色彩空间：JPEG、PNG、WebP、TIFF、AVIF 有；CR3、JP2、JXL 还没有（不影响看图）。
+- HEIC/HEIF 不在支持之列：它的像素要 HEVC 解码器，而 HEVC 有专利，我们不随包分发解码器。
 - 没有 ICC profile 的图，色彩空间显示 `sRGB（无 profile）`。
 
 ## 许可证
