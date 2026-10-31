@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 标准搜索 / 过滤框 ═══════════════════════════════════════════
 //   样式来源：DSH 工作区搜索框 `dsh-client-ui-workspace` WorkspaceBrowser.module.css

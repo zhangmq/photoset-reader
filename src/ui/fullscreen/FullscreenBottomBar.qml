@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 全屏 · 底部类播放器控制条（浮层，照抄 vsr-player `BottomBar.qml`）══
 //   · 图片占满窗口，本栏**覆盖其上**，不占布局（设计 §3.1）

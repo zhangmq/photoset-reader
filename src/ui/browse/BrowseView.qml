@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import ImageBrowser
+import AppUi
 
 // ══ 浏览界面 ══════════════════════════════════════════════
 // 约束（设计 §04）：
@@ -13,9 +13,10 @@ import ImageBrowser
 //       role 名与界面既有词表一致：name / sizeText / resText / kind / missing / thumb / depth）
 Item {
     id: root
-    //   ★ 键盘面：只有**当前这一屏**取焦点（三屏共存时不让隐藏屏抢走焦点）
-    focus: ui.screen === UiModel.Browse
-    //   ★ 全局键（三屏通用）：`Esc` = **退出全屏**（同 LibraryView：只处理"没人处理的" `Esc`）
+    //   ★ 键盘面：只有**当前这一屏**取焦点（两屏共存时不让隐藏屏抢走焦点；
+    //     **图集库抽屉打开时让位**给它 —— `Esc` 先关抽屉，不是退全屏，见设计 18 §2）
+    focus: ui.screen === UiModel.Browse && !ui.libraryOpen
+    //   ★ 全局键：`Esc` = **退出全屏**（只处理"没人处理的" `Esc`）
     Keys.onPressed: function (event) {
         if (event.key === Qt.Key_Escape) {
             ui.windowFullscreen = false
@@ -56,6 +57,9 @@ Item {
     property int progressRow: ui.browse ? ui.browse.browseRow : -1
 
     signal libraryRequested()
+    signal folderRequested()          // 空态块 /「打开 ▾ → 文件夹」
+    signal archiveRequested()
+    signal imageRequested()
     signal settingsRequested()
     onSettingsRequested: settingsDialog.open()   // [设置] 按钮 → 打开设置对话框
     signal upRequested()
@@ -72,20 +76,25 @@ Item {
             anchors.fill: parent
             spacing: 0
 
-            // ══ bar 1：动作条（返回图集库 + 图集名称 / 收藏 + 设置）══
+            // ══ bar 1：动作条（图集库抽屉 + 打开 ▾ + 范围 / 收藏 + 主题 + 设置）══
             BrowseActionBar {
                 Layout.fillWidth: true
                 Layout.preferredHeight: Theme.barH
                 favorited: root.favorited
                 rangeLabel: root.rangeLabel
                 onLibraryRequested: root.libraryRequested()
+                onFolderRequested: root.folderRequested()
+                onArchiveRequested: root.archiveRequested()
+                onImageRequested: root.imageRequested()
                 onFavoriteToggled: root.favoriteToggled()
                 onSettingsRequested: root.settingsRequested()
                 onContinueRequested: ui.continueReading()
             }
 
             // ══ bar 2：路径条（面包屑 + 过滤 + 上一级/视图切换）══
+            //   ★ 没有来源（Browse + 空态块）时不显示：没有路径可言，空面包屑是噪声
             BrowsePathBar {
+                visible: ui.viewer !== null
                 Layout.fillWidth: true
                 Layout.preferredHeight: Theme.barH
                 crumbs: root.crumbs
@@ -99,17 +108,20 @@ Item {
             }
 
             // ══ 内容 ══
+            //   ★ 没有来源 ⇒ **空态块**（设计 18 §1「无来源 = Browse + 空态块」；
+            //     抽屉**不自动展开** —— 入口就是这块里的「打开一个文件夹」和顶栏「打开 ▾」）
             Loader {
                 id: contentLoader
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                sourceComponent: root.gridMode ? gridComp : listComp
+                sourceComponent: ui.viewer === null ? emptyComp
+                                                     : (root.gridMode ? gridComp : listComp)
                 onLoaded: root.scrollToProgress()
             }
         }
     }
 
-    // ── 设置对话框（三屏同一实现；当前阶段单纯 UI）──
+    // ── 设置对话框（两屏同一实现；当前阶段单纯 UI）──
     SettingsDialog {
         id: settingsDialog
     }
@@ -232,6 +244,75 @@ Item {
                         radius: width / 2
                         color: Theme.hoverFill
                     }
+                }
+            }
+        }
+    }
+    // ══ 没有来源：**整块内容区就是投放区**（用户 2026-10-25 定案）══════════════
+    //   · **不放按钮**（入口 = 顶栏「打开 ▾」）；只给标题 + 一句引导 + 拖放；
+    //   · 只在**没有来源**时接受拖放（阅读中不接，避免手一滑换掉当前来源）；
+    //   · 拖放与「打开 ▾」同口径：文件夹 / 压缩包 / 图片；落了地按种类决定去哪个屏
+    //     （图片 ⇒ Viewer；文件夹 / 压缩包 ⇒ 留在本屏，见 `UiModel::openPath`）。
+    //   ★ 这里刻意**不用** `EmptyState`（那是图集库抽屉的空态：文案讲的是"还没有收藏"，
+    //     而"没有来源"时收藏可能已经有几个了 —— 摆那句话会自相矛盾）。
+    Component {
+        id: emptyComp
+        Item {
+            id: emptyRoot
+
+            DropArea {
+                id: dropArea
+                anchors.fill: parent
+                keys: ["text/uri-list"]
+                onDropped: function (drop) {
+                    // 多选只取第一个（其余忽略）；非本地 URL 由 ui 侧挡掉
+                    if (drop.urls.length > 0) ui.openPath(drop.urls[0])
+                }
+            }
+
+            Column {
+                anchors.centerIn: parent
+                spacing: Theme.emptyGap
+                visible: !dropArea.containsDrag
+
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: Theme.icFolderOpen
+                    font.family: iconFont
+                    font.pixelSize: Theme.iconLg
+                    renderType: Text.NativeRendering
+                    color: Theme.textTertiary
+                }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "未打开文件夹 / 压缩包"
+                    color: Theme.textPrimary
+                }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: Math.min(implicitWidth,
+                                    emptyRoot.width - Theme.spaceLg * 2)
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    text: "从顶栏「打开」选一个，或把文件夹、压缩包、图片拖到这里"
+                    color: Theme.textSecondary
+                }
+            }
+
+            // 投放态：整块内容区的**内描边** + 「松开即可打开」（只在拖进来时出现）
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: Theme.spaceMd
+                radius: Theme.radiusLg
+                color: Theme.hoverFill
+                border.width: Theme.focusRingW
+                border.color: Theme.brand
+                visible: dropArea.containsDrag
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "松开即可打开"
+                    color: Theme.brand
                 }
             }
         }

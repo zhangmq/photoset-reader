@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 浏览界面 · 路径条（bar 2）═════════════════════════════════
 //   左：面包屑（首段 = **锁死的根**，整条路径不拆 segment）

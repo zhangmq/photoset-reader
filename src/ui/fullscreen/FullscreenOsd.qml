@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 全屏 · OSD 信息面板（浮层，键值两列 / 双幅两列）═════════════════════════
 //   用户 2026-10-11 指定内容：图集信息、当前文件夹、图片尺寸、类型、分辨率、**EXIF**

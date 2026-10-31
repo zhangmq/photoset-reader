@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
-import ImageBrowser
+import AppUi
 
 // ══ 设置对话框外壳（只做三件事：头部 / 左导航 / 按页签显示哪个页文件）══
 //   设计：docs/design/09-设置界面设计.md

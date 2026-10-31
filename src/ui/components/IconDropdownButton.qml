@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 图标下拉按钮 = 标准图标按钮 + **自己持有菜单** ══════════════
 //   与 DropdownButton 同一模式（文字版）：菜单的开合状态属于按钮自己，

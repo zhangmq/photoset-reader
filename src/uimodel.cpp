@@ -1,6 +1,7 @@
 #include "uimodel.h"
 
 #include "appsettings.h"
+#include "archive.h"              // ArchiveSource::isArchive（"是不是压缩包"的唯一实现）
 #include "browsemodel.h"          // 行模型（`::BrowseModel`：换层/打开/选中的行语义）
 #include "browsemodelview.h"      // ★ T2d-1b：浏览界面的模型（QML 的 `ui.browse`）
 #include "librarycore.h"          // ★ T2c-2b-1：图库/序列抽象 + 重置队列（设计 14 §9.3）
@@ -20,6 +21,7 @@
 #include <QMetaObject>
 #include <QStyleHints>
 #include <QTimer>
+#include <QUrl>
 #include <QVariantMap>
 
 namespace app {
@@ -33,6 +35,48 @@ static LibraryCore::ResetOptions resetOptionsOf(const AppSettings &s)
     o.hidden = s.scanHidden();
     o.innerArchiveMaxMb = qint64(s.innerArchiveMaxMb());
     return o;
+}
+
+// 来源类型 —— **派生值**，不另存：
+//   词表与浏览行的 `kind` 是同一套（`BrowseModel::kindText` = QML 边界的唯一生成点）。
+//   判据：序列有了树 ⇒ 根节点的种类（目录 / 压缩包 / 多页文件都进树）；
+//         还没有树（单张图，或会话来源的首批还没到）⇒ **按路径判**（目录 / 压缩包 / 其余图片）。
+//   ★ "是不是压缩包"只问 `ArchiveSource::isArchive`（全仓唯一实现），不在这里再判后缀。
+static Sequence::Kind kindOfPath(const QString &path)
+{
+    if (QFileInfo(path).isDir()) return Sequence::Kind::Folder;
+    if (ArchiveSource::isArchive(path)) return Sequence::Kind::Archive;
+    return Sequence::Kind::Image;
+}
+
+static QString kindOfSource(const Sequence *seq, const QString &path)
+{
+    if (seq) {
+        const QVector<Sequence::TreeNode> &tree = seq->tree();
+        if (!tree.isEmpty()) return ::BrowseModel::kindText(tree.first().kind);
+    }
+    if (path.isEmpty()) return QString();
+    return ::BrowseModel::kindText(kindOfPath(path));
+}
+
+QString UiModel::sourceKind() const { return kindOfSource(m_src.seq, m_path); }
+
+// 变化驱动：值真变了才 emit（QML 的「浏览」tooltip 绑它）
+void UiModel::refreshSourceKind()
+{
+    const QString kind = sourceKind();
+    if (kind == m_lastSourceKind) return;
+    m_lastSourceKind = kind;
+    emit sourceKindChanged();
+}
+
+void UiModel::setLibraryOpen(bool on)
+{
+    if (m_libraryOpen == on) return;
+    m_libraryOpen = on;
+    // 打开抽屉 ⇒ 取一次库快照（设计 18 §2；跨进程同步在段 4 收窄）
+    if (on && m_library) m_library->pollNow();
+    emit libraryOpenChanged();
 }
 
 UiModel::UiModel(library::Store *store, QObject *parent)
@@ -154,8 +198,9 @@ UiModel::UiModel(library::Store *store, QObject *parent)
     // ★ `ui.viewer` 在**没打开来源时就是 null**（用户明确：null 没问题，空 viewer 没用）。
     //   QML 侧（`src/ui/fullscreen/**`、`src/ui/browse/**`）对 `ui.viewer.*` 一律先判非空 ——
     //   启动瞬间不再刷 TypeError；打开任何来源时才整体装上一组（`installViewer`）。
-    qInfo().noquote() << QStringLiteral("[ui] 初始化  屏=%1  库=%2")
+    qInfo().noquote() << QStringLiteral("[ui] 初始化  屏=%1（0=浏览 1=查看）  抽屉=%2  库=%3")
                              .arg(int(m_screen))
+                             .arg(m_libraryOpen ? QStringLiteral("开") : QStringLiteral("关"))
                              .arg(m_store && m_store->isOpen() ? QStringLiteral("可用")
                                                                : QStringLiteral("不可用"));
 }
@@ -167,7 +212,7 @@ UiModel::~UiModel()
     releaseNow(m_src);
 }
 
-// ── 三屏状态与导航（语义照旧 `ViewModel`）────────────────────────────────
+// ── 两屏状态与导航（★ 2026-10-25：**没有屏栈、没有 back()**）───────────────
 //   ⚠️ 一处**有意的语义更新**（`index` 的含义，见报告）：
 //     旧 VM 的浏览屏是**平铺条目列表**（ItemListModel），行号 == 条目下标；
 //     新壳的浏览屏是**文件树层级**（冻结的 `src/ui/browse/**`，模型 = `ui.browse.items`），
@@ -177,61 +222,51 @@ UiModel::~UiModel()
 //       查行一起归 `app::BrowseModel`（QML 的 `ui.browse`）—— 行语义只有一处实现。
 //   ★ **离开查看屏 ⇒ 先停播**（用户 2026-10-19）：幻灯片是会话级状态，模型可能还活着
 //     （退到浏览屏时它还要用同一条会话序列）⇒ 不显式停，它会在后台一直翻。
-//     真正的"销毁整个 ViewerModel"发生在离开**这个来源**时（落到库屏 / 换来源 ⇒ `teardownViewer`）。
+//     真正的"销毁整个 ViewerModel"发生在离开**这个来源**时（换来源 / 没有来源 ⇒ `teardownViewer`）。
 void UiModel::stopPlaybackLeavingViewer()
 {
     if (m_screen == Screen::Viewer && m_src.vm) m_src.vm->setPlaying(false);
 }
-void UiModel::goTo(Screen s, bool push)
+
+void UiModel::goTo(Screen s)
 {
     if (s == m_screen) return;
     stopPlaybackLeavingViewer();
-    if (push) m_screenStack << m_screen;
     m_screen = s;
     if (s == Screen::Viewer) applyViewerDefaults();   // 进沉浸视图 = 按全局默认起一份阅读态
     //   ★ 循环等默认值**只在这里下发一次**（2026-10-20 修正：原来这里还硬置 `setLoopMode(0)`，
     //     会把刚下发的"默认循环"覆盖掉）。
-    // ★ T2c-2b-1：**离开浏览 / 查看 ⇒ 释放显示槽**（设计 14 §9.3）——
-    //   图集查看 = 从磁盘读出的只读快照（重开＝读一次行）；会话来源 = 停 + 销毁。
-    if (s == Screen::Library) releaseDisplaySlot();
+    // ★ 2026-10-25：**没有"回库屏"**了 —— 图集库是抽屉，开合不动屏、不释放显示槽；
+    //   释放来源只有一个入口：`enterEmptyState()`。
     emit screenChanged();
 }
 
-void UiModel::goLibrary()
+// 「浏览」：Viewer → Browse（唯一环路的左半段）
+//   ★ 退回浏览 ⇒ **定位到当前阅读位置**（用户 2026-10-24）：
+//     层换成"进度所在的那一层"，界面再按 `browseRow` 滚到那一行。
+void UiModel::goBrowse()
 {
-    // [返回图集库] / [home]：**清屏栈**直接回（back() 才是一级一级退）
-    m_screenStack.clear();
-    if (m_screen == Screen::Library) return;
+    if (m_screen == Screen::Browse) return;
     stopPlaybackLeavingViewer();
-    m_screen = Screen::Library;
-    releaseDisplaySlot();                       // ★ 离开浏览/查看 ⇒ 释放显示槽
+    m_screen = Screen::Browse;
+    if (m_browse) m_browse->revealProgress();
     emit screenChanged();
 }
 
 void UiModel::continueReading()
 {
     if (!m_src.vm) return;
-    goTo(Screen::Viewer, true);                 // 只看屏、不动游标
+    goTo(Screen::Viewer);                       // 只看屏、不动游标
 }
 
-void UiModel::back()
+// 「没有来源」= Browse + 空态块（设计 18 §1）
+//   · 释放显示槽（图集查看 = 快照；会话来源 = 停 + 销毁）；
+//   · 抽屉**不自动展开**（它就是空的 —— 展开也只是一块空态，改由用户点按钮/Ctrl+B）。
+void UiModel::enterEmptyState()
 {
-    const Screen from = m_screen;
-    stopPlaybackLeavingViewer();                // ★ 离开查看屏 ⇒ 先停播
-    if (m_screenStack.isEmpty()) {
-        if (m_screen == Screen::Library) return;
-        m_screen = Screen::Library;
-        releaseDisplaySlot();                   // ★ 离开浏览/查看 ⇒ 释放显示槽
-        emit screenChanged();
-        return;
-    }
-    const Screen prev = m_screenStack.takeLast();
-    if (prev == m_screen) return;
-    m_screen = prev;
-    //   ★ 从查看屏退回浏览 ⇒ **定位到当前阅读位置**（用户 2026-10-24）：
-    //     层换成"进度所在的那一层"，界面再按 `browseRow` 滚到那一行。
-    if (from == Screen::Viewer && prev == Screen::Browse && m_browse) m_browse->revealProgress();
-    if (prev == Screen::Library) releaseDisplaySlot();   // ★ 落到库屏才释放
+    releaseDisplaySlot();          // 里面有：flushResume → 同步拆 viewer → 放 core 的槽
+    m_screen = Screen::Browse;
+    refreshSourceKind();
     emit screenChanged();
 }
 
@@ -251,7 +286,7 @@ void UiModel::onBrowseOpenRequested(int itemIndex)
 {
     if (itemIndex < 0) return;
     onBrowseRowSelected(itemIndex);
-    goTo(Screen::Viewer, true);
+    goTo(Screen::Viewer);
 }
 
 // ── ★★ 序列 / 浏览（**只在 GUI 线程**）───────────────────────────────────
@@ -271,6 +306,7 @@ void UiModel::onSequenceChanged()
 {
     if (m_src.vm) m_src.vm->sequenceChanged();
     if (m_browse) m_browse->refresh();
+    refreshSourceKind();          // 首批到达 ⇒ 根节点种类定下来了（「浏览」tooltip 用它）
 }
 
 // ── 图集库动作 ───────────────────────────────────────────────────────────
@@ -290,16 +326,6 @@ void UiModel::notify(const QString &text)
     ++m_notificationSeq;
     qInfo().noquote() << QStringLiteral("[ui] 瞬时提示：%1").arg(text);
     emit notificationChanged();
-}
-
-// 文件对话框（**QFileDialog 只在这里**）；直接打开 = **会话来源**，不建库记录
-void UiModel::chooseAddCollection()
-{
-    const QString dir = QFileDialog::getExistingDirectory(
-        nullptr, QStringLiteral("添加图集"), QDir::homePath());
-    if (dir.isEmpty()) return;
-    // 加入即**自动重置**（构造函数里已接：collectionAdded → core->requestReset）
-    if (m_library) m_library->addCollection(dir, Sequence::Kind::Folder);
 }
 
 void UiModel::chooseOpenFolder()
@@ -354,14 +380,19 @@ bool UiModel::openCollection(qint64 collectionId)
 
     // ★★ 建组走 `buildCollectionView`：它内部**先把旧组同步拆掉**（core 会丢掉旧序列），
     //    再把快照收尾（pump 一次）⇒ 之后 core 的 pump 对它是只读的。
-    if (!buildCollectionView(collectionId, chain, c.resumePage)) return false;
+    if (!buildCollectionView(collectionId, chain, c.resumePage)) {
+        // 打不开（不存在 / 正在重置 / 库不可用）⇒ 别把界面留在"有屏、没来源"的半死状态
+        enterEmptyState();
+        return false;
+    }
 
     qInfo().noquote() << QStringLiteral("[resume] 集合 %1 读回位置：链 %2 页 %3（条目 %4 条）")
                              .arg(collectionId)
                              .arg(QString::fromUtf8(Sequence::encodeChain(chain).toUtf8()))
                              .arg(c.resumePage)
                              .arg(m_src.seq ? m_src.seq->count() : -1);
-    goTo(Screen::Browse, true);                 // 照旧 VM：打开集合 ⇒ 文件浏览屏
+    setLibraryOpen(false);                      // 从抽屉打开 ⇒ 抽屉收起
+    goTo(Screen::Viewer);                       // ★ 设计 18 §2：打开图集 ⇒ **进 Viewer**，定位到 resume
     return true;
 }
 
@@ -408,6 +439,7 @@ bool UiModel::buildCollectionView(qint64 collectionId, const QStringList &chain,
     m_collectionId = collectionId;
     installCoreViewer(seq);
     if (!m_src.vm) return false;
+    refreshSourceKind();                        // 来源类型（图集的根：目录 / 压缩包）
     m_src.vm->jump(qMax(0, idx));
     // 刚读回来的位置**不算要写入磁盘**（链 + 页号都按当前条目记，flushResume 只写"动了之后"的位置）
     m_lastResumeKey = Sequence::encodeChain(seq->chainAt(qMax(0, idx)));
@@ -506,9 +538,24 @@ void UiModel::releaseLater(const Source &s)
     s.vm->deleteLater();      // ★ 不许同步 delete（QML 绑定刚换绑，事件循环还没转到现在）
 }
 
-void UiModel::openPath(const QString &path)
+// QML 的拖放入口：`drop.urls` 给的是 **file: URL**；只接本地路径（其它 scheme 一律忽略）
+void UiModel::openPath(const QUrl &fileUrl)
+{
+    if (fileUrl.isLocalFile()) {
+        openPath(fileUrl.toLocalFile(), -1);
+        return;
+    }
+    if (fileUrl.scheme().isEmpty() && !fileUrl.toString().isEmpty())
+        openPath(fileUrl.toString(), -1);      // 容错：调用方直接给了裸路径字符串
+}
+
+void UiModel::openPath(const QString &path, int index)
 {
     if (path.isEmpty()) return;
+    // ★ 2026-10-25：**界面与 CLI 的打开语义不同**（用户定案）——
+    //   图片 ⇒ 直达 Viewer；文件夹 / 压缩包 ⇒ **留在浏览屏**看它的内容（在根层）。
+    //   CLI `-d` 的"直达 Viewer"在 main.cpp 里补 `continueReading()`（设计 18 §4）。
+    const Sequence::Kind kind = kindOfPath(path);
     // ★★ T2c-2b-1：会话来源与"图集查看"是**同一个显示槽**（设计 14 §9.3 ⇒ 互斥）：
     //   先把旧组同步拆掉（core 的查看槽也要释放 —— 它可能正是旧 viewer 在读的快照）。
     //   ★ 会话序列归本组（`ownsSeq`）；viewer 的解码线程只拿一份条目信息的副本 ⇒ 不碰它。
@@ -522,9 +569,13 @@ void UiModel::openPath(const QString &path)
     m_sessionNotice.clear();          // ★ v7：换来源 ⇒ 瞬时提示重新计
     m_resumeDebounce->stop();
     m_resumeFallback->stop();
+    refreshSourceKind();              // 来源类型（「浏览」tooltip）按新来源立即刷新
     buildViewer();
     if (m_sessionProbe) m_sessionProbe->start();     // ★ 查一次"不支持原因"（扫完即停）
-    goTo(Screen::Browse, true);       // 照旧 VM：直接打开 ⇒ 文件浏览屏
+    // `index` 只给 CLI `--index N` 用（界面入口不传）
+    if (index > 0 && m_src.vm) m_src.vm->jump(index);
+    setLibraryOpen(false);            // 从「打开 ▾」/ 拖放进来 ⇒ 抽屉收起
+    goTo(kind == Sequence::Kind::Image ? Screen::Viewer : Screen::Browse);
 }
 
 // 换 viewer（**接线只在这里**）：装新组 → emit viewerChanged → 旧组延迟释放
@@ -605,8 +656,8 @@ void UiModel::rebuildViewer()
         const QStringList chain = m_src.seq ? m_src.seq->chainAt(cursor) : QStringList();
         const int page = m_src.seq ? m_src.seq->pageAt(cursor) : 0;
         if (buildCollectionView(m_collectionId, chain, page)) return;
-        // 打不开（图集没了 / 正在重置）⇒ 回库屏，别留半死状态
-        goLibrary();
+        // 打不开（图集没了 / 正在重置）⇒ 没有来源（Browse + 空态块），别留半死状态
+        enterEmptyState();
         return;
     }
     buildViewer();
@@ -651,7 +702,7 @@ bool UiModel::requestReset(qint64 collectionId)
     QString err;
     if (!m_core->requestReset(collectionId, resetOptionsOf(m_settings), &err)) {
         notify(err.isEmpty() ? QStringLiteral("重置请求失败") : err);
-        if (wasViewing) goLibrary();            // 别把用户留在没有 viewer 的浏览屏
+        if (wasViewing) enterEmptyState();      // 别把用户留在"有屏、没来源"的半死状态
         return false;
     }
     qInfo().noquote() << QStringLiteral("[ui] 集合 %1 重置已入队（core）").arg(collectionId);
@@ -664,7 +715,8 @@ bool UiModel::cancelReset(qint64 collectionId)
     return m_core ? m_core->cancelReset(collectionId) : false;
 }
 
-// 回到库屏 ⇒ 释放显示槽（设计 14 §9.3）：图集查看 = 从磁盘读出的只读快照；会话来源 = 停 + 销毁。
+// 释放显示槽（设计 14 §9.3）：图集查看 = 从磁盘读出的只读快照；会话来源 = 停 + 销毁。
+//   ★ 2026-10-25：**唯一调用者 = `enterEmptyState()`**（没有"回库屏"这个动作了）。
 //   ⚠️ 顺序：先把阅读位置落一次（去抖可能还挂着）→ 同步拆 viewer
 //      → 才让 core 释放它的槽位（core 会销毁序列）。
 void UiModel::releaseDisplaySlot()

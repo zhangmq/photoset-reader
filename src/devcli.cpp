@@ -244,6 +244,10 @@ void runDevCommands(const DevRequest &req, app::UiModel *ui, library::Store *sto
         qInfo().noquote() << QStringLiteral("[dev] 打开集合 row=%1 id=%2").arg(row).arg(cid);
         if (!ui->openCollection(cid))
             qWarning().noquote() << QStringLiteral("[dev] openCollection 失败（row=%1）").arg(row);
+        // ★ 2026-10-25：`openCollection` 现在**直达 Viewer**（设计 18 §2）⇒ 开发 CLI 的
+        //   既有语义（"--dev-open-collection ⇒ 文件浏览屏"）要自己退一步；
+        //   后面的 `--dev-enter-row` / `--dev-open-page` 都从浏览屏出发。
+        ui->goBrowse();
     }
     if (req.enterRowSet || req.openPageSet) {
         // 浏览行是**驱动线程 post 回来的**（异步）⇒ 不等它，`openRow(row)` 会找不到
@@ -303,7 +307,7 @@ void runDevCommands(const DevRequest &req, app::UiModel *ui, library::Store *sto
             qInfo().noquote() << QStringLiteral("[dev] 打开第 %1 行 → 图像查看屏").arg(n);
         }
     }
-    qInfo().noquote() << QStringLiteral("[dev] 屏 = %1（0=图集库 1=文件浏览 2=图像查看）")
+    qInfo().noquote() << QStringLiteral("[dev] 屏 = %1（0=浏览 1=图像查看）")
                              .arg(int(ui->screen()));
 }
 

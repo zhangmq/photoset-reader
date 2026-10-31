@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 快捷键表行结构（**只定义一次**）════════════════════════
 //   三列：按键（`settingsKeyW`）/ 功能（占满）/ 适用范围（`settingsScopeW`，右对齐）

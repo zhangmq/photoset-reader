@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 瞬时提示（浮层）════════════════════════════════════════════
 //   用途：**失败与不支持**一律走它（瞬时提示 + 日志，**不写入磁盘**）——
@@ -25,7 +25,7 @@ Item {
     implicitWidth: box.implicitWidth
     implicitHeight: box.implicitHeight
     visible: opacity > 0.001
-    z: 1000                                    // 盖在三屏之上（三屏都在 z 默认 0）
+    z: 1000                                    // 盖在两屏与抽屉之上（它们都在 z 默认 0）
 
     function show(t, tok) {
         if (t === "") return;

@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 下拉按钮 = 标准按钮 + 下拉箭头 + **自己持有菜单** ════════════
 //   ★ 菜单的开合状态属于按钮自己：父级只给 `menuItems`、只听 `itemTriggered`，

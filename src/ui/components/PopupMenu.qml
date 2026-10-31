@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
-import ImageBrowser
+import AppUi
 
 // ══ 标准菜单（popup menu）══════════════════════════════════════
 //   行结构来源：vsr-player/src/client/ui/OpenMenu.qml / ContextMenu.qml

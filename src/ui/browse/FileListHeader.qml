@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 列表视图表头（表格列名）═══════════════════════════════════
 //   列几何与行**共用 Theme 的 `col*` token** —— 唯一定义处，见 §1.2「算法单一事实源」：

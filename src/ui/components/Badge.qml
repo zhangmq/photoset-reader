@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // 小徽标（紧跟标题，用于进度 / 缺失 / 类型）
 Rectangle {

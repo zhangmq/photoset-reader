@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // 调试用：把候选图标连同码点一起渲染出来，便于挑选
 Item {

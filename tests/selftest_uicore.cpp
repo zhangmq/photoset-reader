@@ -1,6 +1,7 @@
 #include "testsupport.h"
 
 #include <QAbstractItemModel>
+#include <QMetaEnum>
 #include <QColor>
 #include <QDir>
 #include <QElapsedTimer>
@@ -8,6 +9,7 @@
 #include <QObject>
 #include <QSet>
 #include <QString>
+#include <QUrl>
 #include <QStringLiteral>
 #include <QThread>
 #include <QVector>
@@ -25,6 +27,9 @@
 
 // ══ `UiModel` ↔ `LibraryCore` 接线自检（ib-test-uicore；T2c-2b-1，设计 14 §9.1/§9.3）══
 //   逐条验本批的交付物（父任务书 ①…⑤）：
+//     ⓪ **两屏 + 抽屉**（2026-10-25，设计 18 §1/§2）：`UiModel::Screen` 只有 Browse / Viewer；
+//        **没有 `back()` / `goLibrary()` / 屏栈**；图集库是抽屉（`libraryOpen`，变化驱动）；
+//        打开图集 / 直接打开 ⇒ **直达 Viewer**；`enterEmptyState()` = 没有来源（Browse + 空态）。
 //     ① **core 接入**：`UiModel` 持 core；`libraryUsable()` 反映 core 的闸门；
 //        `openCollection(id)` 之后 `viewSequence()` 是**从磁盘读出的快照**（行数 / 图数与库里一致）。
 //     ② **重置走 core**：`requestReset` ⇒ 状态 Queued/Running（**内存态，不落库**）；
@@ -125,6 +130,57 @@ static int runUiCoreSelfTest()
                   .arg(missing.isEmpty() ? QStringLiteral("无") : missing.join(QLatin1Char(','))));
     }
 
+    // ══ ⓪ 两屏 + 抽屉（设计 18 §1 / §2）══════════════════════════════════════
+    {
+        // 屏枚举只有两个值，且名字就是 QML 侧读的 `UiModel.Browse` / `UiModel.Viewer`
+        const int ei = ui.metaObject()->indexOfEnumerator("Screen");
+        check(ei >= 0, QStringLiteral("⓪ 元对象里有 `Screen` 枚举"));
+        if (ei >= 0) {
+            const QMetaEnum e = ui.metaObject()->enumerator(ei);
+            check(e.keyCount() == 2, QStringLiteral("⓪ 屏只有**两屏**（实际 %1）").arg(e.keyCount()));
+            check(QString::fromLatin1(e.key(0)) == QLatin1String("Browse")
+                      && QString::fromLatin1(e.key(1)) == QLatin1String("Viewer"),
+                  QStringLiteral("⓪ 屏名 = Browse / Viewer（实际 %1 / %2）")
+                      .arg(QString::fromLatin1(e.key(0)), QString::fromLatin1(e.key(1))));
+        }
+        // **没有屏栈 / 没有 back() / 没有 goLibrary()**（删掉的东西不许回来）
+        const QStringList gone = { QStringLiteral("back()"),
+                                   QStringLiteral("goLibrary()") };
+        QStringList stillThere;
+        for (const QString &sig : gone)
+            if (ui.metaObject()->indexOfMethod(sig.toUtf8().constData()) >= 0) stillThere << sig;
+        check(stillThere.isEmpty(),
+              QStringLiteral("⓪ 旧的导航入口已删（仍在：%1）")
+                  .arg(stillThere.isEmpty() ? QStringLiteral("无") : stillThere.join(QLatin1Char(','))));
+        // 新入口都在元对象上（QML 调错名字只在**点击那一刻**失败，加载不报错）
+        const QStringList neededScreen = { QStringLiteral("goBrowse()"),
+                                           QStringLiteral("enterEmptyState()"),
+                                           QStringLiteral("continueReading()") };
+        QStringList missingScreen;
+        for (const QString &sig : neededScreen)
+            if (ui.metaObject()->indexOfMethod(sig.toUtf8().constData()) < 0) missingScreen << sig;
+        check(missingScreen.isEmpty(),
+              QStringLiteral("⓪ 两屏入口都在 ui 上（缺：%1）")
+                  .arg(missingScreen.isEmpty() ? QStringLiteral("无")
+                                               : missingScreen.join(QLatin1Char(','))));
+        // 启动 = **没有来源** ⇒ Browse
+        check(ui.screen() == app::UiModel::Screen::Browse && ui.viewerCore() == nullptr,
+              QStringLiteral("⓪ 启动即 Browse + 没有来源（viewer == null）"));
+        // 抽屉：默认关；变化驱动（值没变不发信号）
+        check(!ui.libraryOpen(), QStringLiteral("⓪ 图集库抽屉默认关（**不自动展开**）"));
+        int openSignals = 0;
+        const QMetaObject::Connection c = QObject::connect(
+            &ui, &app::UiModel::libraryOpenChanged, [&openSignals] { ++openSignals; });
+        ui.setLibraryOpen(true);
+        ui.setLibraryOpen(true);          // 值没变 ⇒ 不许再发
+        check(ui.libraryOpen() && openSignals == 1,
+              QStringLiteral("⓪ `libraryOpen` 变化驱动（开＝1 次信号，实际 %1）").arg(openSignals));
+        ui.setLibraryOpen(false);
+        check(!ui.libraryOpen() && openSignals == 2,
+              QStringLiteral("⓪ 关抽屉＝1 次信号（实际 %1）").arg(openSignals));
+        QObject::disconnect(c);
+    }
+
     auto rowOf = [&](qint64 id) -> int {
         for (int i = 0; i < ui.library()->rowCount(); ++i)
             if (ui.library()->data(ui.library()->index(i, 0), LibraryModel::IdRole).toLongLong() == id)
@@ -150,7 +206,15 @@ static int runUiCoreSelfTest()
     check(store.itemCount(cid1) == 5,
           QStringLiteral("① 库里 5 张（实际 %1）").arg(store.itemCount(cid1)));
 
+    ui.setLibraryOpen(true);           // 从抽屉里打开 ⇒ 抽屉应当自己收起
     check(ui.openCollection(cid1), QStringLiteral("① ui.openCollection(%1)（走 core 快照）").arg(cid1));
+    check(!ui.libraryOpen(), QStringLiteral("① 从抽屉打开图集 ⇒ **抽屉收起**"));
+    check(ui.screen() == app::UiModel::Screen::Viewer,
+          QStringLiteral("① 打开图集 ⇒ **直达 Viewer**（设计 18 §2；实际屏 %1）")
+              .arg(int(ui.screen())));
+    check(ui.sourceKind() == QLatin1String("folder"),
+          QStringLiteral("① 来源类型 = folder（Viewer「浏览」tooltip 用它；实际 '%1'）")
+              .arg(ui.sourceKind()));
     Sequence *vs = core->viewSequence();
     check(vs != nullptr, QStringLiteral("① viewSequence() 非空（core 的查看槽）"));
     if (vs) {
@@ -251,9 +315,12 @@ static int runUiCoreSelfTest()
               .arg(vcBefore).arg(viewerChanged));
 
     // ══ ④ 会话生命周期 + View==Reset 别名 ═══════════════════════════════════
-    //   先回库屏释放显示槽（**core 的槽位归 UiModel 管**：直接动 core 前必须让 viewer 先死）
-    ui.goLibrary();
-    check(ui.viewerCore() == nullptr, QStringLiteral("④ 回库屏 ⇒ 显示槽已释放（viewer == null）"));
+    //   先回到"没有来源"释放显示槽（**core 的槽位归 UiModel 管**：直接动 core 前必须让 viewer 先死）
+    ui.enterEmptyState();
+    check(ui.viewerCore() == nullptr, QStringLiteral("④ 没有来源 ⇒ 显示槽已释放（viewer == null）"));
+    check(ui.screen() == app::UiModel::Screen::Browse && ui.sourceKind().isEmpty(),
+          QStringLiteral("④ 没有来源 ＝ Browse + 空态（屏 %1 / 来源类型 '%2'）")
+              .arg(int(ui.screen())).arg(ui.sourceKind()));
 
     const QString album3 = makeAlbum(fx.path(), QStringLiteral("a3"), 3);
     check(core->openSession(album3, LibraryCore::ResetOptions(), &err),
@@ -459,6 +526,45 @@ static int runUiCoreSelfTest()
                   QStringLiteral("⑦c 库内容 = **新扫描结果**（旧行不残留；%1 张）").arg(imgs));
         }
         qunsetenv("PHOTOSET_COMMIT_DELAY_MS");
+    }
+
+    // ══ ⑧ 打开语义：**界面 vs CLI**（用户 2026-10-25 定案）══════════════════════
+    //   · 界面（文件对话框 / 拖放）：图片 ⇒ Viewer；文件夹 / 压缩包 ⇒ **留在浏览屏**；
+    //   · CLI `-d`：先 openPath，再 continueReading() ⇒ **一律进 Viewer**。
+    //   ★ 拖放给的是 file: URL ⇒ `openPath(QUrl)` 必须能转成本地路径走同一条实现。
+    {
+        // QML 拖放调的就是这一版（`drop.urls[0]` = url）——必须在元对象上，否则拖进去才报错
+        check(ui.metaObject()->indexOfMethod("openPath(QUrl)") >= 0,
+              QStringLiteral("⑧ QML 拖放入口 `openPath(QUrl)` 在元对象上"));
+
+        ui.enterEmptyState();
+        const QString album8 = makeAlbum(fx.path(), QStringLiteral("a8"), 3);
+        ui.openPath(album8);                       // 界面语义：文件夹
+        check(ui.screen() == app::UiModel::Screen::Browse && ui.viewerCore() != nullptr,
+              QStringLiteral("⑧ 界面打开**文件夹** ⇒ 留在浏览屏（屏 %1，viewer %2）")
+                  .arg(int(ui.screen()))
+                  .arg(ui.viewerCore() ? QStringLiteral("在") : QStringLiteral("无")));
+        check(ui.sourceKind() == QLatin1String("folder"),
+              QStringLiteral("⑧ 来源类型 = folder（实际 '%1'）").arg(ui.sourceKind()));
+        ui.continueReading();                      // CLI `-d` 的补步
+        check(ui.screen() == app::UiModel::Screen::Viewer,
+              QStringLiteral("⑧ CLI 语义（openPath + continueReading）⇒ 直达 Viewer"));
+
+        // 图片：界面语义 ⇒ 直达 Viewer（走 **QUrl** 这一版 = 拖放入口）
+        ui.enterEmptyState();
+        const QString img8 = QDir(album8).filePath(QStringLiteral("p0.png"));
+        check(QFileInfo::exists(img8), QStringLiteral("⑧ 前置：图片存在（%1）").arg(img8));
+        ui.openPath(QUrl::fromLocalFile(img8));
+        check(ui.screen() == app::UiModel::Screen::Viewer && ui.viewerCore() != nullptr,
+              QStringLiteral("⑧ 拖入/打开**图片** ⇒ 直达 Viewer（屏 %1）").arg(int(ui.screen())));
+        check(ui.sourceKind() == QLatin1String("image"),
+              QStringLiteral("⑧ 来源类型 = image（实际 '%1'）").arg(ui.sourceKind()));
+
+        // 非本地 URL 一律忽略（不做任何切换）
+        ui.enterEmptyState();
+        ui.openPath(QUrl(QStringLiteral("https://example.invalid/x.png")));
+        check(ui.screen() == app::UiModel::Screen::Browse && ui.viewerCore() == nullptr,
+              QStringLiteral("⑧ 非 file: URL（拖放的远端内容）**不建来源**"));
     }
 
     return check.finish();

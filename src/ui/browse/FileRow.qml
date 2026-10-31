@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 文件列表行（列表视图）═════════════════════════════════════
 //   ┌────┐ 文件名  [类型 tag]                    412 MB      3288×2200

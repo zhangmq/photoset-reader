@@ -12,6 +12,14 @@ find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
 find_package(LibLZMA REQUIRED)
 qt_standard_project_setup()
 
+# ══ QML 模块的放置位置：**Qt 6.5+ 的标准布局**（2026-10-25 定案）════════════════
+#   QTP0001 NEW ⇒ 模块落在 `:/qt/qml/<URI>/`，而 `qrc:/qt/qml` **本来就在** QML 引擎的
+#   默认导入路径里 ⇒ `import AppUi` 不需要任何运行时配置就能找到 qmldir。
+#   ⚠️ 为什么必须显式写：本工程 `cmake_minimum_required(3.21)` < 6.5 ⇒ 策略默认 OLD
+#   ⇒ 模块落到 `:/<URI>/`，引擎找不到（实测：所有 `import AppUi` 都报 "X is not a type"；
+#   旧策略下只能靠 `engine.addImportPath("qrc:/")` 打补丁，2026-10-25 已改用本策略）。
+qt_policy(SET QTP0001 NEW)
+
 # 测试入口（设计 14 §11）：`ctest` 能跑下面每个套件
 enable_testing()
 
@@ -186,7 +194,7 @@ qt_add_executable(image-browser
 #   `main.cpp` 里 0 个 `run*SelfTest` / 0 个套件 dispatch；dev CLI 与截图机制自带工具函数。
 target_link_libraries(image-browser PRIVATE ibcore)
 
-# ══ QML 模块 + 图标字体资源：挂在**每个要加载 `qrc:/ImageBrowser` 的可执行**上 ══
+# ══ QML 模块 + 图标字体资源：挂在**每个要加载 `qrc:/qt/qml/AppUi` 的可执行**上 ══
 #   设计 14 §11：每个测试目标各自独立 ⇒ 谁需要 QML 谁带一份（静态库里的 QML 模块在
 #   链接期可能被丢掉；直接挂到目标上最直接、也最可验证）。
 #   ⚠️ `OUTPUT_DIRECTORY` 必须**每个目标各不相同**：Qt 不允许两个 QML 模块共用同一个
@@ -231,7 +239,7 @@ function(ib_add_qml_resources target)
         src/ui/components/SettingsImagePage.qml
         src/ui/components/SettingsSystemPage.qml
         src/ui/components/SettingsShortcutsPage.qml
-        src/ui/library/LibraryView.qml
+        src/ui/library/LibraryDrawer.qml
         src/ui/library/CollectionCard.qml
         src/ui/debug/IconPicker.qml
         src/ui/browse/BrowseView.qml
@@ -250,7 +258,7 @@ function(ib_add_qml_resources target)
     )
     #   ⚠️ QML 源一律按**绝对路径**进 `QML_FILES`（本函数可能在 `tests/` 里被调用）；
     #      绝对路径**必须**配 `QT_RESOURCE_ALIAS`（相对源码根），否则 Qt 直接 FATAL_ERROR，
-    #      资源树也会变成绝对路径。别名与搬迁前一致：`:/ImageBrowser/src/ui/...`。
+    #      资源树也会变成绝对路径。别名保持不变：`src/ui/...`（模块根由 `qt_add_qml_module` 决定）。
     set(qml_files_abs)
     foreach(f IN LISTS qml_files)
         set_source_files_properties("${CMAKE_SOURCE_DIR}/${f}"
@@ -258,7 +266,7 @@ function(ib_add_qml_resources target)
         list(APPEND qml_files_abs "${CMAKE_SOURCE_DIR}/${f}")
     endforeach()
     qt_add_qml_module(${target}
-        URI ImageBrowser
+        URI AppUi
         VERSION 1.0
         OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${target}_qml"
         QML_FILES ${qml_files_abs}

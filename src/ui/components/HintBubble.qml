@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Controls
-import ImageBrowser
+import AppUi
 
 // ══ 标准提示气泡（tooltip）══════════════════════════════════════
 //   样式来源：DSH `dsh-client-ui-primitives/lib/Tooltip.module.css` `.bubble`

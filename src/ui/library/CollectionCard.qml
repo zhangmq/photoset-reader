@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Controls
-import ImageBrowser
+import AppUi
 
 // ══ 图集卡片 ═══════════════════════════════════════════════════
 //   高度**不写死**：内容区（内容行 + 进度条）高 + 上下**等量**内边距。
@@ -30,6 +30,10 @@ Rectangle {
     property string progressText: ""
     property bool   missing: false
     property string cover: ""
+    // ★ 2026-10-25：抽屉里的**紧凑形态** —— 只留「标题 / 状态 / 缩略图 + 卡片动作」
+    //   （设计 18 §2 的抽屉内容）；路径与两个时间行不显示（360 宽下会被省略成省略号）。
+    //   卡片本体只有这一份实现（不另写一个抽屉专用卡片）。
+    property bool   compact: false
 
     // ── 扫描（roles 与 LibraryModel::roleNames() 同名）──
     property var    collectionId: -1        // var：集合 id 是 qint64（QML 的 int 只有 32 位）
@@ -88,7 +92,7 @@ Rectangle {
         anchors.leftMargin: Theme.cardPadH
         anchors.rightMargin: Theme.cardPadH
         anchors.topMargin: Theme.cardPadV
-        spacing: Theme.spaceMd
+        spacing: root.compact ? Theme.spaceSm : Theme.spaceMd
 
         Row {
             id: contentRow
@@ -240,12 +244,14 @@ Rectangle {
                     }
                 }
                 Text {
+                    visible: !root.compact
                     width: parent.width
                     text: root.path
                     color: Theme.textSecondary
                     elide: Text.ElideMiddle
                 }
                 Text {
+                    visible: !root.compact
                     width: parent.width
                     color: Theme.textSecondary
                     elide: Text.ElideRight

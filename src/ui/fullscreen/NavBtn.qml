@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 全屏浮层按钮（照抄 vsr-player `src/client/ui/components/IconButton.qml`）══
 //   · **跟随主题，颜色一律用 DSH alias 令牌**（用户 2026-10-11 定案 (A)：不再自建浮层配色）

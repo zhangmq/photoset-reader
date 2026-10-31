@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 设置 · 系统页（**本文件自足：改这里不会影响别的页签**）══════
 //   项：包含隐藏项 / 递归深度 / 预取窗口 / 缓存上限

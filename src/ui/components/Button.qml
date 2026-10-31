@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 标准按钮（图标 + 文字）══════════════════════════════════════
 //   尺寸来源：DSH 标准按钮 `dsh-client-ui-primitives/lib/Button.module.css`

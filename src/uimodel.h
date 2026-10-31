@@ -4,8 +4,8 @@
 //
 //   定案（用户 2026-10-13；**2026-10-15 T2d-1b 重定**）：
 //     · 全局只有一个 VM = 本类；QML 里仍叫 `ui`。
-//     · **三个界面各有一个 model，并列挂在 `ui` 这一级**（照 `ui.library` 的样子）：
-//         `ui.library`（LibraryModel，已有不动）/ `ui.browse`（**`app::BrowseModel`**）/
+//     · **每个界面各有一个 model，并列挂在 `ui` 这一级**（照 `ui.library` 的样子）：
+//         `ui.library`（LibraryModel，抽屉里的收藏列表）/ `ui.browse`（**`app::BrowseModel`**）/
 //         `ui.viewer`（**`fetch::ViewerModel`**，对外名字仍是它）。QML 一律**直绑**，
 //       本类**不转发**它们的属性（转手就是两份状态，AGENTS.md「单一来源」）。
 //     · ★★ **序列只有一个消费者：本类（GUI 线程）**：`Sequence::drain()` 归这里。
@@ -15,7 +15,7 @@
 //     · `fetch::ViewerModel` = **viewer**：位置 / 预取 / 槽位表 / 上屏内容全在它内部
 //       （解码在工作线程上做，解完 post 回主线程）。**本类只"给序列 + 序列变了通知"**；
 //       `loading` 的判定条件也在它那边。
-//     · 本类负责：三屏状态（Library / Browse / Viewer）、图集库动作、**全部设置**、
+//     · 本类负责：两屏状态（Browse / Viewer）+ 图集库抽屉的开合、图集库动作、**全部设置**、
 //       UI 形态、**适配规则 fitMode / 手势 zoom·pan / zoomLocked**（缩放约束只在本类与
 //       GPU 缩放器之间，viewer 不需要知道），以及**图集来源的阅读位置写入磁盘**。
 //     · 设计 14 §9.3：**没有 Settings 单例** —— 运行期设置就是本类持有的一个
@@ -30,7 +30,7 @@
 //       此后游标变化 **400ms 去抖 + 5s 兜底** 写 `core->setResume(id, key, page)`
 //       （**存链 + 页号，不存下标**）。
 //       ⚠️ 会话序列归本类、图集序列归 core；两者都**只在本类（GUI 线程）被碰**。
-//          换来源 / 回库屏时**先同步拆 viewer**（换个记号就走，不等工作线程），
+//          换来源 / 释放来源时**先同步拆 viewer**（换个记号就走，不等工作线程），
 //          再让 core 销毁它的序列。viewer 的解码线程只拿一份**条目信息的副本** ⇒ 不碰序列。
 //     · 直接打开（文件夹 / 压缩包 / 单图）= **会话来源**：用 `Sequence::startScan` 建序列，
 //       **不写入磁盘**（用户"想切就切"）。
@@ -61,6 +61,7 @@
 
 #include <QObject>
 #include <QSize>
+#include <QUrl>
 #include <QString>
 #include <QStringList>
 #include <QVariantList>
@@ -84,12 +85,14 @@ class UiModel : public QObject
     Q_OBJECT
 
 public:
-    // ── 三屏（定案：**一个 enum 就够**，不做每屏状态快照）──────────────────
-    //   QML 侧读 **`UiModel.Library` / `UiModel.Browse` / `UiModel.Viewer`**（不写 0/1/2）。
-    //   ⚠️ 实测（见报告）：QML **读不到"实例上的枚举"** —— `ui.Library` 是 `undefined`
+    // ── 两屏（**2026-10-25 定案：只剩 Browse / Viewer**，图集库降级为抽屉）──────
+    //   QML 侧读 **`UiModel.Browse` / `UiModel.Viewer`**（不写 0/1/2）。
+    //   ⚠️ 实测（见报告）：QML **读不到"实例上的枚举"** —— `ui.Browse` 是 `undefined`
     //      （`ui.screen` 本身读得到，是 number）。QML 只认**已注册类型名**上的枚举
     //      ⇒ `main.cpp` 里 `qmlRegisterUncreatableType<UiModel>(...)`（只为枚举名）
-    enum class Screen { Library = 0, Browse = 1, Viewer = 2 };
+    //   ★ 图集库**不再是屏**：它是左侧 overlay 抽屉（`libraryOpen`），不进屏栈 ——
+    //     "打开/关闭抽屉不触发任何重排"（设计 18 §1 / §2）。
+    enum class Screen { Browse = 0, Viewer = 1 };
     Q_ENUM(Screen)
 
     // ── viewer（只读指针；属性一律 `ui.viewer.*` 直绑）──
@@ -97,9 +100,17 @@ public:
     // ── ★ T2d-1b：浏览界面（**从 viewer 里搬出来**；属性一律 `ui.browse.*` 直绑）──
     Q_PROPERTY(BrowseModel *browse READ browse CONSTANT)
 
-    // ── 三屏状态 / 图集库列表 ──
+    // ── 两屏状态 / 图集库列表 ──
     Q_PROPERTY(Screen screen READ screen NOTIFY screenChanged)
     Q_PROPERTY(LibraryModel *library READ library CONSTANT)
+    // ── ★ 2026-10-25：图集库抽屉（**不是屏、不进栈**）──
+    //   打开：Browse / Viewer 顶栏的 folder-star 按钮，或 `Ctrl+B`（快捷键在 QML）；
+    //   关闭：点外部 / `Esc` / 再点按钮。打开时取一次库快照（`pollNow`）。
+    Q_PROPERTY(bool libraryOpen READ libraryOpen WRITE setLibraryOpen NOTIFY libraryOpenChanged)
+    // ── 来源类型（`folder` / `archive` / `image`；Viewer 顶栏「浏览」的 tooltip 按它变）──
+    //   ★ 词表 = 浏览行的 `kind`（`BrowseModel::kindText` 是 QML 边界的唯一生成点）；
+    //     判据：序列根节点的种类；没有树（单张图 / 首批还没到）⇒ 目录 = folder、其余 = image。
+    Q_PROPERTY(QString sourceKind READ sourceKind NOTIFY sourceKindChanged)
 
     // ── ★ 瞬时提示（Phase 3）：**不占位浮层** ──────────────────────────
     //   刻意**不是**持久状态：`notificationSeq` 每次 +1 ⇒ 同一条文案重复出现也能重新触发动画。
@@ -166,13 +177,20 @@ public:
     // C++ 侧（用例 / 调试）：拿到持有的 `LibraryCore`（QML 不绑它 —— 界面只经本类）
     LibraryCore *core() const { return m_core.get(); }
 
-    // ── 三屏状态 / 导航（语义照旧 `ViewModel`；见 .cpp 的说明）──
+    // ── 两屏状态 / 导航（★ 2026-10-25：**没有屏栈、没有 back()**）──────────────
+    //   唯一环路：Viewer --「浏览」--> Browse --「继续阅读」--> Viewer；
+    //   没有来源 = Browse + 空态块（抽屉**不自动展开**）。
     Screen screen() const { return m_screen; }
     LibraryModel *library() const { return m_library; }
-    Q_INVOKABLE void goLibrary();       // 清屏栈直接回图集库
+    bool libraryOpen() const { return m_libraryOpen; }
+    void setLibraryOpen(bool on);
+    QString sourceKind() const;
+    // 「浏览」：Viewer → Browse，并**定位到当前阅读位置**（层 + 行）
+    Q_INVOKABLE void goBrowse();
     // 从原进度继续阅读：进查看屏，**不改游标**（用户 2026-10-24）
     Q_INVOKABLE void continueReading();
-    Q_INVOKABLE void back();            // 出栈：Viewer → Browse → Library
+    // 「没有来源」= Browse + 空态块（释放显示槽、丢掉当前来源；抽屉**不自动展开**）
+    Q_INVOKABLE void enterEmptyState();
     //   ⚠️ T2d-1b：`openRow / enterRow / isContainerRow`（**按浏览行号解释**）已**搬到新家**
     //      `app::BrowseModel`（QML 的 `ui.browse`）—— 浏览语义只有一处实现（AGENTS.md）。
     //      打开 / 选中的**接线**在 .cpp 的 `onBrowseRowSelected` / `onBrowseOpenRequested`
@@ -183,7 +201,8 @@ public:
     Q_INVOKABLE bool   openCollection(qint64 collectionId);
     Q_INVOKABLE void   removeCollection(int row);
     //   文件对话框（**QFileDialog 只在这里**；QML 不写平台相关代码）
-    Q_INVOKABLE void chooseAddCollection();   // 选目录 → addCollection(..., "folder") → 自动开扫
+    //   ★ 2026-10-25：**「添加图集」已删**（图集 = 收藏夹，收藏在 Viewer 顶栏，本段尚未接）；
+    //     打开 = 会话来源，**直达 Viewer**（与 CLI `-d` 等价）。
     Q_INVOKABLE void chooseOpenFolder();      // 直接打开 = 会话来源，不建库记录
     Q_INVOKABLE void chooseOpenArchive();
     Q_INVOKABLE void chooseOpenImage();
@@ -208,8 +227,13 @@ public:
     void setSlideshowIntervalMs(int ms);
 
     // ── 建来源（目录 / 压缩包 / 单图）──
-    //   会话来源（**不写入磁盘**）：直接打开 = 文件系统来源 + 文件浏览屏（照旧 VM）
-    void openPath(const QString &path);
+    //   会话来源（**不写入磁盘**）。**界面与 CLI 的落点不同**（用户 2026-10-25）：
+    //     · 界面（文件对话框 / 拖放）：**图片 ⇒ 直达 Viewer；文件夹 / 压缩包 ⇒ 留在浏览屏**；
+    //     · CLI `-d`：**一律直达 Viewer**（设计 18 §4；main.cpp 在 `openPath` 后补 `continueReading()`）。
+    //   `index >= 0` = 定位到第 index 条（只有 CLI `--index N` 用）；不给 ⇒ 第 0 条。
+    //   ★ QML 入口（拖放）给的是 `drop.urls` 的 **file: URL** ⇒ 这一版负责转成本地路径。
+    Q_INVOKABLE void openPath(const QUrl &fileUrl);
+    void openPath(const QString &path, int index = -1);
 
     // ── 适配 / 手势态 ──
     int   fitMode() const;
@@ -249,8 +273,10 @@ public:
 
 Q_SIGNALS:
     void viewerChanged();
-    // 三屏 / 图集库
+    // 两屏 / 图集库抽屉
     void screenChanged();
+    void libraryOpenChanged();
+    void sourceKindChanged();
     void slideshowIntervalMsChanged();
     void fitModeChanged();
     void defaultLayoutChanged();
@@ -295,7 +321,10 @@ private:
     void onBrowseOpenRequested(int itemIndex);   // 打开那条图 ⇒ 切查看屏
     // 进沉浸视图 / 新建 viewer ⇒ 把全局默认下发一次（fit/间隔/版面/循环/算法/OSD）
     void applyViewerDefaults();
-    void goTo(Screen s, bool push);     // 屏切换（push = 压栈）
+    void goTo(Screen s);                // 屏切换（**没有屏栈**）
+    // 来源类型（`folder` / `archive` / `image`）的**变化驱动**出口：
+    //   判据是派生的（序列根节点 / 路径），只在"可能变了"的地方比一次再 emit
+    void refreshSourceKind();
     void flushResume();                 // 阅读位置写入磁盘（**存 label 链 + 页号，不存下标**）
 
     // ── ★★ T2c-2b-1：core 接线（设计 14 §9.1 / §9.3 / §9.4）──────────────────
@@ -309,7 +338,8 @@ private:
     fetch::ViewerModel *installCoreViewer(Sequence *seq);
     // 建"图集查看"这一组：core 快照 → 收尾（pump 一次）→ 落到 `chain/page`
     bool buildCollectionView(qint64 collectionId, const QStringList &chain, int page);
-    // 回到库屏 ⇒ 释放显示槽（图集查看 = 快照；会话来源 = 停 + 销毁），设计 14 §9.3
+    // 释放显示槽（图集查看 = 快照；会话来源 = 停 + 销毁），设计 14 §9.3
+    //   ★ 2026-10-25：调用者只剩 `enterEmptyState()`（"没有来源"那一个状态）
     void releaseDisplaySlot();
     library::Collection collectionById(qint64 id) const;   // 读一行（resume）
 
@@ -336,9 +366,10 @@ private:
     BrowseModel *m_browse = nullptr;                                   // QML 的 `ui.browse`
     std::atomic<bool> m_wakeQueued{false};   // 发布钩子 → **合并成一次** queued 投递
 
-    // 三屏（只存语义状态；`Viewer` 的沉浸态是它的派生）
-    QVector<Screen> m_screenStack;
-    Screen m_screen = Screen::Library;
+    // 两屏（只存语义状态；`Viewer` 的沉浸态是它的派生）
+    Screen m_screen = Screen::Browse;      // 启动 = **没有来源** ⇒ Browse + 空态块
+    bool   m_libraryOpen = false;          // 图集库抽屉（**不是屏、不进栈**）
+    QString m_lastSourceKind;              // 上次 emit 的来源类型（`refreshSourceKind` 用）
 
     // 阅读位置写入磁盘（图集来源才落）：游标变化 400ms 去抖 + 5s 定期兜底（AGENTS.md）
     QString m_notification;                // 最近的瞬时提示文案（空 = 没有）

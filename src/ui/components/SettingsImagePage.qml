@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 设置 · 图像页（**本文件自足：改这里不会影响别的页签**）══════
 //   只有一个设置项：**缩放算法**（5 个一级选项，英文名照社区口径，不翻译）。

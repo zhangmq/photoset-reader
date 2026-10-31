@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Controls
-import ImageBrowser
+import AppUi
 
 // ══ 标准确认对话框 ═══════════════════════════════════════════
 //   样式来源：DSH `dsh-client-ui-primitives/lib/Modal.module.css`

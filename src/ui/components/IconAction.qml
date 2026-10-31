@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 标准图标按钮 ═══════════════════════════════════════════════
 //   状态色来源：DSH 工作区 topbar 图标按钮

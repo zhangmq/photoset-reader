@@ -69,7 +69,7 @@ void setupShot(QGuiApplication &app, QQmlApplicationEngine &engine,
             }
             // 主路径的可观测状态：截图 + 这行日志一起才算"看到"
             if (uiModel) {
-                qInfo().noquote() << QStringLiteral("[immersive] 屏 = %1（0=图集库 1=浏览 2=阅读）")
+                qInfo().noquote() << QStringLiteral("[immersive] 屏 = %1（0=浏览 1=图像查看）")
                                          .arg(int(uiModel->screen()));
                 if (auto *v = uiModel->viewerCore()) {
                     qInfo().noquote()

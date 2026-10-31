@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import ImageBrowser
+import AppUi
 
 // ══ 标准面包屑 ═══════════════════════════════════════════════
 //   需求（用户明确，见 01-功能与UI设计.md §2.3）：

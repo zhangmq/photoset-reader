@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 设置 · 快捷键页（**本文件自足：改这里不会影响别的页签**）══════
 //   只读帮助表：三列（按键 / 功能 / 适用范围），行结构见 `SettingsKeyRow.qml`

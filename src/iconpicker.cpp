@@ -15,7 +15,7 @@
 // ══ 图标挑选工具 `ib-iconpicker`（开发用；设计 14 §11.1）════════════════════
 //   原 `image-browser --debug-view iconpicker` 模式的独立目标版：
 //   ★ 候选图标表（QML 字符串）与应用 CLI 里的**一字不差**（只搬不改），
-//     QML 页仍是 `src/ui/debug/IconPicker.qml`（模块 `ImageBrowser`）。
+//     QML 页仍是 `src/ui/debug/IconPicker.qml`（模块 `AppUi`）。
 //   ★ `Theme.qml` 要看 `ui.themeMode` / `ui.systemDark` ⇒ 这里按**调试视图的老接法**
 //     建一个不落库的 `UiModel`（`store = nullptr`）挂成上下文属性 `ui`（与已删的
 //     调试页同一处语义；`GpuScalerItem` 那类没用到就不注册）。
@@ -30,7 +30,6 @@ int runIconPicker(int argc, char *argv[])
     // ★ 设置的 `load()` 在 `UiModel` 构造里（设计 14 §9.3：运行期设置挂在它身上）——
     //   与旧代码那次单例 `load()` 在这里的时机等价（QML 加载前已完成）。
     QQmlApplicationEngine engine;
-
     // 调试视图的老接法：**不建库**（store = nullptr）—— 不碰用户的真库
     auto *ui = new app::UiModel(nullptr, &app);
     engine.rootContext()->setContextProperty(QStringLiteral("ui"), ui);
@@ -51,7 +50,7 @@ int runIconPicker(int argc, char *argv[])
     }
 
     const QString q = QStringLiteral(
-        "import QtQuick\nimport QtQuick.Controls\nimport ImageBrowser\n"
+        "import QtQuick\nimport QtQuick.Controls\nimport AppUi\n"
         "ApplicationWindow {\n"
         "    width: 640\n    height: 520\n    visible: true\n    color: Theme.bgBase\n"
         "    IconPicker { anchors.fill: parent; items: [\n"

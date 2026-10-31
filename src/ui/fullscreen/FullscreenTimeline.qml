@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 全屏 · 时间轴（横跨整个条目序列）══════════════════════════
 //   设计 §3.5：可点击 / 拖动跳转

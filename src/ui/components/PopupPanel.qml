@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Controls
-import ImageBrowser
+import AppUi
 
 // ══ 标准浮层（panel）══════════════════════════════════════════
 //   定位逻辑来源：vsr-player/src/client/ui/components/PopupBase.qml

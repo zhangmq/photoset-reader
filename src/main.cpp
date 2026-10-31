@@ -96,8 +96,8 @@ int main(int argc, char *argv[])
                                 QStringLiteral("截图前等待毫秒（默认 2500）"),
                                 QStringLiteral("ms"), QStringLiteral("2500"));
     QCommandLineOption idxOpt(QStringLiteral("index"),
-                              QStringLiteral("截图前跳到第 N 张"), QStringLiteral("n"),
-                              QStringLiteral("-1"));
+                              QStringLiteral("打开来源时定位到第 N 条（截图前也会跳到这里）"),
+                              QStringLiteral("n"), QStringLiteral("-1"));
     QCommandLineOption immOpt(QStringLiteral("immersive"),
                               QStringLiteral("截图前切到沉浸视图"));
     QCommandLineOption pwOpt(QStringLiteral("password"),
@@ -112,8 +112,8 @@ int main(int argc, char *argv[])
                                    QStringLiteral("调试：强制走 CPU 缩放（Smooth (Qt)），用于验收软件后端画面"));
     // ── 调试：启动即打开设置对话框（仅开发用，不在正式 CLI 范畴）──
     //   ★ 接线（2026-10-14 本批）：值经上下文属性 `devOpenSettings` / `devSettingsTab`
-    //     在 **QML 加载之前**注入 `Main.qml`，再由它喂三屏各自的 `debugOpenSettings`
-    //     （三屏都**只在当前屏**打开自己的对话框）。默认 false / 0 ⇒ 正常运行时零行为变化。
+    //     在 **QML 加载之前**注入 `Main.qml`，再由它喂两屏各自的 `debugOpenSettings`
+    //     （两屏都**只在当前屏**打开自己的对话框）。默认 false / 0 ⇒ 正常运行时零行为变化。
     //     ⚠️ 必须"加载前"给值：各屏是 `Component.onCompleted` 里开对话框的，加载后再置属性无效。
     //   ★ **必须是裸开关**：`QCommandLineParser` **没有"可选值"**这个概念 —— 带
     //     `valueName` 的选项会**吞掉下一个 token**（实测 `--debug-settings --shot x.png`
@@ -125,6 +125,10 @@ int main(int argc, char *argv[])
                                            QStringLiteral("调试：设置对话框开在哪一页"
                                                           "（0常规/1图像/2系统/3快捷键）"),
                                            QStringLiteral("tab"), QStringLiteral("0"));
+    //   ★ 2026-10-25：图集库 = 左侧抽屉（**不是屏**）⇒ 截图自检要能把抽屉打开。
+    //     与 `--debug-settings` 同一风格：默认 false ⇒ 正常运行时零行为变化。
+    QCommandLineOption debugLibraryOpenOpt(QStringLiteral("debug-library-open"),
+                                           QStringLiteral("调试：启动即打开图集库抽屉"));
     // ── 开发期专用（**只为验收截图**；与 --probe-* / --bench-* 同一风格）──
     QCommandLineOption devAddOpt(QStringLiteral("dev-add-collection"),
                                  QStringLiteral("开发：把目录加入（临时）图集库并等扫描结束"),
@@ -178,6 +182,7 @@ int main(int argc, char *argv[])
     parser.addOption(devNotifyOpt);
     parser.addOption(debugSettingsOpt);
     parser.addOption(debugSettingsTabOpt);
+    parser.addOption(debugLibraryOpenOpt);
     parser.addOption(gpuProbeOpt);
     parser.addOption(forceCpuOpt);
     parser.process(app);
@@ -247,9 +252,9 @@ int main(int argc, char *argv[])
     //   （不用 QML_ELEMENT：那会让生成的注册文件按 `<gpuscaleritem.h>` 找头文件，
     //     而 src/ 一旦进包含路径，libarchive 的 <archive.h> 就会被我们的 src/archive.h 顶掉）
     //   ★ 必须放在**任何 QML 加载之前**（定稿视图 FullscreenView 的 `GpuScalerItem` 要用它）
-    qmlRegisterType<GpuScalerItem>("ImageBrowser", 1, 0, "GpuScalerItem");
+    qmlRegisterType<GpuScalerItem>("AppUi", 1, 0, "GpuScalerItem");
     //   CPU 缩放项：**Smooth (Qt) 这一项**与**软件后端降级**都用它（设计 16 §五）
-    qmlRegisterType<CpuScalerItem>("ImageBrowser", 1, 0, "CpuScalerItem");
+    qmlRegisterType<CpuScalerItem>("AppUi", 1, 0, "CpuScalerItem");
 
     // ── bench / 探针（**跑完即退**）：解析留在本文件，实现与装配在 `src/devbench.cpp` ──
     //   `main.cpp` 只把 `QCommandLineOption` 的取值装进请求结构（判"给没给"用 `xxxSet`）。
@@ -271,11 +276,11 @@ int main(int argc, char *argv[])
         qInfo().noquote() << QStringLiteral("[library] 库不可用，图集库停用: %1").arg(libErr);
     }
     // ★ **全局只有一个 VM** = `app::UiModel`（QML 里的 `ui`）——viewer（`ui.viewer.*`）由它持有。
-    //   三屏枚举只在它这里定义一次。
-    //   ⚠️ 实测（见报告）：QML **读不到"实例上的枚举"** —— `ui.Library` 是 `undefined`
+    //   两屏枚举只在它这里定义一次。
+    //   ⚠️ 实测（见报告）：QML **读不到"实例上的枚举"** —— `ui.Browse` 是 `undefined`
     //      （`ui.screen` 本身读得到，是 number）。QML 只认**已注册类型名**上的枚举
     //      ⇒ 注册一个**不可创建**的 `UiModel`（只为枚举名；实例仍走上下文属性 `ui`）。
-    qmlRegisterUncreatableType<app::UiModel>("ImageBrowser", 1, 0, "UiModel",
+    qmlRegisterUncreatableType<app::UiModel>("AppUi", 1, 0, "UiModel",
                                              QStringLiteral("仅用于枚举；实例经上下文属性 ui 暴露"));
     auto *ui = new app::UiModel(store, &app);
     engine.rootContext()->setContextProperty(QStringLiteral("ui"), ui);
@@ -285,10 +290,14 @@ int main(int argc, char *argv[])
     QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
                      ui, [ui]() { emit ui->systemDarkChanged(); });
 
-    // 命令行 `-d <目录>` = **直接打开**（会话来源，不建库记录），语义照旧：
-    //   文件浏览屏起步；三屏的后续导航全在 `ui` 上
-    if (parser.isSet(dirOpt))
-        ui->openPath(dir);
+    // 命令行 `-d <路径>` = **直接打开**（会话来源，不建库记录）：**直达 Viewer**（设计 18 §4）；
+    //   `--index N` 定位到第 N 条（不给 = 第 0 条）。之后的导航全在 `ui` 上。
+    //   ★ 2026-10-25：界面入口"文件夹 / 压缩包留在浏览屏"，**CLI 不同**（一律进 Viewer）
+    //     ⇒ 这里多补一步 `continueReading()`（它只进查看屏、不改游标）。
+    if (parser.isSet(dirOpt)) {
+        ui->openPath(dir, parser.value(idxOpt).toInt());
+        ui->continueReading();
+    }
 
     // ── 开发期专用 CLI（**只为验收截图**；命名照现有 `--probe-*` / `--bench-*` 风格）──
     //   `--dev-add-collection <dir>`   往（临时）库里加一个集合 → 自动开扫 → 等扫完
@@ -312,19 +321,21 @@ int main(int argc, char *argv[])
     devcli::runDevCommands(dev, ui, store);
 
     // ── `--debug-settings`（开发期）：**在 QML 加载前**把值注入上下文属性 ──────────
-    //   三屏各自的 `debugOpenSettings` / `debugSettingsTab` 由 `Main.qml` 从这里喂
+    //   两屏各自的 `debugOpenSettings` / `debugSettingsTab` 由 `Main.qml` 从这里喂
     //   （每屏只在自己的 `Component.onCompleted` 开自己的对话框 —— 时机就在加载期）。
     //   ★ 默认 false / 0 ⇒ 正常运行时**零行为变化**。
     engine.rootContext()->setContextProperty(QStringLiteral("devOpenSettings"),
                                              parser.isSet(debugSettingsOpt));
     engine.rootContext()->setContextProperty(QStringLiteral("devSettingsTab"),
                                              parser.value(debugSettingsTabOpt).toInt());
+    engine.rootContext()->setContextProperty(QStringLiteral("devLibraryOpen"),
+                                             parser.isSet(debugLibraryOpenOpt));
     //   ★ `--show-interval-popup`（截图自检用）：同样默认 false ⇒ 正常运行时零行为变化；
     //     由阅读屏自己在可见时把"切换速度"菜单打开（旧实现调的是已删除的旧 QML 方法）。
     engine.rootContext()->setContextProperty(QStringLiteral("devShowIntervalPopup"),
                                              parser.isSet(popupOpt));
 
-    engine.load(QUrl(QStringLiteral("qrc:/ImageBrowser/src/ui/Main.qml")));
+    engine.load(QUrl(QStringLiteral("qrc:/qt/qml/AppUi/src/ui/Main.qml")));
     if (engine.rootObjects().isEmpty()) {
         qWarning() << "QML 加载失败";
         return 1;

@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 标准分段控件（segmented control）═══════════════════════════
 //   样式来源：DSH `dsh-client-ui-primitives/lib/SegmentedControl.module.css`

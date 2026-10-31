@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Window
-import ImageBrowser
+import AppUi
 
 // ══ 全屏（沉浸）视图 ══════════════════════════════════════════
 //   设计 §3.1：**图片用整个窗口**，所有控件是**覆盖其上的浮层**；
@@ -18,10 +18,19 @@ Item {
     property bool   debugForceUi: false     // 调试：强制显示浮层（离屏没有鼠标热区）
     property bool   debugOpenSettings: false   // 调试：截图时自动打开设置
     property int    debugSettingsTab: 0        // 调试：设置弹框开在哪一页（0常规/1图像/2系统/3快捷键）
-    signal libraryRequested()   // home → 图集库
-    signal backRequested()      // 返回 → 浏览
+    // ★ 2026-10-25（两屏化）：环路 = Viewer --「浏览」--> Browse --「继续阅读」--> Viewer
+    signal browseRequested()    // 浏览 → 文件浏览屏
+    signal libraryRequested()   // 图集库（**开左侧抽屉**，不是回屏）
+    signal favoriteToggled()    // 收藏（段 3 接规则）
     signal settingsRequested()  // 设置
     onSettingsRequested: settingsDialog.open()   // [设置] 按钮 → 打开设置对话框
+
+    // 「浏览」的 tooltip：按**来源类型**说人话（设计 18 §5）
+    //   `ui.sourceKind` 的词表 = 浏览行的 kind（`folder` / `archive` / `image`）
+    readonly property string browseTooltip: ui.sourceKind === "folder" ? "浏览这个文件夹"
+                                         : ui.sourceKind === "archive" ? "浏览这个压缩包"
+                                         : ui.sourceKind === "image" ? "浏览所在文件夹"
+                                         : "浏览"
 
     // 本屏是不是**双幅**（两个位置 → 并排两张图）；`keyCount` = 本屏位置数（1 或 2）。
     //   ★ 坏的位置**留空位**：`keyCount` 仍是 2（两格都占着），那一格只是没图。
@@ -60,7 +69,7 @@ Item {
         root.openIntervalPopupIfAsked()      // 开发自检：`--show-interval-popup`
     }
 
-    // ── 设置对话框（三屏同一实现；当前阶段单纯 UI）──
+    // ── 设置对话框（两屏同一实现；当前阶段单纯 UI）──
     SettingsDialog {
         id: settingsDialog
     }
@@ -91,7 +100,7 @@ Item {
         Component.onCompleted: root.pushViewport()
 
         // ── 空库屏守卫（2026-10-14）───────────────────────────────────────────
-        //   `ui.viewer` 为空时（图集库屏 / 还没打开任何来源）**不建** GpuScalerItem：
+        //   `ui.viewer` 为空时（"没有来源" / 还没打开任何来源）**不建** GpuScalerItem：
         //   否则 `sourceImage: ui.viewer ? … : null` 会把 JS `null` 塞给 QImage 属性
         //   ⇒ 日志两条 `Unable to assign null to QImage`（实测）。
         //   ★ 只改"建不建"：`GpuScalerItem` / shader / 缩放路径**一字未动**。
@@ -281,8 +290,10 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         overlaysVisible: root.showUi
+        browseTooltip: root.browseTooltip
+        onBrowseRequested: root.browseRequested()
         onLibraryRequested: root.libraryRequested()
-        onBackRequested: root.backRequested()
+        onFavoriteToggled: root.favoriteToggled()
         onSettingsRequested: root.settingsRequested()
         progressText: ui.viewer ? ((ui.viewer.currentPage + 1) + " / " + ui.viewer.totalPages) : ""
         fileName: ui.viewer ? ui.viewer.currentName : ""
@@ -365,10 +376,11 @@ Item {
     //       · 到头（不循环）⇒ 名字空 ⇒ 快捷键也不动；
     //       · **文件夹内循环** ⇒ 两个名字一律空 ⇒ 快捷键同样不许切文件夹；
     //       · 这里**不要求** `overlaysVisible` —— 那是控件条的显隐，不是"能不能切"。
-    focus: true
+    //   ★ 「浏览」的说明见设计 18 §5：`Backspace` 与顶栏那个 folder-open 按钮同效
+    focus: ui.screen === UiModel.Viewer && !ui.libraryOpen
     Keys.onPressed: function (event) {
         switch (event.key) {
-        case Qt.Key_Backspace:   root.backRequested();       event.accepted = true; break
+        case Qt.Key_Backspace:   root.browseRequested();     event.accepted = true; break
         //   ★ `Esc` = **退出全屏**（播放中也一样）；暂停**只由 `Space`** 负责
         //     （返回键已改为 `Backspace`；全屏切换的最终口径未定，这里先用 `Esc` 临时承担）
         case Qt.Key_Escape:      ui.windowFullscreen = false

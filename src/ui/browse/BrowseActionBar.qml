@@ -1,10 +1,14 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 浏览界面 · 动作条（bar 1）═════════════════════════════════
-//   左 [← 图集库] [图集名称（范围指示）]      右 [★ 收藏] [主题] [⚙ 设置]
-//   （用户明确：返回图集库在最左，标题在其右侧；上一级/视图切换不在这一条）
-//   与图集库动作条同一套规则：高 `barH`、满宽 + `spaceLg` padding、**自持 1px 下边框**
+//   左 [folder-star 图集库] [打开 ▾] [范围指示] [继续阅读]   右 [★ 收藏] [主题] [⚙ 设置]
+//   ★ 2026-10-25（两屏化，设计 18 §3）：
+//     · 「返回图集库」**不再是返回** —— 图集库是抽屉 ⇒ 按钮换成 folder-star、tooltip「图集库」；
+//     · 新增「打开 ▾」：文件夹 / 压缩包 / 图片 / ── / **收藏夹**（开抽屉）；
+//       前三个 = 会话来源，**直达 Viewer**（等价 CLI `-d`）；
+//     · 扫描状态（`扫描中 · 已发现 N` / 取消）在「打开 ▾」右侧 —— 段 3 接，本段先留位置。
+//   与图集库同一套 bar 规则：高 `barH`、满宽 + `spaceLg` padding、**自持 1px 下边框**
 Item {
     id: root
 
@@ -12,24 +16,46 @@ Item {
     property string rangeLabel: ""       // 范围指示：图集《…》 / 未收藏 · 本次不记进度
 
     signal libraryRequested()
+    signal folderRequested()
+    signal archiveRequested()
+    signal imageRequested()
     signal favoriteToggled()
     signal settingsRequested()
     signal continueRequested()      // 从原进度继续阅读（不改进度）
 
     implicitHeight: Theme.barH
 
-    // ── 左：返回图集库 + 图集名称 ──
+    // ── 左：图集库（抽屉）+ 打开 + 范围 + 继续阅读 ──
     Row {
         anchors.left: parent.left
         anchors.leftMargin: Theme.spaceLg
         anchors.verticalCenter: parent.verticalCenter
         spacing: Theme.spaceMd
 
-        IconAction {   // 返回（回图集库）
+        IconAction {   // 图集库（**开抽屉**，不是回屏）
             anchors.verticalCenter: parent.verticalCenter
-            glyph: Theme.icBack
-            tooltip: "返回"
+            glyph: Theme.icFolderStar
+            tooltip: "图集库"
             onTriggered: root.libraryRequested()
+        }
+        // 「打开 ▾」：菜单由按钮自己持有（DropdownButton），父级不回填开合状态
+        DropdownButton {
+            anchors.verticalCenter: parent.verticalCenter
+            glyph: Theme.icFolder
+            label: "打开"
+            menuItems: [
+                { icon: Theme.icFolder,     text: "文件夹" },
+                { icon: Theme.icZip,        text: "压缩包" },
+                { icon: Theme.icImage,      text: "图片" },
+                { sep: true },
+                { icon: Theme.icFolderStar, text: "收藏夹" }
+            ]
+            onItemTriggered: function (index) {
+                if (index === 0)      root.folderRequested()
+                else if (index === 1) root.archiveRequested()
+                else if (index === 2) root.imageRequested()
+                else if (index === 4) root.libraryRequested()
+            }
         }
         Text {
             anchors.verticalCenter: parent.verticalCenter
@@ -47,7 +73,7 @@ Item {
         }
     }
 
-    // ── 右：收藏 + 设置 ──
+    // ── 右：收藏 + 主题 + 设置 ──
     Row {
         anchors.right: parent.right
         anchors.rightMargin: Theme.spaceLg
@@ -61,7 +87,7 @@ Item {
             tooltip: root.favorited ? "取消收藏" : "收藏"
             onTriggered: root.favoriteToggled()
         }
-        // 主题（三态循环：跟随系统 → 浅色 → 深色）—— 与图集库动作条**同一实现**
+        // 主题（三态循环：跟随系统 → 浅色 → 深色）
         IconAction {
             anchors.verticalCenter: parent.verticalCenter
             glyph: ui.themeMode === 2 ? Theme.icThemeDark
@@ -72,7 +98,7 @@ Item {
                    : "跟随系统"
             onTriggered: ui.cycleThemeMode()
         }
-        // 设置（与图集库动作条**功能完全相同**）
+        // 设置（与阅读屏**功能完全相同**）
         IconAction {
             anchors.verticalCenter: parent.verticalCenter
             glyph: Theme.icSettings
@@ -81,7 +107,7 @@ Item {
         }
     }
 
-    // ── 下边框（bar 自持，与图集库同规则）──
+    // ── 下边框（bar 自持）──
     Rectangle {
         anchors.left: parent.left
         anchors.right: parent.right

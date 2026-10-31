@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 缩略图卡片（网格视图）═════════════════════════════════════
 //   ┌──────────┐

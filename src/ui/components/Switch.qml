@@ -1,5 +1,5 @@
 import QtQuick
-import ImageBrowser
+import AppUi
 
 // ══ 标准开关（Switch）══════════════════════════════════════════
 //   样式来源：DSH `dsh-client-ui-primitives/lib/Switch.module.css`

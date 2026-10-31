@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
-import ImageBrowser
+import AppUi
 
 // ══ 设置项行结构（**只定义一次**）══════════════════════════
 //   样式来源：DSH 真实设置弹框 `dsh-client-ui-settings-general/lib/client.js`
