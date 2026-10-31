@@ -16,7 +16,7 @@ namespace app {
 QString AppSettings::filePath() const
 {
     // 自检/测试可用环境变量指到临时文件，避免碰用户的真配置
-    //   （与 `PHOTOSET_LIBRARY_DB` 同一约定，见 librarystore.cpp）
+    //   （与测试里其他临时文件同一约定）
     const QByteArray override = qgetenv("PHOTOSET_SETTINGS_FILE");
     if (!override.isEmpty())
         return QString::fromLocal8Bit(override);

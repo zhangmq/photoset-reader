@@ -17,6 +17,8 @@ import AppUi
 //     （**纯图标**，目标名字在 tooltip；**长按对称** —— 用户 2026-10-12）
 //   · 右：[画面缩放▾] [阅读版面▾] [锁定缩放] [切换速度▾] [循环▾] [全屏窗口] [OSD]
 //   · 进度（序号/总数）在**顶栏**，不在本栏；OSD 面板不随本栏显隐（用户 2026-10-11）
+//   ★ 2026-10-31（用户）：**依赖文件上下文的控件在没有来源时禁用**；不依赖文件的照常可用
+//     （它们改的是全局默认，打开文件后生效）—— 见 `hasSource`。
 Item {
     id: root
 
@@ -54,6 +56,10 @@ Item {
     property string prevFolderName: ""
     property string nextFolderName: ""
     property bool   overlaysVisible: true
+    //   ★ 2026-10-31（没有来源时）：**依赖文件上下文的控件禁用**（上/下一张、播放、上/下一文件夹、
+    //     时间轴、锁定缩放、OSD）；**不依赖文件的**（画面缩放 / 版面 / 算法 / 切换速度 / 循环 /
+    //     全屏窗口）照常可用 —— 它们改的是**全局默认**，打开文件后自动生效。
+    property bool   hasSource: true
 
     signal prevRequested()
     signal playToggled()
@@ -93,6 +99,7 @@ Item {
         total: root.count
         index: root.index
         overlaysVisible: root.overlaysVisible
+        enabled: root.hasSource
         onSeeked: function (i) { root.seeked(i) }
     }
 
@@ -129,7 +136,7 @@ Item {
                 glyph: Theme.icFolderPrev
                 tooltip: root.prevFolderName !== "" ? "上一个文件夹：" + root.prevFolderName
                                                     : "上一个文件夹"
-                enabled: root.overlaysVisible && root.prevFolderName !== ""
+                enabled: root.overlaysVisible && root.hasSource && root.prevFolderName !== ""
                 onTriggered: root.prevFolderRequested()
             }
             NavBtn {
@@ -137,7 +144,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 glyph: Theme.icPrev
                 tooltip: "上一张（←）；长按 = 连续后退"
-                enabled: root.overlaysVisible
+                enabled: root.overlaysVisible && root.hasSource
                 onTriggered: root.prevRequested()          // 单击 = 一张
                 onPressedChanged: {                        // ★ 长按**对称**：连续后退（用户 2026-10-12）
                     if (pressed) {
@@ -153,7 +160,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 glyph: root.playing ? Theme.icPause : Theme.icPlay
                 tooltip: root.playing ? "暂停幻灯片（Space）" : "播放幻灯片（Space）"
-                enabled: root.overlaysVisible
+                enabled: root.overlaysVisible && root.hasSource
                 onTriggered: root.playToggled()
             }
             NavBtn {
@@ -161,7 +168,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 glyph: Theme.icNext
                 tooltip: "下一张（→）；长按 = 连续快进"
-                enabled: root.overlaysVisible
+                enabled: root.overlaysVisible && root.hasSource
                 onTriggered: root.nextRequested()          // 单击 = 一张
                 onPressedChanged: {                        // 长按 = 连续快进（设计 §3.5）
                     if (pressed) {
@@ -198,7 +205,7 @@ Item {
                 glyph: Theme.icFolderNext
                 tooltip: root.nextFolderName !== "" ? "下一个文件夹：" + root.nextFolderName
                                                     : "下一个文件夹"
-                enabled: root.overlaysVisible && root.nextFolderName !== ""
+                enabled: root.overlaysVisible && root.hasSource && root.nextFolderName !== ""
                 onTriggered: root.nextFolderRequested()
             }
         }
@@ -280,7 +287,7 @@ Item {
                 glyph: root.zoomLocked ? Theme.icLock : Theme.icLockOpen
                 tooltip: root.zoomLocked ? "已锁定缩放（跨画面保留）" : "锁定缩放"
                 highlighted: root.zoomLocked
-                enabled: root.overlaysVisible
+                enabled: root.overlaysVisible && root.hasSource
                 onTriggered: root.zoomLockToggled()
             }
 
@@ -343,7 +350,7 @@ Item {
                 glyph: Theme.icInfo
                 tooltip: root.osdVisible ? "隐藏 OSD 信息" : "显示 OSD 信息"
                 highlighted: root.osdVisible
-                enabled: root.overlaysVisible
+                enabled: root.overlaysVisible && root.hasSource
                 onTriggered: root.osdToggled()
             }
         }

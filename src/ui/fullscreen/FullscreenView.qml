@@ -18,19 +18,10 @@ Item {
     property bool   debugForceUi: false     // 调试：强制显示浮层（离屏没有鼠标热区）
     property bool   debugOpenSettings: false   // 调试：截图时自动打开设置
     property int    debugSettingsTab: 0        // 调试：设置弹框开在哪一页（0常规/1图像/2系统/3快捷键）
-    // ★ 2026-10-25（两屏化）：环路 = Viewer --「浏览」--> Browse --「继续阅读」--> Viewer
-    signal browseRequested()    // 浏览 → 文件浏览屏
-    signal libraryRequested()   // 图集库（**开左侧抽屉**，不是回屏）
-    signal favoriteToggled()    // 收藏（段 3 接规则）
+    // ★ 2026-10-31（只剩查看界面）：没有「浏览」屏、没有图集库抽屉
+    signal favoriteToggled()    // 收藏（段 2 接「保存阅读进度」）
     signal settingsRequested()  // 设置
     onSettingsRequested: settingsDialog.open()   // [设置] 按钮 → 打开设置对话框
-
-    // 「浏览」的 tooltip：按**来源类型**说人话（设计 18 §5）
-    //   `ui.sourceKind` 的词表 = 浏览行的 kind（`folder` / `archive` / `image`）
-    readonly property string browseTooltip: ui.sourceKind === "folder" ? "浏览这个文件夹"
-                                         : ui.sourceKind === "archive" ? "浏览这个压缩包"
-                                         : ui.sourceKind === "image" ? "浏览所在文件夹"
-                                         : "浏览"
 
     // 本屏是不是**双幅**（两个位置 → 并排两张图）；`keyCount` = 本屏位置数（1 或 2）。
     //   ★ 坏的位置**留空位**：`keyCount` 仍是 2（两格都占着），那一格只是没图。
@@ -290,9 +281,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         overlaysVisible: root.showUi
-        browseTooltip: root.browseTooltip
-        onBrowseRequested: root.browseRequested()
-        onLibraryRequested: root.libraryRequested()
+        hasSource: ui.viewer !== null          // ★ 依赖当前来源 ⇒ 没有来源时禁用
         onFavoriteToggled: root.favoriteToggled()
         onSettingsRequested: root.settingsRequested()
         progressText: ui.viewer ? ((ui.viewer.currentPage + 1) + " / " + ui.viewer.totalPages) : ""
@@ -301,18 +290,23 @@ Item {
     }
 
     // ── 底部类播放器控制条 ──
+    //   ★ 2026-10-31（用户）：**没有来源时，不依赖文件的控件照样可用** —— 它们改的是**全局默认**
+    //     （画面缩放 / 阅读版面 / 循环 / 切换速度 / 缩放算法），下一次打开来源时由
+    //     `applyViewerDefaults()` 生效；依赖文件上下文的（上/下一张、播放、上/下一文件夹、时间轴、
+    //     锁定缩放、OSD）由 `hasSource` 禁用。
     FullscreenBottomBar {
         id: bottomBar
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
+        hasSource: ui.viewer !== null
         index: ui.viewer ? ui.viewer.cursor : 0
         count: ui.viewer ? ui.viewer.count : 0
-        fitMode: ui.viewer ? ui.viewer.fitMode : 1
-        doublePage: ui.viewer ? ui.viewer.doublePage : false
-        loopMode: ui.viewer ? ui.viewer.loopMode : 0
+        fitMode: ui.viewer ? ui.viewer.fitMode : ui.fitMode
+        doublePage: ui.viewer ? ui.viewer.doublePage : ui.defaultLayout === 1
+        loopMode: ui.viewer ? ui.viewer.loopMode : ui.defaultLoop
         playing: ui.viewer ? ui.viewer.playing : false
-        intervalMs: ui.viewer ? ui.viewer.intervalMs : 300
+        intervalMs: ui.viewer ? ui.viewer.intervalMs : ui.slideshowIntervalMs
         prevFolderName: ui.viewer ? ui.viewer.prevFolderName : ""
         nextFolderName: ui.viewer ? ui.viewer.nextFolderName : ""
         zoomLocked: ui.viewer ? ui.viewer.zoomLocked : false
@@ -321,14 +315,33 @@ Item {
         overlaysVisible: root.showUi
         onPrevRequested: { if (ui.viewer) ui.viewer.stepPage(-1) }
         onNextRequested: { if (ui.viewer) ui.viewer.stepPage(1) }
-        scaleAlgorithm: ui.viewer ? ui.viewer.scaleAlgorithm : "lanczos3"
-        onFitModeSelected: function (m) { if (ui.viewer) ui.viewer.fitMode = m }
-        onAlgorithmSelected: function (key) { if (ui.viewer) ui.viewer.scaleAlgorithm = key }
-        onDoublePageSelected: function (on) { if (ui.viewer) ui.viewer.doublePage = on }
-        onLoopModeSelected: function (m) { if (ui.viewer) ui.viewer.loopMode = m }
+        scaleAlgorithm: ui.viewer ? ui.viewer.scaleAlgorithm : ui.scaleAlgorithm
+        //   ★ 没有 viewer 时改**全局默认**（打开下一个来源时生效）；有 viewer 时只改当前阅读态
+        onFitModeSelected: function (m) {
+            if (ui.viewer) ui.viewer.fitMode = m
+            else ui.fitMode = m
+        }
+        onAlgorithmSelected: function (key) {
+            if (ui.viewer) ui.viewer.scaleAlgorithm = key
+            else ui.scaleAlgorithm = key
+        }
+        onDoublePageSelected: function (on) {
+            if (ui.viewer) ui.viewer.doublePage = on
+            else ui.defaultLayout = on ? 1 : 0
+        }
+        onLoopModeSelected: function (m) {
+            if (ui.viewer) ui.viewer.loopMode = m
+            else ui.defaultLoop = m
+        }
         onPlayToggled: { if (ui.viewer) ui.viewer.togglePlaying() }
-        onIntervalSelected: function (ms) { if (ui.viewer) ui.viewer.intervalMs = ms }
-        onIntervalStep: function (d) { if (ui.viewer) ui.viewer.intervalMs = ui.viewer.intervalMs + d }
+        onIntervalSelected: function (ms) {
+            if (ui.viewer) ui.viewer.intervalMs = ms
+            else ui.slideshowIntervalMs = ms
+        }
+        onIntervalStep: function (d) {
+            if (ui.viewer) ui.viewer.intervalMs = ui.viewer.intervalMs + d
+            else ui.slideshowIntervalMs = ui.slideshowIntervalMs + d
+        }
         onPrevFolderRequested: { if (ui.viewer) ui.viewer.stepFolder(-1) }
         onNextFolderRequested: { if (ui.viewer) ui.viewer.stepFolder(1) }
         onZoomLockToggled: { if (ui.viewer) ui.viewer.zoomLocked = !ui.viewer.zoomLocked }
@@ -376,11 +389,10 @@ Item {
     //       · 到头（不循环）⇒ 名字空 ⇒ 快捷键也不动；
     //       · **文件夹内循环** ⇒ 两个名字一律空 ⇒ 快捷键同样不许切文件夹；
     //       · 这里**不要求** `overlaysVisible` —— 那是控件条的显隐，不是"能不能切"。
-    //   ★ 「浏览」的说明见设计 18 §5：`Backspace` 与顶栏那个 folder-open 按钮同效
-    focus: ui.screen === UiModel.Viewer && !ui.libraryOpen
+    //   ★ 2026-10-31：只剩这一个界面 ⇒ 焦点恒在本视图（没有别的屏可切）
+    focus: true
     Keys.onPressed: function (event) {
         switch (event.key) {
-        case Qt.Key_Backspace:   root.browseRequested();     event.accepted = true; break
         //   ★ `Esc` = **退出全屏**（播放中也一样）；暂停**只由 `Space`** 负责
         //     （返回键已改为 `Backspace`；全屏切换的最终口径未定，这里先用 `Esc` 临时承担）
         case Qt.Key_Escape:      ui.windowFullscreen = false

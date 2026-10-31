@@ -165,7 +165,7 @@ void Sequence::joinWorker()
 //   · 置停止标志（复用既有 cancel 语义）+ 置"已放弃"；
 //   · **detach 生产者线程**（不 join）；
 //   · ⚠️ 此后本对象**只能泄漏** —— detached 线程还拿着 `this`，销毁就是 UAF。
-//     调用方（`LibraryCore::reapSlot`）负责 `release()`，**不释放**它。
+//     调用方负责 `release()`（有界收尾时故意泄漏），**不释放**它。
 void Sequence::abandon()
 {
     m_cancel.store(true, std::memory_order_relaxed);

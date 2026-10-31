@@ -210,17 +210,11 @@ QtObject {
     readonly property int fontSm: Qt.application.font.pointSize - 1
 
     // 布局宽度
-    readonly property int cardMaxW:     980    // 卡片最大宽度
 
     // 组件尺寸
-    readonly property int coverSize:   64      // 卡片封面（正方形）
-    readonly property int thumbCellW: 168      // 缩略图格子宽
-    readonly property int thumbCellH: 190      // 缩略图格子高
     // 横向操作区统一高度（动作条 / 列表标题行）—— 试验中：若决定不统一，再拆回两个 token
     readonly property int barH:        48
     readonly property int menuMinW:   144      // 菜单最小宽度
-    // 图集库抽屉宽（**左侧 overlay，不参与 Layout**；设计 18 §2「宽约 360」）
-    readonly property int drawerW:    360
     readonly property int dialogW:    380      // 对话框宽度 ← DSH Modal.module.css .dialog{width:min(380px,100%)}
     readonly property int progressH:    4      // 进度条高度
     readonly property int badgePadH:   Theme.spaceMd   // 徽标左右内边距（合计）← DSH rowTag: padding 1px 6px
@@ -229,20 +223,10 @@ QtObject {
     readonly property int siblingPanelW: 240   // 面包屑「同层容器」浮层宽度
     readonly property int siblingPanelMaxH: 280 // 它的最大高度（超出内部滚动）
     readonly property int borderW:      1      // 描边宽
-    readonly property int borderSelW:   2      // 选中态描边宽（卡片；**不是**焦点环）
     readonly property int cardPadH:    Theme.spaceMd   // 卡片左右内边距
     readonly property int cardPadV:    Theme.spaceMd   // 卡片上下内边距
     readonly property int filterW:    240      // 过滤框宽度
-    readonly property int thumbSm:     28      // 列表行缩略图
     // 列表视图（表格）列几何 —— **唯一定义处**，表头与行都读这里（§1.2 算法单一事实源）
-    readonly property int colListPad:   Theme.spaceMd   // 列表左右外边距
-    readonly property int colRowPadL:   Theme.spaceSm   // 行内左边距
-    readonly property int colRowPadR:   Theme.spaceMd   // 行内右边距
-    readonly property int colNameOffset: colRowPadL + Theme.thumbSm + Theme.spaceSm   // 名称列（行内偏移）
-    readonly property int colSizeW:     90      // 「文件大小」列宽
-    readonly property int colResW:     110      // 「分辨率」列宽
-    readonly property int colGap:       Theme.spaceLg   // 两个数值列之间
-    readonly property int markSm:      18      // 小角标
     // 全屏浮层（照抄 vsr-player 的 OSD 几何）
     readonly property int osdHotZoneH: 40      // 顶/底浮层热区高
     readonly property int osdTrackH:   14      // 时间轴行高
@@ -270,10 +254,6 @@ QtObject {
     readonly property int crumbItemH:  24      // 面包屑段高
     readonly property int crumbMaxW:  360      // 面包屑段最大宽度（超出中间省略 + tooltip 全名）
     readonly property int crumbRootMaxW: 240   // 锁死的**根**段上限（它是整条路径，通常最长，单独压一档）
-    readonly property int titleGap:     3      // 卡片标题行内间距
-    readonly property int badgeGap:     6      // 标题与徽标间距
-    readonly property int emptyGap:    10      // 空状态间距
-    readonly property int rowGap:       4      // 列表行间距
 
     // 弱化透明度（缺失 / 不可用态）← DSH: .item:disabled / .button:disabled { opacity: 0.4 }
     readonly property real dimOpacity: 0.4
@@ -285,29 +265,12 @@ QtObject {
     // ── 图标码点（MDI；字体族取 context property `iconFont`）──
     // ★ 必须 String.fromCodePoint：MDI 码点在 U+F0000 以上（5 位），JS 的 \uXXXX 只吃 4 位
     readonly property string icFolder:  String.fromCodePoint(0xF0770)   // folder-open
-    //   ★ 2026-10-25（两屏 + 抽屉）：两个新语义令牌（码位查 `docs/icon-cheatsheet.html`）
-    readonly property string icFolderOpen: String.fromCodePoint(0xF0770) // folder-open（Viewer「浏览」）
-    readonly property string icFolderStar: String.fromCodePoint(0xF069D) // folder-star（图集库抽屉）
-    readonly property string icRefresh:  String.fromCodePoint(0xF0450)   // refresh（抽屉「刷新」）
-    readonly property string icZip:     String.fromCodePoint(0xF05C4)
-    readonly property string icImage:   String.fromCodePoint(0xF0222)
-    readonly property string icGrid:    String.fromCodePoint(0xF0570)
-    readonly property string icCollections: String.fromCodePoint(0xF0254)  // folder-multiple-image（空态：还没有图集）
-    readonly property string icAlbum:   String.fromCodePoint(0xF02EA)   // image-album（卡片封面占位 / 缺失）
-    readonly property string icAlert:   String.fromCodePoint(0xF0026)
-    readonly property string icTrash:   String.fromCodePoint(0xF0A7A)
-    readonly property string icScan:    String.fromCodePoint(0xF0969)   // folder-search-outline（扫描 / 重新扫描图集）
     readonly property string icSearch:  String.fromCodePoint(0xF0349)   // magnify
     readonly property string icClear:   String.fromCodePoint(0xF0159)   // close-circle
     // 主题三态图标（**定死，不再变**）
-    readonly property string icThemeSystem: String.fromCodePoint(0xF0379)   // monitor（跟随系统）
-    readonly property string icThemeLight:  String.fromCodePoint(0xF0599)   // weather-sunny
-    readonly property string icThemeDark:   String.fromCodePoint(0xF0F67)   // moon-waxing-crescent
     // 设置（候选见 docs/design/06-设置图标候选.md）
     readonly property string icSettings:    String.fromCodePoint(0xF08BB)   // cog-outline
     // 导航 / 全屏（**全部查表得来，不内联猜**）
-    readonly property string icUp:        String.fromCodePoint(0xF005D)   // arrow-up
-    readonly property string icList:      String.fromCodePoint(0xF0572)   // view-list
     readonly property string icFirst:     String.fromCodePoint(0xF0600)   // page-first
     readonly property string icLast:      String.fromCodePoint(0xF0601)   // page-last
     readonly property string icPrevVol:   String.fromCodePoint(0xF013D)   // chevron-double-left

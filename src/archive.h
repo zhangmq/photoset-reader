@@ -47,7 +47,7 @@ public:
     //   "枚举期间也在推进"）：容器**枚举**（我们自己的逐条循环）**每 `kProgressEvery` 条**
     //   调一次。返回值：`true` = 继续；`false` = **立刻停止枚举**（取消 / 已放弃）。
     //   ⚠️ 只在"我们自己的循环里"调 —— **阻塞在单次 I/O 里时不会调**；
-    //      那种真卡住只能靠消费侧看门狗 `Sequence::abandon()`（见 `LibraryCore::reapSlot`）。
+    //      那种真卡住只能靠调用侧的看门狗 `Sequence::abandon()`（有界收尾 + 故意泄漏）。
     static constexpr int kProgressEvery = 32;    // ★ 唯一来源：两个后端的枚举循环共用
     using ProgressFn = std::function<bool()>;
 

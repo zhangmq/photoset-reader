@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml Sql Widgets ShaderTools)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml Widgets ShaderTools)
 # QRhi / QShader（rhi/*.h 在 Qt 的私有包含路径下；QQuickRhiItem 文档也是这么要求的）
 find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
 # 7z 头解析要用 liblzma（判 solid 用；不参与解码路径）
@@ -41,18 +41,8 @@ find_path(UNRAR_INCLUDE_DIR NAMES unrar/dll.hpp REQUIRED)
 # ══ ibcore：应用与测试**共用同一份实现**（设计 14 §11）════════════════════════
 #   除 `src/main.cpp` 外的全部源都在这里；`image-browser` 与各 `ib-test-*` 都链它。
 add_library(ibcore STATIC
-    src/imageprovider.cpp
-    src/imageprovider.h
     src/sevenzcheck.cpp
     src/sevenzcheck.h
-    src/thumburl.cpp
-    src/thumburl.h
-    src/browsemodel.cpp
-    src/browsemodel.h
-    # ── ★★ T2d-1b：`ui.browse`（浏览界面模型，**从 viewer 里搬出来**）──
-    #     行 / 面包屑 / 能否上一级 / 范围标签 / 高亮 + 浏览动作；只吃数据包，不认引擎。
-    src/browsemodelview.cpp
-    src/browsemodelview.h
     src/viewermodel.cpp
     src/viewermodel.h
     # ── 应用唯一的全局 VM（`ui`）：三屏状态 / 设置 / UI 形态 / 适配与手势态 ──
@@ -86,23 +76,8 @@ add_library(ibcore STATIC
     # ── 元数据（EXIF / 色彩空间）：纯函数，把"头字节"变成 OSD 的行 ──
     src/exifmeta.cpp
     src/exifmeta.h
-    # ── 浏览的一层（`fetch::BrowseLayer` / `browseLayerOf`）：浏览界面直接从序列取 ──
-    src/seqwindow.cpp
-    src/seqwindow.h
     src/appsettings.cpp
     src/appsettings.h
-    src/librarystore.cpp
-    src/librarymodel.cpp
-    src/volumeinfo.cpp
-    # ── T2c-1/T2c-2b（设计 14 §9.3/§9.6）：图库/序列抽象 + 重置队列 ——
-    #     图集动作**全部经 `LibraryCore`**（旧 `ScanController` / `libraryprobe` 已删）──
-    src/librarycore.cpp
-    src/resetqueue.cpp
-    src/librarystore.h
-    src/librarymodel.h
-    src/volumeinfo.h
-    src/librarycore.h
-    src/resetqueue.h
 )
 
 # ── GPU 缩放的 shader：**qsb 烘焙**（生产代码里不塞裸 GLSL 字符串）──────
@@ -126,7 +101,7 @@ qt_add_shaders(ibcore "gpuscale_shaders"
 )
 
 target_link_libraries(ibcore PUBLIC
-    Qt6::Core Qt6::Gui Qt6::Quick Qt6::Qml Qt6::Sql Qt6::Widgets
+    Qt6::Core Qt6::Gui Qt6::Quick Qt6::Qml Qt6::Widgets
     Qt6::GuiPrivate
     ${LIBARCHIVE_LIBRARIES}
     ${LIBEXIF_LIBRARIES}
@@ -239,22 +214,13 @@ function(ib_add_qml_resources target)
         src/ui/components/SettingsImagePage.qml
         src/ui/components/SettingsSystemPage.qml
         src/ui/components/SettingsShortcutsPage.qml
-        src/ui/library/LibraryDrawer.qml
-        src/ui/library/CollectionCard.qml
         src/ui/debug/IconPicker.qml
-        src/ui/browse/BrowseView.qml
-        src/ui/browse/BrowseActionBar.qml
-        src/ui/browse/BrowsePathBar.qml
-        src/ui/browse/ThumbCard.qml
-        src/ui/browse/FileRow.qml
-        src/ui/browse/FileListHeader.qml
         src/ui/fullscreen/FullscreenView.qml
         src/ui/fullscreen/FullscreenTopBar.qml
         src/ui/fullscreen/FullscreenBottomBar.qml
         src/ui/fullscreen/FullscreenTimeline.qml
         src/ui/fullscreen/FullscreenOsd.qml
         src/ui/fullscreen/NavBtn.qml
-        src/ui/library/EmptyState.qml
     )
     #   ⚠️ QML 源一律按**绝对路径**进 `QML_FILES`（本函数可能在 `tests/` 里被调用）；
     #      绝对路径**必须**配 `QT_RESOURCE_ALIAS`（相对源码根），否则 Qt 直接 FATAL_ERROR，

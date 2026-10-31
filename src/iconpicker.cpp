@@ -17,8 +17,8 @@
 //   ★ 候选图标表（QML 字符串）与应用 CLI 里的**一字不差**（只搬不改），
 //     QML 页仍是 `src/ui/debug/IconPicker.qml`（模块 `AppUi`）。
 //   ★ `Theme.qml` 要看 `ui.themeMode` / `ui.systemDark` ⇒ 这里按**调试视图的老接法**
-//     建一个不落库的 `UiModel`（`store = nullptr`）挂成上下文属性 `ui`（与已删的
-//     调试页同一处语义；`GpuScalerItem` 那类没用到就不注册）。
+//     建一个 `UiModel` 挂成上下文属性 `ui`（它不建来源、不碰用户的任何库 ——
+//     库在 2026-10-31 随「图集库」删除；`GpuScalerItem` 那类没用到就不注册）。
 //   ★ 不是测试：不进 `tests/`、不挂 `add_test`。
 
 int runIconPicker(int argc, char *argv[])
@@ -30,8 +30,8 @@ int runIconPicker(int argc, char *argv[])
     // ★ 设置的 `load()` 在 `UiModel` 构造里（设计 14 §9.3：运行期设置挂在它身上）——
     //   与旧代码那次单例 `load()` 在这里的时机等价（QML 加载前已完成）。
     QQmlApplicationEngine engine;
-    // 调试视图的老接法：**不建库**（store = nullptr）—— 不碰用户的真库
-    auto *ui = new app::UiModel(nullptr, &app);
+    // 图标选择器只是 QML 外壳：`UiModel` 不建来源、不碰任何用户的库（库已经没有了）
+    auto *ui = new app::UiModel(&app);
     engine.rootContext()->setContextProperty(QStringLiteral("ui"), ui);
     // 系统配色变化 → 通知 QML（"跟随系统"模式下需要）；与主路径同一接线
     QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,

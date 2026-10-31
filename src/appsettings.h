@@ -17,8 +17,8 @@ enum class Layout { Single = 0, Double = 1 };
 //   · 位置：`~/.config/photoset-reader/settings.json`
 //     （`PHOTOSET_SETTINGS_FILE` / `PHOTOSET_CONFIG_DIR` 可覆盖，照旧）
 //   · 写法：**整文件全量写入**（用户定案：最后写的赢，不做事务）
-//   · **只存设置**。图集库、条目、进度、扫描状态全部在 SQLite（library.db），
-//     旧 `state.json`（dirs + resume）按定案**放弃、不迁移**。
+//   · **只存设置**。阅读进度 / 扫描结果**不存**（2026-10-31：图集库与 SQLite 已删；
+//     只有显式的「保存阅读进度」才落盘 —— 那一批还没做）。
 //   · 会话级状态（循环模式 / 锁定缩放 / 窗口全屏 / 排序 / OSD 显隐）**不进这里**。
 //   · ★★ 设计 14 §9.3：**没有单例、没有静态状态** —— 运行期实例**挂在 `app::UiModel`
 //     上**；其他组件需要哪个值，一律**调用时传参**（不许自己读设置）。

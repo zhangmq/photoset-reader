@@ -949,7 +949,7 @@ QVariantList ViewerModel::osdColumn(int idx)
     const QString tail = relativePathOf(idx);
     if (tail != it.displayName) add(QStringLiteral("路径"), tail, kSecFile);   // 根目录下与文件名相同 ⇒ 不重复
     add(QStringLiteral("文件夹"), it.folderLabel, kSecFile);
-    add(QStringLiteral("图集"), m_collectionLabel, kSecFile);
+    //   ★ 2026-10-31：图集没了 ⇒ 这一行（图集标题）一并删掉
 
     // ── 图像（一次探测，不解码）──
     const imageread::Probe pb = imageread::probe(it.loc);

@@ -22,7 +22,7 @@
 //   `steady_clock` 不是墙钟 ⇒ 系统时间跳变不影响判活。语义 = 原旧扫描路径里那份。
 //   两个用途共用同一个时间原点，所以必须只有这一处实现：
 //     ① **生产者**（`Sequence` 的内部扫描线程）写"进度时间戳"（`Sequence::bumpProgress`）；
-//     ② **消费侧**看门狗（`LibraryCore::pump` / `reapSlot`）读它做差，判"超过 30 s 没有进度更新"。
+//     ② **消费侧**看门狗读它做差，判"超过 30 s 没有进度更新"（`requestStop` + `abandon`）。
 inline qint64 monotonicNowMs()
 {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -86,8 +86,8 @@ inline qint64 monotonicNowMs()
 //     在这里建树 / 定组 / 增长数量；⇒ 序列的数据**只被消费线程碰**；
 //   · 状态是原子：**生产者写终态（release）**，消费者只在 `NotReady` 时 `CAS(→ImageFound)`
 //     ⇒ **终态不可被覆盖**；"扫描结束"不再走队列（**没有结束专用格**）。
-//   · ★★ **"卡住"的发现与处置都在消费侧**（`LibraryCore::pump` 的卡住分支 /
-//     `reapSlot()` 的有界收尾；主线程不参与）：生产者写进度时间戳（`bumpProgress`），
+//   · ★★ **"卡住"的发现与处置都在消费侧**（数 `lastProgressMs()` 做差 + 有界收尾；
+//     主线程不参与）：生产者写进度时间戳（`bumpProgress`），
 //     消费侧判"30 s 没有进度更新" ⇒ `requestStop()`（有效时生产者自己退）+
 //     `abandon()`（**detach，不 join**，对象不再释放）。
 class Sequence
@@ -215,7 +215,7 @@ public:
     //   · **未设置 ⇒ 零开销**：只有一次空 `std::function` 判断，不分配、不取锁；
     //   · **不改变扫描语义**：钩子抛的异常在这里被吞掉（正常钩子**不应该抛**，这是兜底）；
     //   · **绝不许阻塞生产者**：钩子是**生产者线程同步调用**的 ⇒ 它必须自己保证
-    //     "只投递、不等待"（`LibraryCore` 用的就是跨线程 `Qt::QueuedConnection` 投递）；
+    //     "只投递、不等待"（`UiModel` 用的就是跨线程 `Qt::QueuedConnection` 投递）；
     //   · **在队列锁之外调用**（实现保证）⇒ 钩子里跑多久都不会拖住消费者的 `drain()`；
     //   · **重入约定**：钩子不得在本调用里销毁 / 重启本序列；
     //   · 必须在 `startScan()` **之前**设置（此后固定 —— 生产者线程不再读改它）。
@@ -226,7 +226,7 @@ public:
     //   · 每次逐条读图头（`imageSize()`）返回后；
     //   · 每批**放批之前**；
     //   · 扫描线程启动时（`startScan` 创建线程那一刻）。
-    //   消费侧看门狗（`LibraryCore::pump` / `reapSlot`）据此判"超过 30 s **没有进度更新**"
+    //   消费侧看门狗据此判"超过 30 s **没有进度更新**"
     //   ⇒ **累积型慢不受影响**（它一直在推进），只有真卡住才不动。
     qint64 lastProgressMs() const { return m_lastProgressMs.load(std::memory_order_relaxed); }
 
@@ -236,7 +236,7 @@ public:
     //   · 此后**所有 join 点**（`~Sequence` / `cancelScan` / `startScan` / `clear` / 赋值）
     //     都跳过 join；
     //   ⚠️ **调用方必须"不再释放"本对象**（detached 线程还拿着 `this` ⇒ 销毁 = UAF）：
-    //      调用方负责**故意泄漏**它（见 `LibraryCore::reapSlot` 的 `slot.release()`）。
+    //      调用方负责**故意泄漏**它（`slot.release()`，不析构）。
     void abandon();
     bool isAbandoned() const { return m_abandoned.load(std::memory_order_relaxed); }
 
@@ -314,8 +314,8 @@ public:
     //     · ⇒ 空目录 / 无图压缩包 / 不受支持的压缩包（solid / 纯流式）**永远不是元素**；
     //       "子目录全空 ⇒ 自己也不出现"由**同一条判定条件自动成立**，**不需要自底向上剪**。
     //   · **节点不物理删除**（删掉会让树的节点下标位移 ⇒ 把消费方手里"当前在哪一层"的
-    //     裸下标指错）：节点留在结构里，但**枚举接口一律过这个判定条件**（**浏览行** /
-    //     `fetch::browseLayerOf`）；而面包屑给的是**祖先链**
+    //     裸下标指错）：节点留在结构里，但**枚举接口一律过这个判定条件**（任何"这一层有哪些
+    //     目录"的列举）；而"祖先链"给的是**链**
     //     （层不是元素）⇒ **不过**判定条件（见设计 12 §8.7.1）。
     //   ⚠️ 未扫完的节点**不是元素**（⇒ 不出现在任何枚举里），但它的**记录是"当前已知值"** ——
     //      供 `ownerRange` / `containers()` 这类查询用（扫描期间 OSD 就能用）。
@@ -376,7 +376,7 @@ public:
     // ★★ **行的来源**（恢复的输入）：只有"下一批"这一个方法（用户 2026-10-18 的设计）。
     //   · 行是 **DFS 前序、父行必在子行前** ⇒ **前向流足够**（不回退、不随机访问）；
     //   · 恢复**边收边并入** ⇒ 不要求把整份行读进内存（库那条用 SQLite 的 forward-only
-    //     游标，见 `library::Store::rowSource`）。
+    //     游标，见 `RowSource`）。
     class RowSource
     {
     public:

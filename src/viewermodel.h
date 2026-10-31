@@ -83,7 +83,7 @@ class ViewerModel : public QObject
     //   当前这一屏的**文件名**（双幅两页时用 " · " 连起来；多页文件是 "file [k/N]"）——
     //   顶栏显示用，派生值，不改任何状态
     Q_PROPERTY(QString currentName READ currentName NOTIFY currentChanged)
-    //   当前这一屏第一幅**相对图集根的路径**（顶栏用；与 OSD 的"路径"行同一份实现）
+    //   当前这一屏第一幅**相对来源根的路径**（顶栏用；与 OSD 的"路径"行同一份实现）
     Q_PROPERTY(QString relativePath READ relativePath NOTIFY currentChanged)
     //   ★ 幻灯片（13 §九·补·二）：`playing` **只是一个状态**（没有幻灯片对象）
     Q_PROPERTY(bool playing READ playing WRITE setPlaying NOTIFY playingChanged)
@@ -157,8 +157,6 @@ public:
     //   返回"列"：单幅 1 列、双幅 2 列；每列 = 该幅的行（`{k, v, section}`；
     //   EXIF 行**有才出现** —— 不同图片标签集不同，绝不固化）。
     Q_INVOKABLE QVariantList osdRows();
-    //   图集标题（属于"这一屏的上下文"，不是 OSD 数据）：由上层建 viewer / 进图集时下发
-    void setCollectionLabel(const QString &label) { m_collectionLabel = label; }
 
     QImage imageA() const { return m_imageA; }
     QImage imageB() const { return m_imageB; }      // 单幅 / 坏的空位：空图
@@ -345,7 +343,6 @@ private:
     QString m_scaleAlgorithm = QStringLiteral("lanczos3");
     QString m_screenName;                     // 当前这一屏的文件名（上屏时按真实条目算）
     QString m_screenPath;                     // 当前这一屏的路径（同上）
-    QString m_collectionLabel;                // 图集标题（会话来源 = 空）
     QVariantList osdColumn(int itemIndex);    // OSD 的一列（按需读；见 osdRows）
     QString      relativePathOf(int itemIndex) const;   // 相对图集根的路径（`A!/B`）
     QTimer  *m_beat = nullptr;                // 单发闹钟（只负责"到点叫醒"，不参与节奏）

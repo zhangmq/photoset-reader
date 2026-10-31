@@ -1,55 +1,28 @@
 #include "devcli.h"
 
-#include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
-#include <QEventLoop>
 #include <QFileInfo>
 #include <QString>
 #include <QStringLiteral>
 #include <QThread>
 #include <QTimer>
 
-#include <functional>
-
 #include <archive.h>
 #include <archive_entry.h>
 
 #include "archive.h"
-#include "browsemodel.h"
-#include "librarycore.h"
-#include "librarymodel.h"
-#include "resetqueue.h"
-#include "librarystore.h"
 #include "sequence.h"
 #include "sevenzcheck.h"
-#include "browsemodelview.h"
 #include "uimodel.h"
 
-// ══ 开发/验收用 CLI 的实现（设计 14 §10）：从 `main.cpp` **整段搬出**，行为一字不变 ══
+// ══ 开发/验收用 CLI 的实现（设计 14 §10）：从 `main.cpp` **整段搬出** ══
 //   `main.cpp` 里只剩 `QCommandLineOption` 的声明/解析 + 一次转发调用。
+//
+//   2026-10-31：「浏览 / 图集库」删除 ⇒ `--dev-add-collection` / `--dev-open-collection` /
+//   `--dev-open-page` / `--dev-enter-row` 与它们的等待逻辑一起删掉；只留探针与 `--dev-notify`。
 
 namespace devcli {
-
-// ★ 刻意本地化（2026-10-14 dev 工具收拾批复核）：下面自带的 `waitFor` 与
-//   `testsupport` 里的同名物**重复是故意的** —— dev CLI 随应用编，而应用
-//   **不链 `testsupport`**（设计 14 §11）；不为一个小工具把测试脚手架拉进产品二进制
-//   （保持"应用库 = 只是应用"）。
-
-// ── 轮询到条件成立：与 `testsupport::waitFor` **同一实现** ──────────────────
-//   ⚠️ 这里必须自带一份：dev CLI 随应用编，而应用**不链 `testsupport`**（设计 14 §11）。
-static bool waitFor(const std::function<bool()> &done, int timeoutMs = 3000)
-{
-    QElapsedTimer t;
-    t.start();
-    while (t.elapsed() < timeoutMs) {
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
-        if (done()) return true;
-        QThread::msleep(1);
-    }
-    QCoreApplication::processEvents();
-    return done();
-}
 
 // libarchive 能力探针：格式支不支持**随机读**（能不能一行判定 solid）
 int runLibarchiveProbe(const QString &path)
@@ -162,153 +135,16 @@ int runArchiveProbe(const QString &path)
     return 0;
 }
 
-// ★ T2c-2b-2：旧的"双实例同步验证"三个模式（`--scan-run` / `--scan-stop` / `--db-state`）
-//   **已删** —— 它们建在 `ScanController` + `scan_state` 列 + `action` 表之上，
-//   而这套机制已整体作废（设计 14 §9.6）：新模型里状态只在内存、停止只发生在本进程。
-
-// ── `--dev-*` 全块：从 `main.cpp` 整段搬出（`parser.isSet/value(xxxOpt)` 换成
-//    `req.xxxSet` / `req.xxx`）────────────────────────────────────────────
-//   ★ T2c-2b-2：两处"等扫描结束"的判定条件从 `collection.scan_state` 列改成 **core 的状态**
-//     （列已删）；其余逻辑与文案未改。
-void runDevCommands(const DevRequest &req, app::UiModel *ui, library::Store *store)
+// ── `--dev-*` 的执行入口 ───────────────────────────────────────────────────
+void runDevCommands(const DevRequest &req, app::UiModel *ui)
 {
     if (!req.any())
-        return;                                  // 等价于旧 `if (parser.isSet(...) || ...)`
-    // 先把在扫的都等完（集合可能是上一次运行留下的）。
-    //   ★ T2c-2b-2：`scan_state` 列已删 ⇒ 判定条件改用 **core 的重置状态**（内存态）：
-    //     "还在扫" = 状态 Queued/Running **且**活序列还没写完终态。
-    //     ⚠️ **不等落库窗口**（`scanFinished()` 之后就是窗口）：落库期间卡片仍是
-    //        「扫描中」（`resetState == Running`），但内容已定 —— 旧行为等的是"扫描结束"，
-    //        这里保持同一语义（旧代码等的也是"状态离开 NotReady/ImageFound"）。
-    auto resetBusy = [ui]() -> bool {
-        if (!ui->core() || !ui->core()->libraryUsable()) return false;
-        for (const library::Collection &c : ui->core()->collections()) {
-            const auto st = ui->core()->resetState(c.id);
-            if (st == LibraryCore::ResetState::Queued) return true;
-            if (st != LibraryCore::ResetState::Running) continue;
-            Sequence *s = ui->core()->resetSequence(c.id);
-            if (s && !s->scanFinished()) return true;
-        }
-        return false;
-    };
-    QElapsedTimer devClock;
-    devClock.start();
-    while (devClock.elapsed() < 180000) {
-        if (!resetBusy()) break;
-        QEventLoop loop;
-        QTimer::singleShot(20, &loop, &QEventLoop::quit);
-        loop.exec();
-    }
-    if (req.addSet) {
-        const QString d = req.add;
-        if (!store->isOpen()) {
-            qWarning().noquote() << QStringLiteral("[dev] 库不可用，--dev-add-collection 无效");
-        } else {
-            for (const library::Collection &c : store->collections())
-                if (c.rootPath == QFileInfo(d).absoluteFilePath())
-                    qInfo().noquote() << QStringLiteral("[dev] 集合已存在 id=%1（会重扫）").arg(c.id);
-            ui->library()->addCollection(d, Sequence::Kind::Folder);
-        }
-        // 等这次自动重置"扫完"（有超时；语义同旧代码：等状态离开扫描中）
-        devClock.restart();
-        while (devClock.elapsed() < 180000) {
-            if (!resetBusy()) break;
-            QEventLoop loop;
-            QTimer::singleShot(20, &loop, &QEventLoop::quit);
-            loop.exec();
-        }
-        for (const library::Collection &c : store->collections())
-            qInfo().noquote() << QStringLiteral("[dev] 集合 %1  %2  %3 条  状态=%4")
-                                     .arg(c.id).arg(c.rootPath)
-                                     .arg(store->itemCount(c.id))
-                                     .arg(ui->core()
-                                              ? resetq::resetStateName(
-                                                    ui->core()->resetState(c.id))
-                                              : QStringLiteral("(无 core)"));
-    }
-    if (req.openCollectionSet) {
-        const int row = qMax(0, req.openCollection.toInt());
-        const qint64 cid = ui->collectionIdAt(row);
-        // ★ T2c-2b-2：**落库窗口内不许打开图集**（UiModel 会拒绝 —— 那时 core 的查看槽
-        //   别名到活序列，挂 viewer 会形成两个消费者）。上一段只等到"扫描结束"，窗口可能
-        //   还开着（无延迟时通常 <1 ms）⇒ 这里等到窗口关闭，去掉那次竞态。
-        if (ui->core() && cid > 0 && ui->core()->resetCommitting(cid)) {
-            QElapsedTimer w;
-            w.start();
-            while (ui->core()->resetCommitting(cid) && w.elapsed() < 30000) {
-                QEventLoop loop;
-                QTimer::singleShot(10, &loop, &QEventLoop::quit);
-                loop.exec();
-            }
-        }
-        qInfo().noquote() << QStringLiteral("[dev] 打开集合 row=%1 id=%2").arg(row).arg(cid);
-        if (!ui->openCollection(cid))
-            qWarning().noquote() << QStringLiteral("[dev] openCollection 失败（row=%1）").arg(row);
-        // ★ 2026-10-25：`openCollection` 现在**直达 Viewer**（设计 18 §2）⇒ 开发 CLI 的
-        //   既有语义（"--dev-open-collection ⇒ 文件浏览屏"）要自己退一步；
-        //   后面的 `--dev-enter-row` / `--dev-open-page` 都从浏览屏出发。
-        ui->goBrowse();
-    }
-    if (req.enterRowSet || req.openPageSet) {
-        // 浏览行是**驱动线程 post 回来的**（异步）⇒ 不等它，`openRow(row)` 会找不到
-        //   那一行（实测：`openRow(6) 失败`）。这里等一会儿（只为开发期 CLI）。
-        // ★ T2d-1b：浏览行归 `ui.browse`（**换层是同步的**，这里的等待只是兜底）
-        if (!waitFor([&] {
-                auto *b = ui->browse();
-                return b && b->items()->rowCount() > 0;
-            }, 15000))
-            qWarning().noquote() << QStringLiteral("[dev] ⚠ 等不到浏览行（15s）");
-    }
-    if (req.enterRowSet) {
-        // 支持**多层**（逗号分隔）：每层进入后都要等这一层真的换过来（进入是异步的）
-        const QStringList parts = req.enterRow
-                                      .split(QLatin1Char(','), Qt::SkipEmptyParts);
-        for (const QString &p : parts) {
-            const int n = qMax(0, p.trimmed().toInt());
-            if (!ui->viewerCore()) {
-                qWarning().noquote() << QStringLiteral(
-                    "[dev] --dev-enter-row 需要先 --dev-open-collection（没有 viewer）");
-                break;
-            }
-            // 进入前记下当前层的"签名"（行数 + 首行名）：**换层是异步的**，
-            //   只等 rowCount>0 会拿**旧层**的行号继续进入（实测：第 7 行进入后
-            //   立刻 enterRow(0) 用的是旧层的 p0.png ⇒ 失败）。
-            auto layerSig = [&]() -> QString {
-                auto *b = ui->browse();
-                if (!b) return QString();
-                const int n = b->items()->rowCount();
-                const QString first = n > 0
-                    ? b->items()->index(0, 0).data(::BrowseModel::NameRole).toString()
-                    : QString();
-                return QStringLiteral("%1|%2").arg(n).arg(first);
-            };
-            const QString before = layerSig();
-            if (!(ui->browse() && ui->browse()->activate(n))) {
-                qWarning().noquote() << QStringLiteral("[dev] enterRow(%1) 失败").arg(n);
-                break;
-            }
-            waitFor([&] { return layerSig() != before; }, 8000);
-            qInfo().noquote() << QStringLiteral("[dev] 已进入第 %1 行的容器（留在浏览屏）").arg(n);
-        }
-    }
+        return;
     if (req.notifySet) {
         const QString text = req.notify;
         QTimer::singleShot(300, ui, [ui, text] { ui->notify(text); });
         qInfo().noquote() << QStringLiteral("[dev] 瞬时提示：%1").arg(text);
     }
-    if (req.openPageSet) {
-        const int n = qMax(0, req.openPage.toInt());
-        if (!ui->viewerCore()) {
-            qWarning().noquote() << QStringLiteral(
-                "[dev] --dev-open-page 需要先 --dev-open-collection（没有 viewer）");
-        } else if (!(ui->browse() && ui->browse()->open(n))) {
-            qWarning().noquote() << QStringLiteral("[dev] openRow(%1) 失败").arg(n);
-        } else {
-            qInfo().noquote() << QStringLiteral("[dev] 打开第 %1 行 → 图像查看屏").arg(n);
-        }
-    }
-    qInfo().noquote() << QStringLiteral("[dev] 屏 = %1（0=浏览 1=图像查看）")
-                             .arg(int(ui->screen()));
 }
 
 } // namespace devcli

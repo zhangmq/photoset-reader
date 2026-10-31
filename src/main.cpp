@@ -11,14 +11,11 @@
 #include <QFontDatabase>
 #include <QEvent>
 
-#include "imageprovider.h"
 #include "cpuscaleritem.h"
 #include "gpuscaleritem.h"
 #include "archive.h"
 
 #include "natural.h"
-#include "thumburl.h"
-#include "librarystore.h"
 #include "uimodel.h"
 #include "screenshot.h"
 #include "devcli.h"
@@ -88,7 +85,7 @@ int main(int argc, char *argv[])
     parser.addHelpOption();
     QCommandLineOption dirOpt({QStringLiteral("d"), QStringLiteral("dir")},
                               QStringLiteral("图片目录"), QStringLiteral("path"),
-                              QString());   // ★ 默认空：只有**显式传 -d** 才建来源，否则启动即图集库
+                              QString());   // ★ 默认空：只有**显式传 -d** 才打开来源，否则窗口空白
     QCommandLineOption shotOpt(QStringLiteral("shot"),
                                QStringLiteral("离屏截图到文件后退出（开发期自检用）"),
                                QStringLiteral("png"));
@@ -98,8 +95,6 @@ int main(int argc, char *argv[])
     QCommandLineOption idxOpt(QStringLiteral("index"),
                               QStringLiteral("打开来源时定位到第 N 条（截图前也会跳到这里）"),
                               QStringLiteral("n"), QStringLiteral("-1"));
-    QCommandLineOption immOpt(QStringLiteral("immersive"),
-                              QStringLiteral("截图前切到沉浸视图"));
     QCommandLineOption pwOpt(QStringLiteral("password"),
                              QStringLiteral("压缩包密码"), QStringLiteral("pw"));
     QCommandLineOption seekOpt(QStringLiteral("seek-test"),
@@ -118,71 +113,41 @@ int main(int argc, char *argv[])
     //   ★ **必须是裸开关**：`QCommandLineParser` **没有"可选值"**这个概念 —— 带
     //     `valueName` 的选项会**吞掉下一个 token**（实测 `--debug-settings --shot x.png`
     //     把 `--shot` 当成了它的值 ⇒ 截图路径拿不到、进程不退出）。页签因此单列一个选项。
-    //   ★ 页签 QML 侧**支持**：`SettingsDialog.tab`（0常规/1图像/2系统/3快捷键），BrowseView 早已这么用。
+    //   ★ 页签 QML 侧**支持**：`SettingsDialog.tab`（0常规/1图像/2系统/3快捷键）。
     QCommandLineOption debugSettingsOpt(QStringLiteral("debug-settings"),
                                         QStringLiteral("调试：启动即打开设置对话框"));
     QCommandLineOption debugSettingsTabOpt(QStringLiteral("debug-settings-tab"),
                                            QStringLiteral("调试：设置对话框开在哪一页"
                                                           "（0常规/1图像/2系统/3快捷键）"),
                                            QStringLiteral("tab"), QStringLiteral("0"));
-    //   ★ 2026-10-25：图集库 = 左侧抽屉（**不是屏**）⇒ 截图自检要能把抽屉打开。
-    //     与 `--debug-settings` 同一风格：默认 false ⇒ 正常运行时零行为变化。
-    QCommandLineOption debugLibraryOpenOpt(QStringLiteral("debug-library-open"),
-                                           QStringLiteral("调试：启动即打开图集库抽屉"));
-    // ── 开发期专用（**只为验收截图**；与 --probe-* / --bench-* 同一风格）──
-    QCommandLineOption devAddOpt(QStringLiteral("dev-add-collection"),
-                                 QStringLiteral("开发：把目录加入（临时）图集库并等扫描结束"),
-                                 QStringLiteral("dir"));
-    QCommandLineOption devOpenCollOpt(QStringLiteral("dev-open-collection"),
-                                      QStringLiteral("开发：打开第 N 个集合（⇒ 文件浏览屏）"),
-                                      QStringLiteral("row"));
-    QCommandLineOption devOpenPageOpt(QStringLiteral("dev-open-page"),
-                                      QStringLiteral("开发：打开浏览第 N 行（⇒ 图像查看屏）"),
-                                      QStringLiteral("n"));
-    QCommandLineOption devEnterRowOpt(QStringLiteral("dev-enter-row"),
-                                      QStringLiteral("开发：进入浏览第 N 行的**容器**（可给逗号分隔的多层，"
-                                                     "如 5,0 = 外层包 → 内层包）"),
-                                      QStringLiteral("n"));
-    QCommandLineOption devNotifyOpt(QStringLiteral("dev-notify"),
-                                    QStringLiteral("开发：启动后弹一条**瞬时提示**（验收浮层用）"),
-                                    QStringLiteral("text"));
-    QCommandLineOption osdOpt(QStringLiteral("show-osd"),
-                              QStringLiteral("截图前打开信息面板（验证 #7）"));
-    QCommandLineOption popupOpt(QStringLiteral("show-interval-popup"),
-                                QStringLiteral("截图前打开翻页间隔 popup"));
-    QCommandLineOption recOpt(QStringLiteral("recursive"),
-                              QStringLiteral("遍历子目录（默认只当前文件夹）"));
+    // ── 验收用（截图 / 临时探针；不参与正常使用）──
     QCommandLineOption probeArcOpt(QStringLiteral("probe-archive"),
                                    QStringLiteral("临时探针：量压缩包 dataAt(i) 的代价"),
                                    QStringLiteral("路径"));
     QCommandLineOption probeLaOpt(QStringLiteral("probe-libarchive"),
                                   QStringLiteral("libarchive 能力探针（能否随机读）"),
                                   QStringLiteral("路径"));
-    // ★ T2c-2b-2：`--scan-run` / `--scan-stop` / `--db-state`（双实例同步验证）**已删** ——
-    //   它们建在旧 `ScanController` + `scan_state` 列 + `action` 表之上（整体作废，设计 14 §9.6）。
-    QCommandLineOption shrinkOpt(QStringLiteral("no-shrink"),
-                                 QStringLiteral("关闭解码期整数分之一预缩（默认开启；关闭会慢 6 倍）"));
+    QCommandLineOption osdOpt(QStringLiteral("show-osd"),
+                              QStringLiteral("截图前打开信息面板（验证 #7）"));
+    QCommandLineOption popupOpt(QStringLiteral("show-interval-popup"),
+                                QStringLiteral("截图前打开翻页间隔 popup"));
+    // ── 开发期专用（**只为验收截图**）──
+    QCommandLineOption devNotifyOpt(QStringLiteral("dev-notify"),
+                                    QStringLiteral("开发：启动后弹一条**瞬时提示**（验收浮层用）"),
+                                    QStringLiteral("text"));
     parser.addOption(dirOpt);
     parser.addOption(shotOpt);
     parser.addOption(delayOpt);
     parser.addOption(idxOpt);
-    parser.addOption(immOpt);
-    parser.addOption(shrinkOpt);
     parser.addOption(probeArcOpt);
     parser.addOption(probeLaOpt);
     parser.addOption(pwOpt);
-    parser.addOption(recOpt);
     parser.addOption(popupOpt);
     parser.addOption(osdOpt);
     parser.addOption(seekOpt);
-    parser.addOption(devAddOpt);
-    parser.addOption(devOpenCollOpt);
-    parser.addOption(devOpenPageOpt);
-    parser.addOption(devEnterRowOpt);
     parser.addOption(devNotifyOpt);
     parser.addOption(debugSettingsOpt);
     parser.addOption(debugSettingsTabOpt);
-    parser.addOption(debugLibraryOpenOpt);
     parser.addOption(gpuProbeOpt);
     parser.addOption(forceCpuOpt);
     parser.process(app);
@@ -213,18 +178,6 @@ int main(int argc, char *argv[])
 
     QQmlApplicationEngine engine;
 
-    auto *provider = new ImageProvider;      // engine 接管所有权
-    provider->setArchivePassword(parser.value(pwOpt));
-
-    //   ★ 2026-10-19：provider 已经**只服务缩略图** ⇒ 不再有"缩放参数 / pixel-perfect"
-    //     这两个开关（缩略图用 Qt 平滑缩放）；只留解码期的 shrink-on-load。
-    provider->setShrinkOnLoad(!parser.isSet(shrinkOpt));   // 默认开启
-
-    qInfo().noquote() << QStringLiteral("[main] 解码期预缩 = %1（缩略图用 Qt 平滑缩放；"
-                                        "阅读画质走 GPU 那条）")
-                             .arg(parser.isSet(shrinkOpt) ? QStringLiteral("off")
-                                                          : QStringLiteral("on"));
-    engine.addImageProvider(QLatin1String(kThumbProviderName), provider);
 
     // ★ 设置的 `load()` 移到 `UiModel` 构造里（设计 14 §9.3：运行期设置挂在它身上）——
     //   旧代码在这里 load 的**时机语义不变**：从这里到 `UiModel` 建出来之间，没有任何人读设置。
@@ -243,10 +196,9 @@ int main(int argc, char *argv[])
                                  .arg(family.isEmpty() ? QStringLiteral("失败") : family).arg(fid);
     }
 
-    // ⚠️ **不再把 provider 暴露给 QML**（定案：QML 禁止引用 `provider.*`）——
-    //     provider 现在**只提供缩略图**（图集卡片封面 / 浏览网格），QML 经 `model.thumb`
-    //     属性拿到 `image://img/thumbpath|thumbzip/...` 的 URL，由 Qt 自己向 provider 请求。
-    engine.rootContext()->setContextProperty(QStringLiteral("startDir"), dir);
+    // ★ 2026-10-31：缩略图 provider **已随浏览 / 图集库删除** —— 界面里没有任何缩略图，
+    //   也不需要把它暴露给 QML（AGENTS：QML 禁止引用 `provider.*`）。
+    Q_UNUSED(dir);   // 只有 `-d` 用得到它（打开来源）；QML 不再读 startDir
 
     // GPU 缩放渲染组件（QML 可用）：显式注册。
     //   （不用 QML_ELEMENT：那会让生成的注册文件按 `<gpuscaleritem.h>` 找头文件，
@@ -261,28 +213,14 @@ int main(int argc, char *argv[])
     devbench::Request bench;
     bench.gpuProbe = parser.isSet(gpuProbeOpt);
 
-    // ── ★ 2026-10-19：**不再给 provider 建来源** —— 那条"provider 自己建一条序列"
-    //   的能力已随"建序列只有扫描"删掉；主路径本来就不经 provider 取图（phase B 定案），
-    //   provider 现在只服务缩略图（按路径的 id，不需要序列）。
+    // ── bench / 探针跑完即退（不建 VM、不碰设置）──
     if (bench.wanted())
         return devbench::runBench(bench);
 
     // ── 全局 VM 装配（放在所有"跑完即退"的路径之后）──────────
-    //   库与设置都是**懒装配**：自检 / bench / dump 这些路径不碰用户的真库
-    auto *store = new library::Store;                 // 进程生命周期（不随 engine 释放）
-    QString libErr;
-    if (!store->open(&libErr, /*quiet=*/true)) {
-        // 库不可用（如配置目录只读）→ 图集库功能停用，其余照常
-        qInfo().noquote() << QStringLiteral("[library] 库不可用，图集库停用: %1").arg(libErr);
-    }
-    // ★ **全局只有一个 VM** = `app::UiModel`（QML 里的 `ui`）——viewer（`ui.viewer.*`）由它持有。
-    //   两屏枚举只在它这里定义一次。
-    //   ⚠️ 实测（见报告）：QML **读不到"实例上的枚举"** —— `ui.Browse` 是 `undefined`
-    //      （`ui.screen` 本身读得到，是 number）。QML 只认**已注册类型名**上的枚举
-    //      ⇒ 注册一个**不可创建**的 `UiModel`（只为枚举名；实例仍走上下文属性 `ui`）。
-    qmlRegisterUncreatableType<app::UiModel>("AppUi", 1, 0, "UiModel",
-                                             QStringLiteral("仅用于枚举；实例经上下文属性 ui 暴露"));
-    auto *ui = new app::UiModel(store, &app);
+    //   ★ **全局只有一个 VM** = `app::UiModel`（QML 里的 `ui`）——viewer（`ui.viewer.*`）由它持有；
+    //     它自己就是 QML 侧的类型信息不需要额外注册（只有一个界面之后没有枚举要给 QML 读）。
+    auto *ui = new app::UiModel(&app);
     engine.rootContext()->setContextProperty(QStringLiteral("ui"), ui);
     // focus-visible：全局记录输入来源
     qApp->installEventFilter(new InputSourceWatcher(ui, qApp));
@@ -290,35 +228,18 @@ int main(int argc, char *argv[])
     QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
                      ui, [ui]() { emit ui->systemDarkChanged(); });
 
-    // 命令行 `-d <路径>` = **直接打开**（会话来源，不建库记录）：**直达 Viewer**（设计 18 §4）；
-    //   `--index N` 定位到第 N 条（不给 = 第 0 条）。之后的导航全在 `ui` 上。
-    //   ★ 2026-10-25：界面入口"文件夹 / 压缩包留在浏览屏"，**CLI 不同**（一律进 Viewer）
-    //     ⇒ 这里多补一步 `continueReading()`（它只进查看屏、不改游标）。
-    if (parser.isSet(dirOpt)) {
+    // 命令行 `-d <路径>` = **打开来源**（文件夹 / 压缩包 / 文件同一套）；
+    //   `--index N` 定位到第 N 条（不给 = 第 0 条）。只有一个界面 ⇒ 不需要再切屏。
+    if (parser.isSet(dirOpt))
         ui->openPath(dir, parser.value(idxOpt).toInt());
-        ui->continueReading();
-    }
 
-    // ── 开发期专用 CLI（**只为验收截图**；命名照现有 `--probe-*` / `--bench-*` 风格）──
-    //   `--dev-add-collection <dir>`   往（临时）库里加一个集合 → 自动开扫 → 等扫完
-    //   `--dev-open-collection <row>`  打开第 row 个集合 ⇒ 文件浏览屏（内部会等扫描结束）
-    //   `--dev-open-page <n>`          打开**浏览第 n 行** ⇒ 图像查看屏（扁平来源下 = 第 n 条）
-    //   `--dev-enter-row <a,b>` / `--dev-notify <text>`
-    //   ★ 实现整段在 `src/devcli.cpp`（本文件只解析 + 转发；设计 14 §10）——
-    //     这里只把 `QCommandLineOption` 的取值装进请求结构，判"给没给"用 `xxxSet`
-    //     （`--dev-notify ""` 这种空值也要照旧执行）。
+    // ── 开发期专用 CLI（**只为验收截图**）──
+    //   `--dev-notify <text>`：启动后弹一条瞬时提示（验收浮层用）
+    //   ★ 实现整段在 `src/devcli.cpp`（本文件只解析 + 转发）
     devcli::DevRequest dev;
-    dev.addSet            = parser.isSet(devAddOpt);
-    dev.add               = parser.value(devAddOpt);
-    dev.openCollectionSet = parser.isSet(devOpenCollOpt);
-    dev.openCollection    = parser.value(devOpenCollOpt);
-    dev.openPageSet       = parser.isSet(devOpenPageOpt);
-    dev.openPage          = parser.value(devOpenPageOpt);
-    dev.enterRowSet       = parser.isSet(devEnterRowOpt);
-    dev.enterRow          = parser.value(devEnterRowOpt);
-    dev.notifySet         = parser.isSet(devNotifyOpt);
-    dev.notify            = parser.value(devNotifyOpt);
-    devcli::runDevCommands(dev, ui, store);
+    dev.notifySet = parser.isSet(devNotifyOpt);
+    dev.notify    = parser.value(devNotifyOpt);
+    devcli::runDevCommands(dev, ui);
 
     // ── `--debug-settings`（开发期）：**在 QML 加载前**把值注入上下文属性 ──────────
     //   两屏各自的 `debugOpenSettings` / `debugSettingsTab` 由 `Main.qml` 从这里喂
@@ -328,8 +249,6 @@ int main(int argc, char *argv[])
                                              parser.isSet(debugSettingsOpt));
     engine.rootContext()->setContextProperty(QStringLiteral("devSettingsTab"),
                                              parser.value(debugSettingsTabOpt).toInt());
-    engine.rootContext()->setContextProperty(QStringLiteral("devLibraryOpen"),
-                                             parser.isSet(debugLibraryOpenOpt));
     //   ★ `--show-interval-popup`（截图自检用）：同样默认 false ⇒ 正常运行时零行为变化；
     //     由阅读屏自己在可见时把"切换速度"菜单打开（旧实现调的是已删除的旧 QML 方法）。
     engine.rootContext()->setContextProperty(QStringLiteral("devShowIntervalPopup"),
@@ -365,7 +284,7 @@ int main(int argc, char *argv[])
     const QString shot = parser.value(shotOpt);
     if (!shot.isEmpty())
         screenshot::setupShot(app, engine, shot, parser.value(delayOpt).toInt(),
-                        parser.value(idxOpt).toInt(), parser.isSet(immOpt),
+                        parser.value(idxOpt).toInt(),
                         parser.isSet(popupOpt), parser.isSet(osdOpt), parser.value(seekOpt).toInt(), ui);
 
     return app.exec();

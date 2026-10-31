@@ -13,24 +13,20 @@ import AppUi
 //     （用户 2026-10-20：压在栏上不许是拖拽光标、不许把拖动/滚轮穿透给画布）
 //   · 浮层隐藏时按钮 `enabled: false`（淡出后仍命中测试会误点）
 //
-//   ★ 2026-10-25（两屏化，设计 18 §5）：
-//     左 [folder-open 浏览] 进度 · 文件名 · 相对路径      右 [★ 收藏] [folder-star 图集库] [设置]
-//     · 「返回」不再是回库屏 —— 环路是 Viewer --「浏览」--> Browse；
-//       tooltip 按来源变（文件夹 / 压缩包 / 图片），由 `browseTooltip` 传入；
-//     · 图集库 = **抽屉**（folder-star），不再是 home 屏；
-//     · 主题按钮已从本栏移走（Browse 动作条仍有；本栏按定案只留三项）。
+//   ★ 2026-10-31（只剩查看界面）：**本栏不再有「浏览」与「图集库」按钮**。
+//     左：进度 · 文件名 · 相对路径（三块信息）      右：[★ 收藏] [设置]
+//     · 「打开」相关与不常用的功能**以后进右键菜单**（这一批不做设计）；
+//     · ★ 暂时保留：段 2 接「保存阅读进度」，之后可能整体挪进右键菜单。
 Item {
     id: root
 
     property bool   overlaysVisible: true
     property string progressText: ""      // 进度（序号/总数）——**属于顶栏，不属于 OSD**
     property string fileName: ""          // 当前文件名（双幅时两页以 " · " 相连）
-    property string relativePath: ""      // 当前文件相对**图集根**的路径（用户 2026-10-11 要求）
-    property string browseTooltip: "浏览"  // 「浏览」的 tooltip（按来源；见设计 18 §5）
+    property string relativePath: ""      // 当前文件相对**来源根**的路径（用户 2026-10-11 要求）
+    property bool   hasSource: true       // 有没有来源（★ 依赖它；设置不依赖）
 
-    signal browseRequested()               // 浏览 → 回文件浏览屏（环路：Viewer → Browse）
-    signal libraryRequested()              // 图集库 → 打开左侧抽屉
-    signal favoriteToggled()               // 收藏（段 3 接规则；本段只放按钮）
+    signal favoriteToggled()               // 收藏（段 2 接「保存阅读进度」；本段只放按钮）
     signal settingsRequested()             // 设置（与其它动作条同一实现）
 
     readonly property bool mouseInRegion: topHover.hovered
@@ -59,20 +55,13 @@ Item {
             onWheel: (w) => { w.accepted = true }   // 滚轮也不许穿透去缩放
         }
 
-        // 左：浏览（回文件浏览屏）+ 进度 + 文件名 + 相对路径
+        // 左：进度 + 文件名 + 相对路径
         Row {
             anchors.left: parent.left
             anchors.leftMargin: Theme.spaceLg
             anchors.verticalCenter: parent.verticalCenter
             spacing: Theme.spaceMd
 
-            NavBtn {
-                anchors.verticalCenter: parent.verticalCenter
-                glyph: Theme.icFolderOpen
-                tooltip: root.browseTooltip
-                enabled: root.overlaysVisible
-                onTriggered: root.browseRequested()
-            }
             Text {   // 进度：**不属于 OSD**（用户 2026-10-11），只随顶栏显隐
                 anchors.verticalCenter: parent.verticalCenter
                 visible: root.progressText !== ""
@@ -106,26 +95,19 @@ Item {
             color: Theme.borderL1
         }
 
-        // 右：收藏 + 图集库 + 设置
+        // 右：收藏 + 设置
         Row {
             anchors.right: parent.right
             anchors.rightMargin: Theme.spaceLg
             anchors.verticalCenter: parent.verticalCenter
             spacing: Theme.spaceXs
 
-            NavBtn {   // 收藏（★ 的规则见设计 18 §7，段 3 接）
+            NavBtn {   // 收藏（段 2 接「保存阅读进度」；这一批只占位）
                 anchors.verticalCenter: parent.verticalCenter
                 glyph: Theme.icStarO
                 tooltip: "收藏"
-                enabled: root.overlaysVisible
+                enabled: root.overlaysVisible && root.hasSource
                 onTriggered: root.favoriteToggled()
-            }
-            NavBtn {   // 图集库（**开抽屉**；不是回屏）
-                anchors.verticalCenter: parent.verticalCenter
-                glyph: Theme.icFolderStar
-                tooltip: "图集库"
-                enabled: root.overlaysVisible
-                onTriggered: root.libraryRequested()
             }
             NavBtn {   // 设置
                 anchors.verticalCenter: parent.verticalCenter

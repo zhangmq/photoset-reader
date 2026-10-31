@@ -9,7 +9,6 @@
 #include <QQuickWindow>
 #include <QTimer>
 
-#include "browsemodelview.h"
 #include "uimodel.h"
 #include "viewermodel.h"
 
@@ -23,10 +22,10 @@ namespace screenshot {
 
 void setupShot(QGuiApplication &app, QQmlApplicationEngine &engine,
                const QString &outPath, int delayMs, int shotIndex,
-               bool immersive, bool popup, bool osdShown, int seekPage,
+               bool popup, bool osdShown, int seekPage,
                app::UiModel *uiModel)
 {
-    QTimer::singleShot(delayMs, &app, [&engine, outPath, shotIndex, immersive, popup, osdShown, seekPage, uiModel]() {
+    QTimer::singleShot(delayMs, &app, [&engine, outPath, shotIndex, popup, osdShown, seekPage, uiModel]() {
         const auto roots = engine.rootObjects();
         if (roots.isEmpty()) { qWarning() << "[shot] 没有根对象"; return; }
         auto *win = qobject_cast<QQuickWindow *>(roots.first());
@@ -35,21 +34,15 @@ void setupShot(QGuiApplication &app, QQmlApplicationEngine &engine,
         // 新壳：画的是 `ui.viewer`（阅读屏的图由 viewer 直接给）
         fetch::ViewerModel *vm = uiModel ? uiModel->viewerCore() : nullptr;
         if (shotIndex >= 0 && vm) vm->jump(shotIndex);
-        // ★ 浏览的"高亮行 / 打开某行"都归 `ui.browse`
-        auto *browse = uiModel ? uiModel->browse() : nullptr;
-        if (immersive && browse) browse->open(browse->browseRow());
         if (osdShown && vm) vm->setOsdVisible(true);   // OSD 归 viewer
         if (seekPage >= 0 && vm) {
             // 单幅版面下"第 N 页"== 第 N 个条目 ⇒ jump(N) 就是跳到第 N 页
-            //   （多幅版面请用 `--dev-open-page`，见开发期 CLI）
-            if (browse) browse->open(browse->browseRow());
             // ⚠️ 取图是**异步**的（解码线程取好再 post 回来）⇒ 这里报不出跳转后的页号；
             //    单幅版面下"第 N 页"== 第 N 条 ⇒ 投递 jump(N) 即可。真实页号看下面的 VM 状态。
             vm->jump(seekPage);
             qInfo().noquote() << QStringLiteral("[seek] 已投递 jump(%1)（当前页号 %2，异步刷新）")
                 .arg(seekPage).arg(vm->currentPage());
         }
-        if (popup && browse) browse->open(browse->browseRow());
         //   ★ `--show-interval-popup` 由阅读屏自己接线（`devShowIntervalPopup` 上下文属性）；
         //     ⚠️ 菜单是**独立的 Popup 窗口** ⇒ 离屏 `grabWindow` 抓不到它（真要截菜单需要整屏抓）
 
@@ -69,11 +62,9 @@ void setupShot(QGuiApplication &app, QQmlApplicationEngine &engine,
             }
             // 主路径的可观测状态：截图 + 这行日志一起才算"看到"
             if (uiModel) {
-                qInfo().noquote() << QStringLiteral("[immersive] 屏 = %1（0=浏览 1=图像查看）")
-                                         .arg(int(uiModel->screen()));
                 if (auto *v = uiModel->viewerCore()) {
                     qInfo().noquote()
-                        << QStringLiteral("[immersive] VM 状态：keyCount=%1 cursor=%2 count=%3 "
+                        << QStringLiteral("[shot] VM 状态：keyCount=%1 cursor=%2 count=%3 "
                                           "totalPages=%4 currentPage=%5 loading=%6 imageA=%7x%8 imageB=%9x%10")
                                .arg(v->keyCount()).arg(v->cursor())
                                .arg(v->itemCount()).arg(v->totalPages()).arg(v->currentPage())
