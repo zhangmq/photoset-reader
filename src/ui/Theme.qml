@@ -215,6 +215,11 @@ QtObject {
     // 横向操作区统一高度（动作条 / 列表标题行）—— 试验中：若决定不统一，再拆回两个 token
     readonly property int barH:        48
     readonly property int menuMinW:   144      // 菜单最小宽度
+    readonly property int subMenuW:   160      // 二级菜单面板宽（鼠标悬停展开的那一列）
+    // 收藏夹弹窗（列表）：宽/高 + 行里那个百分比甜甜圈的直径
+    readonly property int favPopupW:  520
+    readonly property int favPopupH:  560
+    readonly property int donutSize:   20
     readonly property int dialogW:    380      // 对话框宽度 ← DSH Modal.module.css .dialog{width:min(380px,100%)}
     readonly property int progressH:    4      // 进度条高度
     readonly property int badgePadH:   Theme.spaceMd   // 徽标左右内边距（合计）← DSH rowTag: padding 1px 6px
@@ -266,6 +271,7 @@ QtObject {
     // ★ 必须 String.fromCodePoint：MDI 码点在 U+F0000 以上（5 位），JS 的 \uXXXX 只吃 4 位
     readonly property string icFolder:  String.fromCodePoint(0xF0770)   // folder-open
     readonly property string icSearch:  String.fromCodePoint(0xF0349)   // magnify
+    readonly property string icScan:    String.fromCodePoint(0xF0969)   // folder-search-outline（重新扫描）
     readonly property string icClear:   String.fromCodePoint(0xF0159)   // close-circle
     // 主题三态图标（**定死，不再变**）
     // 设置（候选见 docs/design/06-设置图标候选.md）
@@ -303,7 +309,6 @@ QtObject {
     readonly property string icFolderNext: String.fromCodePoint(0xF19EE)  // folder-arrow-right
     // ── 全屏浮层：画面缩放 / 阅读版面 ──
     // 缩放算法（对图"施加魔法"：图 + 自动调整）—— 用户 2026-10-20 选定
-    readonly property string icAlgorithm:  String.fromCodePoint(0xF0FC1)  // image-auto-adjust
     readonly property string icFitActual:  String.fromCodePoint(0xF0C8D)  // image-size-select-actual（原始大小）
     readonly property string icFitScreen:  String.fromCodePoint(0xF18F4)  // fit-to-screen（适应屏幕）
     readonly property string icFitWidth:   String.fromCodePoint(0xF084E)  // arrow-expand-horizontal（适应宽度）

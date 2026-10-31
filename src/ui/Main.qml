@@ -26,6 +26,8 @@ ApplicationWindow {
         debugOpenSettings: devOpenSettings
         debugSettingsTab: devSettingsTab
         debugOpenIntervalPopup: devShowIntervalPopup
+        debugOpenContextMenu: devContextMenu      // 开发自检：启动即打开右键菜单（截图用）
+        debugDialog: devDialog                    // 开发自检：启动即打开某个对话框（截图用）
 
         // ★「收藏」（★）的规则见设计 18 §7 —— 段 2 接「保存阅读进度」；本段按钮只占位
     }

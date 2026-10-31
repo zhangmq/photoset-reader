@@ -13,10 +13,11 @@ import AppUi
 //     （用户 2026-10-20：压在栏上不许是拖拽光标、不许把拖动/滚轮穿透给画布）
 //   · 浮层隐藏时按钮 `enabled: false`（淡出后仍命中测试会误点）
 //
-//   ★ 2026-10-31（只剩查看界面）：**本栏不再有「浏览」与「图集库」按钮**。
-//     左：进度 · 文件名 · 相对路径（三块信息）      右：[★ 收藏] [设置]
-//     · 「打开」相关与不常用的功能**以后进右键菜单**（这一批不做设计）；
-//     · ★ 暂时保留：段 2 接「保存阅读进度」，之后可能整体挪进右键菜单。
+//   ★ 2026-10-31（只剩查看界面 + 右键菜单）：左行 = **[spin] 进度 · 文件名 · 相对路径**，
+//     右侧 = **★ 收藏状态**（唯一动作；其余动作都在右键菜单里）。
+//     · **扫描中**：最左显示一个 spin（点击 ⇒ 问一下要不要取消扫描）；**扫完 / 被取消都不再显示图标**
+//       （「重新扫描」在右键菜单里 —— 用户 2026-11-01）；
+//     · **★**：实心 = 已收藏，空心 = 未收藏；点击 = 收藏 / 取消收藏（取消要确认）。
 Item {
     id: root
 
@@ -24,10 +25,14 @@ Item {
     property string progressText: ""      // 进度（序号/总数）——**属于顶栏，不属于 OSD**
     property string fileName: ""          // 当前文件名（双幅时两页以 " · " 相连）
     property string relativePath: ""      // 当前文件相对**来源根**的路径（用户 2026-10-11 要求）
-    property bool   hasSource: true       // 有没有来源（★ 依赖它；设置不依赖）
+    property bool   hasSource: true       // 有没有来源（★ 依赖它）
+    property bool   scanning: false       // 扫描中（最左 spin；点击 = 问要不要取消）
 
-    signal favoriteToggled()               // 收藏（段 2 接「保存阅读进度」；本段只放按钮）
-    signal settingsRequested()             // 设置（与其它动作条同一实现）
+    property int    discoveredCount: 0    // 已发现多少张（spin 的 tooltip）
+    property bool   favorited: false      // 已收藏（★ 实心）
+
+    signal scanCancelRequested()          // 点 spin → 上层弹「取消扫描」确认框
+    signal favoriteToggled()              // 点 ★ → 上层决定收藏 / 取消收藏
 
     readonly property bool mouseInRegion: topHover.hovered
     implicitHeight: Theme.barH + Theme.osdHotZoneH
@@ -55,12 +60,42 @@ Item {
             onWheel: (w) => { w.accepted = true }   // 滚轮也不许穿透去缩放
         }
 
-        // 左：进度 + 文件名 + 相对路径
+        // 左：[spin] 进度 + 文件名 + 相对路径
         Row {
             anchors.left: parent.left
             anchors.leftMargin: Theme.spaceLg
             anchors.verticalCenter: parent.verticalCenter
             spacing: Theme.spaceMd
+
+            // ── 扫描中的 spin（**最左**，用户 2026-10-31）──
+            //   形状 = Loading 浮层那个 spinner（`components/Spinner.qml`，唯一实现），只是**改小**
+            Item {
+                id: scanSpin
+                anchors.verticalCenter: parent.verticalCenter
+                width: Theme.controlSm
+                height: Theme.controlSm
+                visible: root.scanning
+
+                Spinner {
+                    anchors.centerIn: parent
+                    size: 16
+                    lineWidth: 2
+                    running: root.scanning
+                }
+                MouseArea {
+                    id: spinMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    enabled: root.overlaysVisible
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.scanCancelRequested()
+                }
+                HintBubble {
+                    anchors.fill: parent
+                    text: "正在扫描：已发现 " + root.discoveredCount + " 张（点击取消）"
+                    hovered: spinMa.containsMouse && root.overlaysVisible
+                }
+            }
 
             Text {   // 进度：**不属于 OSD**（用户 2026-10-11），只随顶栏显隐
                 anchors.verticalCenter: parent.verticalCenter
@@ -86,6 +121,18 @@ Item {
             }
         }
 
+        // 右：★ 收藏状态（实心 = 已收藏；点击 = 收藏 / 取消收藏）
+        NavBtn {
+            anchors.right: parent.right
+            anchors.rightMargin: Theme.spaceLg
+            anchors.verticalCenter: parent.verticalCenter
+            glyph: root.favorited ? Theme.icStar : Theme.icStarO
+            tooltip: root.favorited ? "已收藏（点击取消收藏）" : "收藏（保存进度）"
+            //   ★ 不做"扫描中置灰"（用户 2026-10-31）：点了弹框告知，见上层
+            enabled: root.overlaysVisible && root.hasSource
+            onTriggered: root.favoriteToggled()
+        }
+
         // 底边框（bar 自持）
         Rectangle {
             anchors.left: parent.left
@@ -95,27 +142,5 @@ Item {
             color: Theme.borderL1
         }
 
-        // 右：收藏 + 设置
-        Row {
-            anchors.right: parent.right
-            anchors.rightMargin: Theme.spaceLg
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Theme.spaceXs
-
-            NavBtn {   // 收藏（段 2 接「保存阅读进度」；这一批只占位）
-                anchors.verticalCenter: parent.verticalCenter
-                glyph: Theme.icStarO
-                tooltip: "收藏"
-                enabled: root.overlaysVisible && root.hasSource
-                onTriggered: root.favoriteToggled()
-            }
-            NavBtn {   // 设置
-                anchors.verticalCenter: parent.verticalCenter
-                glyph: Theme.icSettings
-                tooltip: "设置"
-                enabled: root.overlaysVisible
-                onTriggered: root.settingsRequested()
-            }
-        }
     }
 }

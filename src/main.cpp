@@ -10,6 +10,7 @@
 #include <QFileInfo>
 #include <QFontDatabase>
 #include <QEvent>
+#include <QTimer>
 
 #include "cpuscaleritem.h"
 #include "gpuscaleritem.h"
@@ -132,6 +133,21 @@ int main(int argc, char *argv[])
     QCommandLineOption popupOpt(QStringLiteral("show-interval-popup"),
                                 QStringLiteral("截图前打开翻页间隔 popup"));
     // ── 开发期专用（**只为验收截图**）──
+    QCommandLineOption devContextMenuOpt(QStringLiteral("dev-context-menu"),
+                                         QStringLiteral("调试：启动即在画布上打开右键菜单（截图用）"));
+    QCommandLineOption devSaveFavOpt(QStringLiteral("dev-save-favorites"),
+                                     QStringLiteral("调试：打开来源后等一会儿把进度存进收藏夹（验收截图用）"));
+    QCommandLineOption devOpenProgressOpt(QStringLiteral("dev-open-progress"),
+                                          QStringLiteral("调试：启动后打开这个进度文件（验收截图用）"),
+                                          QStringLiteral("path"));
+    QCommandLineOption devCancelScanOpt(QStringLiteral("dev-cancel-scan"),
+                                        QStringLiteral("调试：打开来源后停掉扫描（验收「扫描不完整」态）"));
+    QCommandLineOption devRescanOpt(QStringLiteral("dev-rescan"),
+                                    QStringLiteral("调试：打开来源后重新扫描一次（验收用）"));
+    QCommandLineOption devDialogOpt(QStringLiteral("dev-dialog"),
+                                    QStringLiteral("调试：启动后打开指定对话框"
+                                                   "（scan-not-done / cancel-scan / unfavorite）"),
+                                    QStringLiteral("name"));
     QCommandLineOption devNotifyOpt(QStringLiteral("dev-notify"),
                                     QStringLiteral("开发：启动后弹一条**瞬时提示**（验收浮层用）"),
                                     QStringLiteral("text"));
@@ -146,6 +162,12 @@ int main(int argc, char *argv[])
     parser.addOption(osdOpt);
     parser.addOption(seekOpt);
     parser.addOption(devNotifyOpt);
+    parser.addOption(devContextMenuOpt);
+    parser.addOption(devSaveFavOpt);
+    parser.addOption(devOpenProgressOpt);
+    parser.addOption(devCancelScanOpt);
+    parser.addOption(devRescanOpt);
+    parser.addOption(devDialogOpt);
     parser.addOption(debugSettingsOpt);
     parser.addOption(debugSettingsTabOpt);
     parser.addOption(gpuProbeOpt);
@@ -253,6 +275,38 @@ int main(int argc, char *argv[])
     //     由阅读屏自己在可见时把"切换速度"菜单打开（旧实现调的是已删除的旧 QML 方法）。
     engine.rootContext()->setContextProperty(QStringLiteral("devShowIntervalPopup"),
                                              parser.isSet(popupOpt));
+    engine.rootContext()->setContextProperty(QStringLiteral("devContextMenu"),
+                                             parser.isSet(devContextMenuOpt));
+    engine.rootContext()->setContextProperty(QStringLiteral("devDialog"),
+                                             parser.value(devDialogOpt));
+    if (parser.isSet(devOpenProgressOpt)) {
+        QTimer::singleShot(600, ui, [ui, p = parser.value(devOpenProgressOpt)] {
+            qInfo().noquote() << QStringLiteral("[dev] 打开进度文件：%1")
+                                     .arg(ui->openProgress(p) ? QStringLiteral("成功")
+                                                              : QStringLiteral("失败"));
+        });
+    }
+    if (parser.isSet(devRescanOpt)) {
+        const int at = qEnvironmentVariableIntValue("PHOTOSET_DEV_RESCAN_MS");
+        QTimer::singleShot(at > 0 ? at : 800, ui, [ui] {
+            qInfo().noquote() << QStringLiteral("[dev] 重新扫描");
+            ui->rescanSource();
+        });
+    }
+    if (parser.isSet(devCancelScanOpt)) {
+        const int at = qEnvironmentVariableIntValue("PHOTOSET_DEV_CANCEL_MS");
+        QTimer::singleShot(at > 0 ? at : 300, ui, [ui] {
+            ui->cancelScan();
+            qInfo().noquote() << QStringLiteral("[dev] 已请求停止扫描");
+        });
+    }
+    if (parser.isSet(devSaveFavOpt)) {
+        QTimer::singleShot(1200, ui, [ui] {
+            qInfo().noquote() << QStringLiteral("[dev] 保存进度到收藏夹：%1")
+                                     .arg(ui->saveProgressToFavorites() ? QStringLiteral("成功")
+                                                                        : QStringLiteral("失败"));
+        });
+    }
 
     engine.load(QUrl(QStringLiteral("qrc:/qt/qml/AppUi/src/ui/Main.qml")));
     if (engine.rootObjects().isEmpty()) {

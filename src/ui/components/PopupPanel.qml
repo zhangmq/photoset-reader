@@ -23,6 +23,9 @@ Popup {
     property real targetGap:  Theme.spaceSm     // 与目标的间距
     property real screenMargin: Theme.spaceSm   // 距窗口边缘的最小间距
     property bool preferBelow: true             // 动作条在顶部 → 默认向下弹
+    //   右键菜单用：展开二级面板时会临时加宽 ⇒ 钳制要**按加宽后的宽度**预留，
+    //   否则贴着右边缘弹出时二级面板会被顶到窗口外（vsr-player 同款处理）。
+    property real clampExtraWidth: 0
 
     padding: Theme.spaceMd
     modal: false
@@ -43,6 +46,27 @@ Popup {
 
     onOpened: positionToTarget()
     onAnchorTargetChanged: if (opened) positionToTarget()
+
+    // ★ 右键菜单用：在 `item` 坐标 (x, y)（= 鼠标位置）弹出，**四周钳制在窗口内**。
+    //   `anchorTarget` 语义不适用（没有目标控件），所以单独一套：窗口坐标算完再换回父项坐标。
+    function showAt(item, x, y) {
+        if (!item)
+            return
+        const win = item.Window.window
+        const base = win ? win.contentItem : parent
+        if (!base)
+            return
+        const p = item.mapToItem(base, x, y)
+        const fullW = width + clampExtraWidth
+        const nx = Math.min(Math.max(p.x, screenMargin),
+                            Math.max(screenMargin, base.width - fullW - screenMargin))
+        const ny = Math.min(Math.max(p.y, screenMargin),
+                            Math.max(screenMargin, base.height - height - screenMargin))
+        const local = base.mapToItem(parent, nx, ny)
+        root.x = local.x
+        root.y = local.y
+        open()
+    }
 
     function positionToTarget() {
         if (!anchorTarget)

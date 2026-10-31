@@ -1,11 +1,16 @@
 #include "uimodel.h"
 
 #include "appsettings.h"
+#include "archive.h"                // ArchiveSource::isArchive（"是不是压缩包"的唯一实现）
 #include "gpuscale.h"
+#include "progressfile.h"
+#include "progresslistmodel.h"
 #include "sequence.h"
 #include "viewermodel.h"
 
+#include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGuiApplication>
@@ -46,7 +51,20 @@ UiModel::UiModel(QObject *parent)
             notify(notice);
         }
         if (seq->scanFinished()) m_sessionProbe->stop();
+        refreshScanning();
     });
+
+    //   自动保存（用户 2026-11-01）：**只对"已关联进度文件"的来源**生效，固定间隔写一次；
+    //   切来源 / 退出前再补一次（见 `dropSource` / `~UiModel`）
+    m_autosave = new QTimer(this);
+    //   自检用：`PHOTOSET_AUTOSAVE_MS` 可把间隔调小（不设 = 默认 30 s；正式行为不受影响）
+    const int autosaveOverride = qEnvironmentVariableIntValue("PHOTOSET_AUTOSAVE_MS");
+    m_autosave->setInterval(autosaveOverride > 0 ? autosaveOverride : kAutosaveMs);
+    connect(m_autosave, &QTimer::timeout, this, &UiModel::autosaveProgress);
+
+    //   收藏夹列表（QML 的 `ui.favorites`）：目录 = 收藏夹；只列文件名，内容按需读
+    m_favorites = new ProgressListModel(this);
+    m_favorites->setDirectory(favoritesDir());
 
     // ★ `ui.viewer` 在**没打开来源时就是 null**（QML 一律先判非空）。
     qInfo().noquote() << QStringLiteral("[ui] 初始化：只有一个查看界面；打开过的来源不写盘");
@@ -56,6 +74,8 @@ QObject *UiModel::viewer() const { return m_src.vm; }
 
 UiModel::~UiModel()
 {
+    cancelRescan();              // 退出时后台重扫作废
+    autosaveProgress();          // 退出前补一次（有变化且条件满足才写）
     releaseNow(m_src);
 }
 
@@ -85,6 +105,10 @@ void UiModel::releaseLater(const Source &s)
 // 换来源 / 退出：先把旧组**同步**拆掉（`~ViewerModel` 只换记号，立刻返回）
 void UiModel::dropSource()
 {
+    //   ★ 运行时序列要销毁了（切来源 / 退出）：先把进度补写一次（用户 2026-11-01）
+    cancelRescan();              // 后台重扫一并作废（不替换）
+    autosaveProgress();
+    stopTrackingProgress();      // 新来源会重新决定"关不关联"
     if (m_src.vm) m_src.vm->setPlaying(false);
     if (!m_src.vm && !m_src.seq) return;
     Source old = m_src;
@@ -116,8 +140,16 @@ void UiModel::openPath(const QString &path, int index)
     m_path = path;
     m_sessionNotice.clear();                  // 换来源 ⇒ 瞬时提示重新计
     buildViewer();
+    refreshScanning();
+    refreshFavorited();
     if (m_sessionProbe) m_sessionProbe->start();
-    if (index > 0 && m_src.vm) m_src.vm->jump(index);
+    //   `--index N`：扫描是异步的 ⇒ 记下来，等条目够了再跳（见 onSequenceChanged）
+    m_pendingJump = index;
+    m_pendingChain.clear();
+    if (m_pendingJump >= 0 && m_src.vm && m_src.seq && m_src.seq->count() > m_pendingJump) {
+        m_src.vm->jump(m_pendingJump);
+        m_pendingJump = -1;
+    }
 }
 
 void UiModel::buildViewer()
@@ -155,6 +187,9 @@ void UiModel::installViewer(Source s)
     // ★ 幻灯片：间隔由上层（设置）下发；到头等瞬时提示由上层转发到 `notify`
     s.vm->setIntervalMs(m_settings.intervalMs());
     connect(s.vm, &fetch::ViewerModel::notice, this, &UiModel::notify);
+    //   自动保存的"有变化"：位置或版面变了 ⇒ 下一个间隔点写一次
+    connect(s.vm, &fetch::ViewerModel::currentChanged, this, [this] { markProgressDirty(); });
+    connect(s.vm, &fetch::ViewerModel::doublePageChanged, this, [this] { markProgressDirty(); });
     // ★ 本类与 viewer 之间只剩"**给序列 + 序列变了通知**"：位置 / 预取 / 上屏 / loading
     //   全归 viewer 自己。
     const Source old = m_src;
@@ -169,10 +204,17 @@ void UiModel::installViewer(Source s)
 void UiModel::rebuildViewer()
 {
     if (!m_src.vm) return;              // 还没建过来源 ⇒ 没什么可重建
+    //   ★ 重新扫描后条目集合可能变（文件增删）⇒ **不能按旧下标跳**，按 label 链 + 页号找回
+    //     （新序列是异步长出来的：见 `onSequenceChanged` 里的 pending 处理）
     const int cursor = m_src.vm->cursor();
+    m_pendingChain = m_src.seq ? m_src.seq->chainAt(cursor) : QStringList();
+    m_pendingPage = m_src.seq ? m_src.seq->pageAt(cursor) : 0;
+    m_pendingJump = -1;
     buildViewer();
     if (!m_src.vm) return;
-    m_src.vm->jump(qMax(0, cursor));
+    if (m_pendingChain.isEmpty())
+        m_src.vm->jump(qMax(0, cursor));      // 没有链（空序列）⇒ 退回按下标
+    markProgressDirty();                      // 磁盘内容可能变了 ⇒ 让自动保存重写一次
 }
 
 // ── 序列 / viewer 的通知（**只在 GUI 线程**）─────────────────────────────
@@ -188,6 +230,30 @@ void UiModel::pumpSession()
 void UiModel::onSequenceChanged()
 {
     if (m_src.vm) m_src.vm->sequenceChanged();
+    //   CLI `--index N` 的延迟跳转：条目够了就跳一次；扫完了还没到 N 就放弃
+    if (m_pendingJump >= 0 && m_src.vm && m_src.seq) {
+        if (m_src.seq->count() > m_pendingJump) {
+            m_src.vm->jump(m_pendingJump);
+            m_pendingJump = -1;
+        } else if (m_src.seq->scanFinished()) {
+            m_pendingJump = -1;
+        }
+    }
+    //   重新扫描后的"按链找回位置"：条目够了就跳一次；扫完还找不到就放弃
+    if (!m_pendingChain.isEmpty() && m_src.vm && m_src.seq) {
+        if (m_src.seq->count() > 0) {
+            const int idx = m_src.seq->indexOfChain(m_pendingChain, m_pendingPage);
+            if (idx >= 0) {
+                m_src.vm->jump(idx);
+                m_pendingChain.clear();
+            } else if (m_src.seq->scanFinished()) {
+                m_pendingChain.clear();
+            }
+        } else if (m_src.seq->scanFinished()) {
+            m_pendingChain.clear();
+        }
+    }
+    refreshScanning();               // 顶栏 spin / 已发现数
 }
 
 // ── 打开对话框（**QFileDialog 只在这里**；入口随右键菜单那一批接上）──────────
@@ -385,6 +451,461 @@ void UiModel::setSoftwareBackend(bool on)
     if (m_softwareBackend == on) return;
     m_softwareBackend = on;
     emit softwareBackendChanged();
+}
+
+// ══ 收藏夹 / 进度文件（设计 20）═════════════════════════════════════════════
+QString UiModel::favoritesDir() const
+{
+    QString dir = m_settings.favoritesDir();
+    if (dir.isEmpty())
+        dir = QFileInfo(m_settings.filePath()).absolutePath() + QStringLiteral("/收藏");
+    return QDir::cleanPath(dir);
+}
+
+void UiModel::setFavoritesDir(const QString &dir)
+{
+    const QString v = QDir::cleanPath(dir);
+    if (favoritesDir() == v)
+        return;
+    m_settings.setFavoritesDir(v);
+    emit favoritesDirChanged();
+    if (m_favorites) m_favorites->setDirectory(favoritesDir());
+    refreshFavorited();                 // 换了目录 ⇒ "已收藏"的判断跟着变
+}
+
+void UiModel::chooseFavoritesDir()
+{
+    const QString dir = QFileDialog::getExistingDirectory(
+        nullptr, QStringLiteral("选择收藏夹目录"), favoritesDir());
+    if (dir.isEmpty())
+        return;
+    setFavoritesDir(dir);
+}
+
+bool UiModel::scanning() const
+{
+    if (m_rescanSeq) return true;                       // 后台重扫也算"在扫"
+    return m_src.seq && !m_src.seq->scanFinished();
+}
+
+int UiModel::discoveredCount() const
+{
+    if (m_rescanSeq) return m_rescanSeq->discoveredCount();
+    return m_src.seq ? m_src.seq->discoveredCount() : 0;
+}
+
+void UiModel::refreshScanning()
+{
+    const bool now = scanning();
+    const int  n = discoveredCount();
+    //   被用户停下的扫描 = **不完整**（ScanStoped；ScanStoped 也算 scanFinished）
+    const bool incomplete = m_src.seq && m_src.seq->state() == Sequence::State::ScanStoped;
+    const bool canRescan = canRescanNow();
+    if (now != m_scanning || n != m_discovered || canRescan != m_canRescan) {
+        m_scanning = now;
+        m_discovered = n;
+        m_canRescan = canRescan;
+        emit scanningChanged();
+    }
+    if (incomplete != m_scanIncomplete) {
+        m_scanIncomplete = incomplete;
+        emit scanIncompleteChanged();
+    }
+}
+
+bool UiModel::canRescan() const { return m_canRescan; }
+
+//   内部用的实时判断（`m_canRescan` 只是缓存给 QML 的那份）
+bool UiModel::canRescanNow() const
+{
+    if (!m_src.seq || !m_src.vm || m_path.isEmpty())
+        return false;
+    if (scanning())
+        return false;
+    const QFileInfo fi(m_path);
+    return fi.isDir() || ArchiveSource::isArchive(m_path);
+}
+
+//   重新扫描当前来源（右键菜单）：**后台单开一条序列**，扫完再替换当前浏览的
+void UiModel::rescanSource()
+{
+    startRescan();
+}
+
+void UiModel::startRescan()
+{
+    if (m_path.isEmpty() || m_rescanSeq || !m_src.vm || !m_src.seq)
+        return;
+    if (!m_src.seq->scanFinished()) {      // 当前这条还在扫 ⇒ 先别再来一条
+        notify(QStringLiteral("正在扫描，等扫完再重新扫描"));
+        return;
+    }
+    if (!canRescanNow())
+        return;
+
+    //   记下当前位置（**链 + 页号**，不是下标：扫完条目集合可能变）
+    const int cursor = m_src.vm->cursor();
+    m_rescanChain = m_src.seq->chainAt(cursor);
+    m_rescanPage = m_src.seq->pageAt(cursor);
+
+    m_rescanSeq = new Sequence;
+    //   与会话序列同一套唤醒：生产者放完一批 / 写终态 ⇒ 合并成一次 queued 投递
+    m_rescanSeq->setPublishHook([this] {
+        if (m_rescanQueued.exchange(true)) return;
+        QMetaObject::invokeMethod(this, [this] {
+            m_rescanQueued.store(false);
+            onRescanChanged();
+        }, Qt::QueuedConnection);
+    });
+    m_rescanSeq->startScan(m_path, m_settings.recurseDepth(), m_settings.scanHidden(),
+                           Sequence::ScanOptions{ qint64(m_settings.innerArchiveMaxMb()) });
+    qInfo().noquote() << QStringLiteral("[seq] 后台重扫开始：%1").arg(m_path);
+    refreshScanning();
+}
+
+//   后台重扫的消费点（GUI 线程；合并投递）：drain 到空，**扫完才替换**
+void UiModel::onRescanChanged()
+{
+    if (!m_rescanSeq)
+        return;
+    m_rescanSeq->drain();
+    if (!m_rescanSeq->scanFinished()) {
+        refreshScanning();                 // spin 的"已发现 N"
+        return;
+    }
+    applyRescan();
+}
+
+void UiModel::applyRescan()
+{
+    Sequence *fresh = m_rescanSeq;
+    m_rescanSeq = nullptr;
+    if (!fresh)
+        return;
+    if (!m_src.vm || !m_src.seq) {
+        delete fresh;
+        refreshScanning();
+        return;
+    }
+    if (fresh->count() <= 0) {
+        //   一条都没有（源不在了 / 打不开）⇒ **保留原来的**，不把画面变空
+        const QString why = fresh->unsupportedReason();
+        delete fresh;
+        notify(why.isEmpty() ? QStringLiteral("重新扫描没有扫到内容，保留原来的")
+                             : why);
+        refreshScanning();
+        return;
+    }
+
+    Sequence *old = m_src.seq;
+    m_src.seq = fresh;
+    m_src.vm->setSequence(fresh);          // 位置归零 + 清槽（版面/缩放/循环保持）
+    const int idx = m_rescanChain.isEmpty()
+                        ? -1
+                        : fresh->indexOfChain(m_rescanChain, m_rescanPage);
+    m_src.vm->jump(idx >= 0 ? idx : 0);
+    delete old;                            // 旧序列已不被 viewer 引用
+    qInfo().noquote() << QStringLiteral("[seq] 后台重扫完成，已替换当前序列（%1 条，落到 %2）")
+                             .arg(fresh->count()).arg(qMax(0, idx));
+    m_rescanChain.clear();
+    markProgressDirty();                   // 内容可能变了 ⇒ 让自动保存按新 rows 更新
+    refreshFavorited();
+    refreshScanning();
+}
+
+//   作废：停止 + 析构，**不做替换**（取消 / 退出时走这里）
+void UiModel::cancelRescan()
+{
+    if (!m_rescanSeq)
+        return;
+    Sequence *s = m_rescanSeq;
+    m_rescanSeq = nullptr;
+    s->requestStop();
+    delete s;                              // 析构里 join 生产者（已置停止位，通常立刻退出）
+    m_rescanChain.clear();
+    qInfo().noquote() << QStringLiteral("[seq] 后台重扫已作废");
+    refreshScanning();
+}
+
+
+// ══ 收藏夹 / 进度文件（设计 20）═════════════════════════════════════════════
+//   当前来源在收藏夹里对应的文件（空 = 没来源 / 来源不是文件夹或压缩包）
+QString UiModel::currentFavoritesFile() const
+{
+    if (m_path.isEmpty())
+        return QString();
+    const QFileInfo fi(m_path);
+    if (!fi.isDir() && !ArchiveSource::isArchive(m_path))
+        return QString();               // 单张图没有"进度"可说
+    return favoritesDir() + QLatin1Char('/')
+           + progressfile::fileNameFor(progressfile::titleOf(m_path), m_path);
+}
+
+void UiModel::refreshFavorited()
+{
+    const QString file = currentFavoritesFile();
+    const bool now = !file.isEmpty() && QFileInfo::exists(file);
+    if (now == m_sourceFavorited)
+        return;
+    m_sourceFavorited = now;
+    emit sourceFavoritedChanged();
+}
+
+//   把当前来源写成 filePath。**元数据里所有"进度相关"的字段都按**当前浏览状态**取**
+//   —— 位置（label 链 + 页号）、第 N 条 / 共 M 条、版面（单/双）；不用任何缓存值。
+bool UiModel::writeProgress(const QString &filePath, bool quiet)
+{
+    if (!m_src.seq || !m_src.vm) {
+        if (!quiet) notify(QStringLiteral("没有打开的来源"));
+        return false;
+    }
+    if (!m_src.seq->scanFinished()) {
+        //   只有**扫描完**的才能收藏（用户 2026-10-31）—— 点的时候会先弹框告知，这里是兜底
+        if (!quiet) notify(QStringLiteral("扫描还没完，等扫完再保存"));
+        return false;
+    }
+    const QFileInfo fi(m_path);
+    const bool isDir = fi.isDir();
+    if (!isDir && !ArchiveSource::isArchive(m_path)) {
+        if (!quiet) notify(QStringLiteral("只有文件夹和压缩包能保存进度"));
+        return false;
+    }
+
+    m_src.seq->drain();                 // 收尾那一批可能还没取（保证 rows 完整）
+
+    const int cursor = m_src.vm->cursor();
+
+    progressfile::Data d;
+    d.meta.savedAt = QDateTime::currentSecsSinceEpoch();
+    d.meta.title = progressfile::titleOf(m_path);
+    d.meta.sourcePath = fi.absoluteFilePath();
+    d.meta.sourceKind = isDir ? Sequence::Kind::Folder : Sequence::Kind::Archive;
+    d.meta.sourceMtime = fi.lastModified().toSecsSinceEpoch();
+    d.meta.hidden = m_settings.scanHidden();
+    d.meta.depth = m_settings.recurseDepth();
+    d.meta.innerArchiveMaxMb = m_settings.innerArchiveMaxMb();
+    //   ★ 进度相关：全部取**当前浏览状态**
+    d.meta.layout = m_src.vm->doublePage() ? 1 : 0;
+    d.meta.chain = m_src.seq->chainAt(cursor);
+    d.meta.page = m_src.seq->pageAt(cursor);
+    d.meta.done = cursor + 1;
+    d.meta.total = m_src.seq->count();
+    d.rows = m_src.seq->rows();
+
+    QString err;
+    if (!progressfile::write(filePath, d, &err)) {
+        if (!quiet) notify(err.isEmpty() ? QStringLiteral("保存进度失败") : err);
+        else qWarning().noquote() << QStringLiteral("[progress] 自动保存失败：%1").arg(err);
+        return false;
+    }
+    qInfo().noquote() << QStringLiteral("[progress] 已保存 %1（%2 条）")
+                             .arg(filePath).arg(d.rows.size());
+    snapshotSavedState(d.meta, d.rows.size());
+    return true;
+}
+
+bool UiModel::saveProgressToFavorites()
+{
+    const QString file = currentFavoritesFile();
+    if (file.isEmpty()) {
+        notify(m_path.isEmpty() ? QStringLiteral("没有打开的来源")
+                                : QStringLiteral("只有文件夹和压缩包能保存进度"));
+        return false;
+    }
+    if (!writeProgress(file))
+        return false;
+    refreshFavorited();
+    if (m_favorites) m_favorites->reload();      // 列表里能立刻看到
+    startTrackingProgress(file);                 // 之后按间隔 / 切来源自动保存
+    notify(QStringLiteral("已收藏"));
+    return true;
+}
+
+bool UiModel::saveProgressToFile()
+{
+    if (!m_src.seq || !m_src.vm) {
+        notify(QStringLiteral("没有打开的来源"));
+        return false;
+    }
+    const QString start = m_lastProgressDir.isEmpty()
+                              ? QDir::homePath()
+                              : m_lastProgressDir + QLatin1Char('/')
+                                    + progressfile::titleOf(m_path) + QLatin1String(".prsave");
+    const QString picked = QFileDialog::getSaveFileName(
+        nullptr, QStringLiteral("保存进度到文件"), start,
+        QStringLiteral("进度文件 (*.prsave)"));
+    if (picked.isEmpty())
+        return false;
+    QString file = picked;
+    if (!file.endsWith(QLatin1String(".prsave"), Qt::CaseInsensitive))
+        file += QLatin1String(".prsave");
+    if (!writeProgress(file))
+        return false;
+    m_lastProgressDir = QFileInfo(file).absolutePath();
+    startTrackingProgress(file);
+    notify(QStringLiteral("进度已保存"));
+    return true;
+}
+
+void UiModel::openProgressFile()
+{
+    const QString picked = QFileDialog::getOpenFileName(
+        nullptr, QStringLiteral("打开进度文件"),
+        m_lastProgressDir.isEmpty() ? QDir::homePath() : m_lastProgressDir,
+        QStringLiteral("进度文件 (*.prsave)"));
+    if (picked.isEmpty())
+        return;
+    m_lastProgressDir = QFileInfo(picked).absolutePath();
+    openProgress(picked);
+}
+
+//   打开一份进度文件：**只按快照恢复，不扫描**（用户 2026-10-31）
+bool UiModel::openProgress(const QString &filePath)
+{
+    progressfile::Data d;
+    QString err;
+    if (!progressfile::read(filePath, &d, &err)) {
+        notify(err.isEmpty() ? QStringLiteral("打不开进度文件") : err);
+        return false;
+    }
+    if (!QFileInfo::exists(d.meta.sourcePath)) {
+        notify(QStringLiteral("源不在了：%1").arg(d.meta.sourcePath));
+        return false;
+    }
+
+    dropSource();
+
+    Source s;
+    s.seq = new Sequence;
+    //   ★ 恢复 = 行 → 序列（**同一份 `Sequence::Row`**，与扫描共用一套表示）
+    s.seq->restore(d.meta.sourcePath, d.rows, d.meta.sourceKind == Sequence::Kind::Archive);
+    s.vm = new fetch::ViewerModel(m_settings.prefetchWindow(), nullptr);
+    m_path = d.meta.sourcePath;
+    installViewer(s);
+    if (m_src.vm) {
+        m_src.vm->setDoublePage(d.meta.layout == 1);        // ★ 先还原版面，再按 chain/page 定位
+        const int idx = m_src.seq->indexOfChain(d.meta.chain, d.meta.page);
+        m_src.vm->jump(qMax(0, idx));
+    }
+    m_pendingJump = -1;
+    m_pendingChain.clear();
+    startTrackingProgress(filePath);                   // 之后按间隔 / 切来源自动保存
+    snapshotSavedState(d.meta, d.rows.size());         // 文件里记着的就是这份
+    if (m_sessionProbe) m_sessionProbe->stop();        // 恢复的序列已经收尾，不需要探测
+    m_sessionNotice.clear();
+    refreshScanning();
+    refreshFavorited();
+    qInfo().noquote() << QStringLiteral("[progress] 已恢复 %1（%2 条，落到 %3）")
+                             .arg(filePath).arg(d.rows.size()).arg(d.meta.done);
+    return true;
+}
+
+//   收藏夹列表里的"移除"：删文件（不动源）⇒ 刷新"已收藏" + 列表
+bool UiModel::removeProgressFile(const QString &filePath)
+{
+    if (filePath.isEmpty() || !QFileInfo::exists(filePath))
+        return false;
+    if (!QFile::remove(filePath)) {
+        notify(QStringLiteral("删不掉：%1").arg(filePath));
+        return false;
+    }
+    qInfo().noquote() << QStringLiteral("[progress] 已删除 %1").arg(filePath);
+    if (QFileInfo(filePath).absoluteFilePath() == QFileInfo(m_progressFile).absoluteFilePath())
+        stopTrackingProgress();                    // 别在下一个间隔点把它"复活"
+    refreshFavorited();
+    if (m_favorites) m_favorites->reload();
+    return true;
+}
+
+bool UiModel::removeFavorite()
+{
+    const QString file = currentFavoritesFile();
+    if (file.isEmpty() || !QFileInfo::exists(file))
+        return false;
+    if (!QFile::remove(file)) {
+        notify(QStringLiteral("删不掉：%1").arg(file));
+        return false;
+    }
+    refreshFavorited();
+    if (m_favorites) m_favorites->reload();
+    qInfo().noquote() << QStringLiteral("[progress] 已删除 %1").arg(file);
+    stopTrackingProgress();
+    return true;
+}
+
+// ══ 自动保存（用户 2026-11-01）═══════════════════════════════════════════════
+void UiModel::autosaveProgress()
+{
+    if (m_progressFile.isEmpty() || !m_progressDirty)
+        return;
+    if (!m_src.seq || !m_src.vm)
+        return;
+    if (m_src.seq->state() != Sequence::State::Scaned)
+        return;
+    if (!QFileInfo::exists(m_progressFile)) {
+        qInfo().noquote() << QStringLiteral("[progress] 关联的文件不在了，停止自动保存：%1")
+                                 .arg(m_progressFile);
+        stopTrackingProgress();
+        return;
+    }
+    if (!progressChangedSinceSave()) {      // 只是被标记过，内容没变 ⇒ 不重写
+        m_progressDirty = false;
+        return;
+    }
+    if (!writeProgress(m_progressFile, /*quiet=*/true))
+        return;
+    m_progressDirty = false;
+    qInfo().noquote() << QStringLiteral("[progress] 自动保存 %1").arg(m_progressFile);
+}
+
+//   文件里"已经记着"的状态 = **刚写进文件 / 刚从文件读出**的那一份（不是运行态：
+//   恢复时 viewer 的位置是异步落定的，读运行态会把 0 误记成"已保存"）
+void UiModel::snapshotSavedState(const progressfile::Meta &m, int rowCount)
+{
+    m_savedChain = m.chain;
+    m_savedPage = m.page;
+    m_savedLayout = m.layout;
+    m_savedRows = rowCount;
+}
+
+bool UiModel::progressChangedSinceSave() const
+{
+    if (!m_src.seq || !m_src.vm)
+        return false;
+    const int cursor = m_src.vm->cursor();
+    return m_src.seq->chainAt(cursor) != m_savedChain
+           || m_src.seq->pageAt(cursor) != m_savedPage
+           || (m_src.vm->doublePage() ? 1 : 0) != m_savedLayout
+           || m_src.seq->rows().size() != m_savedRows;
+}
+
+void UiModel::startTrackingProgress(const QString &file)
+{
+    m_progressFile = file;
+    m_progressDirty = false;              // 刚写过 / 刚读过 ⇒ 不算有变化
+    if (m_autosave && !file.isEmpty())
+        m_autosave->start();
+    else if (m_autosave)
+        m_autosave->stop();
+}
+
+void UiModel::stopTrackingProgress()
+{
+    m_progressFile.clear();
+    m_progressDirty = false;
+    if (m_autosave) m_autosave->stop();
+}
+
+void UiModel::cancelScan()
+{
+    if (m_rescanSeq) {                   // 后台重扫在跑 ⇒ 作废它（当前视图不受影响）
+        cancelRescan();
+        return;
+    }
+    if (!m_src.seq || m_src.seq->scanFinished())
+        return;
+    m_src.seq->requestStop();            // 只是请求：生产者自己退，已有内容照旧可看
+    qInfo().noquote() << QStringLiteral("[seq] 用户请求停止扫描");
 }
 
 } // namespace app

@@ -22,6 +22,12 @@ qt_add_executable(ib-test-scan
 )
 target_link_libraries(ib-test-scan PRIVATE testsupport)
 
+# ── 进度文件（`.prsave`）读写（设计 20）：自带临时目录夹具 ────────────────
+qt_add_executable(ib-test-progress
+    selftest_progress.cpp
+)
+target_link_libraries(ib-test-progress PRIVATE testsupport)
+
 # ── 元数据（EXIF / 色彩空间）纯函数（设计 17）：不需要临时库，只读 `.testdata` ──
 qt_add_executable(ib-test-meta
     selftest_meta.cpp
@@ -30,6 +36,8 @@ target_link_libraries(ib-test-meta PRIVATE testsupport)
 
 # ── ctest：相对 `.testdata` 的套件在**源码根**跑 ──────────────────────────
 add_test(NAME ib-test-scan COMMAND ib-test-scan
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME ib-test-progress COMMAND ib-test-progress
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME ib-test-meta COMMAND ib-test-meta
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

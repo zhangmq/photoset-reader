@@ -63,6 +63,7 @@ void AppSettings::load()
     m_prefetchWindow = qBound(3, o.value(QStringLiteral("prefetchWindow")).toInt(m_prefetchWindow), 64);
     m_innerArchiveMaxMb = qBound(64, o.value(QStringLiteral("innerArchiveMaxMb"))
                                          .toInt(m_innerArchiveMaxMb), 8192);
+    m_favoritesDir  = o.value(QStringLiteral("favoritesDir")).toString();
 }
 
 void AppSettings::save()
@@ -82,6 +83,7 @@ void AppSettings::save()
     o.insert(QStringLiteral("prefetchWindow"), m_prefetchWindow);
     o.insert(QStringLiteral("prefetchBatch"), m_prefetchBatch);
     o.insert(QStringLiteral("innerArchiveMaxMb"), m_innerArchiveMaxMb);
+    o.insert(QStringLiteral("favoritesDir"), m_favoritesDir);
 
     // 整文件全量写入（最后写的赢）
     QFile f(path);

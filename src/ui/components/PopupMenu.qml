@@ -4,15 +4,29 @@ import AppUi
 
 // ══ 标准菜单（popup menu）══════════════════════════════════════
 //   行结构来源：vsr-player/src/client/ui/OpenMenu.qml / ContextMenu.qml
-//     · 行 = [前导图标] 文本 [紧跟文本的后缀图标] … [右侧提示]，整行 hover，可插分隔线
-//   外观（底 / 描边 / 圆角）继承 PopupPanel
+//     · 行 = [前导图标] 文本 [紧跟文本的后缀图标] … [右侧提示] [▸]，整行 hover，可插分隔线
+//   外观（底 / 描边 / 圆角）继承 PopupPanel（DSH 令牌）
 //
-//   items 每项：{ icon, text, suffix, hint, selected, sep }
-//     icon      前导图标（有任意一项带 icon 时，全表保留图标列 → 文本左沿对齐）
-//     suffix    紧跟文本之后的图标（如排序方向）
-//     hint      右对齐的提示（如快捷键）
-//     selected  选中态（文本与图标用 brand 色）
-//     sep       分隔线行
+//   ★ 二级菜单（2026-10-31，用户："缩放算法参考 vsr-player 做二级菜单"）：
+//     · 条目带 `submenu: [{label, value}]` ⇒ 悬停 / 点击在**右侧**展开面板；
+//     · `currentValue` = 当前值（子项 `value` 相同的那一行打勾）；
+//     · 子项点击 ⇒ `subItemTriggered(row, sub)`，取值与分发交给调用方；
+//     · **画在同一个 Popup 里**（展开时 popup 加宽、右侧留一列），不另开第二个 popup ——
+//       两个 popup 会互抢 grab，点面板会被外层判成"点击外部" ⇒ 菜单自己关掉（vsr-player 实测）。
+//
+//   ★ 分隔线（`sep`）**上下各留 `spaceXs`** —— 分割线不许贴着菜单项（用户 2026-10-31）。
+//
+//   items 每项：{ icon, text, suffix, hint, selected, sep, enabled, keepOpen, action,
+//                 submenu, currentValue }
+//     icon        前导图标（有任意一项带 icon 时，全表保留图标列 → 文本左沿对齐）。
+//                 **选中标记就用它**（`selected` 行给 `icon: Theme.icCheck`）
+//     suffix      紧跟文本之后的图标（如排序方向）
+//     hint        右对齐的提示（快捷键 / **当前档位**，如二级菜单入口显示当前算法名）
+//     selected    选中态（文本与图标用主色）
+//     sep         分隔线行（上下留白见上）
+//     enabled     `false` ⇒ 禁用（整行 dim、不响应 hover / 点击 / 键盘）
+//     keepOpen    `true` ⇒ 点了不关菜单（如「加速 / 减速」可以连点）
+//     action      语义动作名（调用方在 `itemTriggered` 里读它，**不要用下标**）
 //
 //   ★ 必须用 ColumnLayout 而不是 Column：
 //     Column 的隐式宽度取**子项的 width**，而这里的行宽又要撑满列宽 →
@@ -23,8 +37,40 @@ PopupPanel {
 
     property var items: []
     signal itemTriggered(int index)
+    // 二级菜单里选中一项：`row` = 主菜单行下标，`sub` = 子项下标
+    signal subItemTriggered(int row, int sub)
 
     readonly property int rowPadH: Theme.spaceSm
+    readonly property int sepPadV: Theme.spaceXs          // ★ 分隔线上下留白（用户 2026-10-31）
+    readonly property int subGap:   Theme.spaceXs         // 主列与二级面板之间
+    readonly property int subMenuW: Theme.subMenuW
+    //   二级面板在**内容项坐标**里的 x（主面板右沿 + 间距 - 左内边距）
+    readonly property real subX: mainW + subGap - leftPadding
+
+    // ── 二级菜单：当前展开的行（-1 = 收起）──
+    property int subRow: -1
+    readonly property var subItems: {
+        if (subRow < 0 || subRow >= items.length)
+            return []
+        const it = items[subRow]
+        return (it && it.submenu) ? it.submenu : []
+    }
+    readonly property bool subOpen: subItems.length > 0
+    readonly property int subPanelH: subItems.length * Theme.controlMd
+    //   二级面板与**展开它的那一行**顶对齐；放不下就整体上移（不超出主列）。
+    //   ⚠️ 取委托的**实际布局位置**，不用数组下标重推行高（隐藏行会让重算错位 —— vsr-player 实测）。
+    readonly property real subY: {
+        if (!subOpen)
+            return 0
+        let y = 0
+        const kids = column.children
+        for (let i = 0; i < kids.length; ++i) {
+            if (kids[i].itemIndex === subRow) { y = kids[i].y; break }
+        }
+        const maxY = Math.max(0, column.implicitHeight - subPanelH)
+        return Math.min(y, maxY)
+    }
+
     readonly property bool hasLeadingIcons: {
         for (var i = 0; i < items.length; ++i)
             if (items[i] && items[i].icon)
@@ -36,9 +82,14 @@ PopupPanel {
     // ── 键盘操作（方向键选行 / Enter 激活 / Esc 关闭由 closePolicy 处理）──
     property int currentIndex: -1
 
+    //   可选中 = 不是分隔线、没被禁用
+    function pickable(i) {
+        const it = items[i]
+        return !!it && it.sep !== true && it.enabled !== false
+    }
     function firstSelectableIndex() {
         for (var i = 0; i < items.length; ++i)
-            if (items[i] && items[i].sep !== true)
+            if (pickable(i))
                 return i
         return -1
     }
@@ -49,16 +100,22 @@ PopupPanel {
         var i = currentIndex
         for (var k = 0; k < n; ++k) {
             i = (i + step + n) % n
-            if (items[i] && items[i].sep !== true) {
+            if (pickable(i)) {
                 currentIndex = i
+                subRow = items[i].submenu ? i : -1   // 键盘移到带二级的行 ⇒ 展开它
                 return
             }
         }
     }
     function activateCurrent() {
-        if (currentIndex < 0)
+        if (currentIndex < 0 || !pickable(currentIndex))
             return
-        var i = currentIndex
+        const it = items[currentIndex]
+        if (it.submenu) {          // 二级菜单入口：展开（子项本身鼠标点选）
+            subRow = currentIndex
+            return
+        }
+        const i = currentIndex
         close()
         itemTriggered(i)
     }
@@ -66,20 +123,52 @@ PopupPanel {
     onOpened: {
         // ★ 鼠标打开时**不高亮任何项**（否则会像"默认选中第一项"，误导用户）
         currentIndex = ui.inputFromKeyboard ? firstSelectableIndex() : -1
+        subRow = -1
         column.forceActiveFocus()          // 键盘事件交给菜单内容项
+    }
+    onClosed: subRow = -1
+
+    //   外观 = **两块独立面板**（主菜单 + 二级面板），与 vsr-player 的二级菜单一致：
+    //   二级面板有自己的圆角与描边，靠右、与展开它的那一行顶对齐 —— 不是"一个加宽的大面板"。
+    background: Item {
+        Rectangle {                                        // 主面板
+            width: root.mainW
+            height: root.height
+            color: Theme.menuFill
+            radius: Theme.radiusLg
+            border.width: Theme.borderW
+            border.color: Theme.borderL4
+        }
+        Rectangle {                                        // 二级面板（只在展开时出现）
+            visible: root.subOpen
+            x: root.mainW + root.subGap
+            y: root.topPadding + root.subY - Theme.spaceXs
+            width: root.subMenuW
+            height: root.subPanelH + Theme.spaceXs * 2
+            color: Theme.menuFill
+            radius: Theme.radiusLg
+            border.width: Theme.borderW
+            border.color: Theme.borderL4
+        }
     }
 
     padding: Theme.spaceXs                      // DSH: .list { padding: 4px }
+    // 主列宽固定；二级面板展开时只**加宽 popup**（主列不会跟着变宽）
+    readonly property int mainW: Math.max(Theme.menuMinW,
+                                          column.implicitWidth + leftPadding + rightPadding)
     width: implicitWidth
     height: implicitHeight
     // DSH: .list { min-width: 144px } —— 太窄时 radius-lg 的圆角会显得突兀
-    implicitWidth: Math.max(Theme.menuMinW, column.implicitWidth + leftPadding + rightPadding)
+    implicitWidth: mainW + (subOpen ? subGap + subMenuW : 0)
+    //   钳制时一直预留二级面板的宽度（见 PopupPanel.clampExtraWidth）
+    clampExtraWidth: subGap + subMenuW
     implicitHeight: column.implicitHeight + topPadding + bottomPadding
 
     ColumnLayout {
         id: column
         anchors.left: parent.left
-        anchors.right: parent.right
+        anchors.top: parent.top
+        width: root.mainW - root.leftPadding - root.rightPadding
         spacing: 0
         focus: true
 
@@ -98,21 +187,30 @@ PopupPanel {
                 required property int index
 
                 readonly property bool isSep: modelData && modelData.sep === true
+                readonly property bool itemEnabled: !(modelData && modelData.enabled === false)
                 readonly property bool selected: !!(modelData && modelData.selected)
+                readonly property bool hasSub: !!(modelData && modelData.submenu)
+                readonly property bool subActive: root.subRow === index && root.subOpen
+                readonly property int itemIndex: index
 
                 Layout.fillWidth: true
-                Layout.preferredHeight: isSep ? Theme.hairline : Theme.controlMd
+                //   ★ 分隔线行 = 线 + 上下 `sepPadV` 的留白（不和菜单项贴在一起）
+                Layout.preferredHeight: isSep ? Theme.hairline + root.sepPadV * 2
+                                              : Theme.controlMd
                 Layout.preferredWidth: root.rowPadH * 2
                     + (root.leadW > 0 ? root.leadW + Theme.spaceSm : 0)
                     + label.implicitWidth
                     + (suffix.visible ? Theme.spaceSm + suffix.implicitWidth : 0)
+                    + (chevron.visible ? Theme.spaceXs + chevron.implicitWidth : 0)
                     + (hint.visible ? Theme.spaceMd + hint.implicitWidth : 0)
+                opacity: row.isSep ? 1.0 : (row.itemEnabled ? 1.0 : Theme.dimOpacity)
 
                 Rectangle {                                   // hover 底（DSH: 行圆角 = radius-md）
                     anchors.fill: parent
                     visible: !row.isSep
                     radius: Theme.radiusMd
-                    color: (rowMa.containsMouse || row.index === root.currentIndex)
+                    color: (row.itemEnabled
+                            && (rowMa.containsMouse || row.index === root.currentIndex || row.subActive))
                          ? Theme.hoverFill : "transparent"
                     Behavior on color { ColorAnimation { duration: Theme.durFast } }
                 }
@@ -161,29 +259,114 @@ PopupPanel {
                     renderType: Text.NativeRendering
                     color: Theme.textCaption
                 }
-                Text {                                        // 右侧提示
+                Text {                                        // 右侧提示（快捷键 / 当前档位）
                     id: hint
-                    anchors.right: parent.right
-                    anchors.rightMargin: root.rowPadH
+                    anchors.right: chevron.visible ? chevron.left : parent.right
+                    anchors.rightMargin: chevron.visible ? Theme.spaceXs : root.rowPadH
                     anchors.verticalCenter: parent.verticalCenter
                     visible: !row.isSep && !!(modelData && modelData.hint)
                     text: (modelData && modelData.hint) ? modelData.hint : ""
                     // DSH: .shortcutKeys 用 label-caption
                     color: Theme.textCaption
                 }
+                Text {                                        // 二级菜单箭头（▸）
+                    id: chevron
+                    anchors.right: parent.right
+                    anchors.rightMargin: root.rowPadH
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: !row.isSep && row.hasSub
+                    text: Theme.icChevronR
+                    font.family: iconFont
+                    font.pixelSize: Theme.iconSm
+                    renderType: Text.NativeRendering
+                    color: Theme.textCaption
+                }
                 MouseArea {
                     id: rowMa
                     anchors.fill: parent
                     visible: !row.isSep
+                    enabled: row.itemEnabled               // ★ 禁用行不响应
                     hoverEnabled: true
-                    onEntered: root.currentIndex = -1      // 鼠标接管 → 清掉键盘高亮
-                    cursorShape: Qt.PointingHandCursor
+                    onEntered: {
+                        root.currentIndex = -1             // 鼠标接管 → 清掉键盘高亮
+                        root.subRow = row.hasSub ? row.index : -1
+                    }
+                    cursorShape: row.itemEnabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                     onClicked: {
-                        console.log("[probe] PopupMenu 鼠标点击 index=" + row.index)
-                        // ★ 行可带 `keepOpen`（例：切换速度里的「加速 / 减速」—— 可以连点）
-                        if (!(modelData && modelData.keepOpen))
+                        const keep = !!(modelData && modelData.keepOpen)
+                        if (row.hasSub) {                  // 二级菜单入口：只展开，不关菜单
+                            root.subRow = row.index
+                            return
+                        }
+                        if (!keep)
                             root.close()
                         root.itemTriggered(row.index)
+                    }
+                }
+            }
+        }
+    }
+
+    // ── 二级面板：主列右侧（同一个 Popup 里；竖线分隔）──────────────
+    Column {
+        id: subColumn
+        visible: root.subOpen
+        x: root.subX
+        y: root.subY
+        width: root.subMenuW
+        spacing: 0
+
+        Repeater {
+            model: root.subItems
+
+            delegate: Item {
+                id: subRowItem
+                required property var modelData
+                required property int index
+
+                readonly property bool current: {
+                    const mainIt = (root.subRow >= 0 && root.subRow < root.items.length)
+                                   ? root.items[root.subRow] : null
+                    return !!mainIt && mainIt.currentValue === modelData.value
+                }
+
+                width: subColumn.width
+                height: Theme.controlMd
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Theme.radiusMd
+                    color: subMa.containsMouse ? Theme.hoverFill : "transparent"
+                    Behavior on color { ColorAnimation { duration: Theme.durFast } }
+                }
+                Text {                                        // 选中标记（与主菜单同一套对号）
+                    anchors.left: parent.left
+                    anchors.leftMargin: root.rowPadH
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Theme.iconMd
+                    text: subRowItem.current ? Theme.icCheck : ""
+                    font.family: iconFont
+                    font.pixelSize: Theme.iconMd
+                    renderType: Text.NativeRendering
+                    color: Theme.textPrimary
+                }
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: root.rowPadH + Theme.iconMd + Theme.spaceSm
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: (modelData && modelData.label) ? modelData.label : ""
+                    color: Theme.textPrimary
+                }
+                MouseArea {
+                    id: subMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        const r = root.subRow
+                        const s = subRowItem.index
+                        root.close()               // 先关（调用方的动作可能会开对话框）
+                        root.subItemTriggered(r, s)
                     }
                 }
             }

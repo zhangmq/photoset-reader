@@ -92,5 +92,16 @@ Item {
                 onItemTriggered: function (i) { ui.defaultLoop = i }
             }
         }
+
+        //   ★ 2026-10-31（设计 20）：收藏夹路径 —— 进度文件就存在这个目录里；
+        //     可以指到任意目录（含外部盘）。改路径**不迁移**旧文件。
+        SettingsRow {
+            label: "收藏夹路径"
+            description: ui.favoritesDir
+            Button {
+                label: "更改…"
+                onClicked: ui.chooseFavoritesDir()
+            }
+        }
     }
 }

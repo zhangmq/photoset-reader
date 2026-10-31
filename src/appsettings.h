@@ -53,6 +53,8 @@ struct AppSettings
     // ★ v7：**内层压缩包上限**（MB）—— 超过上限的内层压缩包不展开（嵌套包不常见，
     //   避免为此付出大代价）。判定在**解压前**（从归档条目元数据取成员大小）。
     int  innerArchiveMaxMb() const { return m_innerArchiveMaxMb; }   // 默认 512，范围 64–8192
+    //   ★ 2026-10-31：收藏夹路径（空 = 默认 `<配置目录>/收藏`；用户可改成任意目录，含外部盘）
+    QString favoritesDir() const { return m_favoritesDir; }
 
     void setThemeMode(int v) { m_themeMode = v; save(); }
     void setIntervalMs(int v) { m_intervalMs = qMax(50, v); save(); }
@@ -65,6 +67,7 @@ struct AppSettings
     void setPrefetchWindow(int v) { m_prefetchWindow = qBound(3, v, 64); save(); }
     void setPrefetchBatch(int v) { m_prefetchBatch = qBound(1, v, 32); save(); }
     void setInnerArchiveMaxMb(int v) { m_innerArchiveMaxMb = qBound(64, v, 8192); save(); }
+    void setFavoritesDir(const QString &v) { m_favoritesDir = v; save(); }
 
     QString filePath() const;
 
@@ -80,6 +83,7 @@ private:
     int  m_prefetchWindow = 8;
     int  m_prefetchBatch = 4;
     int  m_innerArchiveMaxMb = 512;     // ★ v7：内层压缩包上限（MB），范围 64–8192
+    QString m_favoritesDir;             // 收藏夹路径（空 = 默认 `<配置目录>/收藏`）
 };
 
 } // namespace app

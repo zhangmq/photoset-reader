@@ -16,6 +16,7 @@ import AppUi
 //   · 左：[上一文件夹] [⏮（长按连续**后退**）] [⏯] [⏭（长按连续**快进**）] [下一文件夹]
 //     （**纯图标**，目标名字在 tooltip；**长按对称** —— 用户 2026-10-12）
 //   · 右：[画面缩放▾] [阅读版面▾] [锁定缩放] [切换速度▾] [循环▾] [全屏窗口] [OSD]
+//   ★ 2026-10-31：**缩放算法已挪进右键菜单**（用户）—— 本栏不再有它。
 //   · 进度（序号/总数）在**顶栏**，不在本栏；OSD 面板不随本栏显隐（用户 2026-10-11）
 //   ★ 2026-10-31（用户）：**依赖文件上下文的控件在没有来源时禁用**；不依赖文件的照常可用
 //     （它们改的是全局默认，打开文件后生效）—— 见 `hasSource`。
@@ -50,7 +51,6 @@ Item {
     property int    fitMode: 1            // 0=原始 1=适应屏幕 2=适应宽度 3=适应高度
     property bool   doublePage: false     // 阅读版面：单幅 / 双幅
     property bool   zoomLocked: false     // 锁定缩放（跨画面保留 zoom/pan；属于 viewer 态）
-    property string scaleAlgorithm: "lanczos3"   // 缩放算法（viewer 态；不落盘）
     property bool   windowFullscreen: false   // 窗口全屏
     property bool   osdVisible: false         // OSD 信息行显隐
     property string prevFolderName: ""
@@ -71,7 +71,6 @@ Item {
     signal intervalStep(int deltaMs)      // 加速 / 减速（步进 10ms）
     function openIntervalMenu() { intervalMenu.open() }   // 开发自检用（截图：菜单打开态）
     signal fitModeSelected(int mode)
-    signal algorithmSelected(string key)
     signal doublePageSelected(bool on)
     signal zoomLockToggled()
     signal windowFullscreenToggled()
@@ -79,11 +78,7 @@ Item {
     signal seeked(int index)
 
     readonly property bool mouseInRegion: barHover.hovered || timeline.pressed
-    function pageLabel(key) {
-        return ["Nearest", "Smooth (Qt)", "Bicubic", "Lanczos 2", "Lanczos 3"][
-                    ["nearest", "smooth", "bicubic", "lanczos2", "lanczos3"].indexOf(key)]
-    }
-    readonly property bool popupOpen: fitMenu.visible || algoMenu.visible || layoutMenu.visible
+    readonly property bool popupOpen: fitMenu.visible || layoutMenu.visible
                                       || intervalMenu.visible || loopMenu.visible
     implicitHeight: Theme.osdHotZoneH + Theme.osdTrackH + Theme.barH
 
@@ -216,30 +211,6 @@ Item {
             anchors.rightMargin: Theme.spaceLg
             anchors.verticalCenter: parent.verticalCenter
             spacing: Theme.spaceXs
-
-            NavBtn {   // 缩放算法（viewer 态；键盘/设置里改的是全局默认，这里改完不回写）
-                id: algoBtn
-                anchors.verticalCenter: parent.verticalCenter
-                glyph: Theme.icAlgorithm
-                tooltip: "缩放算法：" + pageLabel(root.scaleAlgorithm)
-                enabled: root.overlaysVisible
-                onTriggered: algoMenu.visible ? algoMenu.close() : algoMenu.open()
-            }
-            PopupMenu {
-                id: algoMenu
-                anchorTarget: algoBtn
-                //   选中行用对号（与速度菜单同一写法；PopupMenu 的前导列就是 icon）
-                items: [
-                    { text: "Nearest",     icon: root.scaleAlgorithm === "nearest"  ? Theme.icCheck : "", selected: root.scaleAlgorithm === "nearest" },
-                    { text: "Smooth (Qt)", icon: root.scaleAlgorithm === "smooth"   ? Theme.icCheck : "", selected: root.scaleAlgorithm === "smooth" },
-                    { text: "Bicubic",     icon: root.scaleAlgorithm === "bicubic"  ? Theme.icCheck : "", selected: root.scaleAlgorithm === "bicubic" },
-                    { text: "Lanczos 2",   icon: root.scaleAlgorithm === "lanczos2" ? Theme.icCheck : "", selected: root.scaleAlgorithm === "lanczos2" },
-                    { text: "Lanczos 3",   icon: root.scaleAlgorithm === "lanczos3" ? Theme.icCheck : "", selected: root.scaleAlgorithm === "lanczos3" }
-                ]
-                onItemTriggered: function (i) {
-                    root.algorithmSelected(["nearest", "smooth", "bicubic", "lanczos2", "lanczos3"][i])
-                }
-            }
 
             NavBtn {   // 画面缩放模式
                 id: fitBtn

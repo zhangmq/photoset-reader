@@ -18,10 +18,8 @@ Item {
     property bool   debugForceUi: false     // 调试：强制显示浮层（离屏没有鼠标热区）
     property bool   debugOpenSettings: false   // 调试：截图时自动打开设置
     property int    debugSettingsTab: 0        // 调试：设置弹框开在哪一页（0常规/1图像/2系统/3快捷键）
-    // ★ 2026-10-31（只剩查看界面）：没有「浏览」屏、没有图集库抽屉
-    signal favoriteToggled()    // 收藏（段 2 接「保存阅读进度」）
-    signal settingsRequested()  // 设置
-    onSettingsRequested: settingsDialog.open()   // [设置] 按钮 → 打开设置对话框
+    // ★ 2026-10-31：只剩查看界面 + **右键菜单**；本视图不再对顶栏/底栏发动作信号
+    //   （打开 / 保存 / 缩放算法 / 设置 全在菜单里，见文件末尾 `contextMenu`）。
 
     // 本屏是不是**双幅**（两个位置 → 并排两张图）；`keyCount` = 本屏位置数（1 或 2）。
     //   ★ 坏的位置**留空位**：`keyCount` 仍是 2（两格都占着），那一格只是没图。
@@ -189,13 +187,29 @@ Item {
         // 交互缩放（滚轮）与拖拽平移（设计 08 §1.3 / 01 §3.8）
         MouseArea {
             anchors.fill: parent
-            acceptedButtons: Qt.LeftButton
-            cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+            //   ★ 2026-10-31：右键 = **右键菜单**（用户）；拖拽平移仍只跟左键。
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            property bool panning: false
             property real lastX: 0
             property real lastY: 0
-            onPressed: (m) => { lastX = m.x; lastY = m.y }
+            cursorShape: panning ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+
+            function openContextMenu(x, y) { root.openContextMenu(canvas, x, y) }
+
+            onClicked: (m) => {
+                if (m.button === Qt.RightButton)
+                    openContextMenu(m.x, m.y)
+            }
+            onPressed: (m) => {
+                if (m.button !== Qt.LeftButton) return
+                panning = true
+                lastX = m.x
+                lastY = m.y
+            }
+            onReleased: panning = false
+            onCanceled: panning = false
             onPositionChanged: (m) => {
-                if (!pressed) return
+                if (!panning) return
                 // 内容跟着指针走：**位移交给 ui 换算并夹取**（`panBy` 里知道"完整缩放后尺寸"）。
                 //   ★ 别在这里直接 `ui.panX -= dx`：没有夹取就会出现"拖过头、再拖回来要空走一段"。
                 if (ui.viewer) ui.viewer.panBy(m.x - lastX, m.y - lastY)
@@ -228,35 +242,11 @@ Item {
             anchors.centerIn: parent
             spacing: Theme.spaceMd
 
-            Item {
-                id: spinner
-                width: 32
-                height: 32
+            Spinner {
                 anchors.horizontalCenter: parent.horizontalCenter
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: width / 2
-                    color: "transparent"
-                    border.width: 3
-                    border.color: Theme.borderL4
-                }
-                Rectangle {
-                    width: 3
-                    height: 11
-                    radius: 1.5
-                    color: Theme.textPrimary
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.top: parent.top
-                    anchors.topMargin: 1
-                }
-                RotationAnimator on rotation {
-                    from: 0
-                    to: 360
-                    duration: 900
-                    loops: Animation.Infinite
-                    running: loadingLayer.visible
-                }
+                size: 32
+                lineWidth: 3
+                running: loadingLayer.visible
             }
 
             Text {
@@ -281,9 +271,12 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         overlaysVisible: root.showUi
-        hasSource: ui.viewer !== null          // ★ 依赖当前来源 ⇒ 没有来源时禁用
-        onFavoriteToggled: root.favoriteToggled()
-        onSettingsRequested: root.settingsRequested()
+        hasSource: ui.viewer !== null
+        scanning: ui.scanning
+        discoveredCount: ui.discoveredCount
+        favorited: ui.sourceFavorited
+        onScanCancelRequested: cancelScanDialog.open()
+        onFavoriteToggled: root.toggleFavorite()
         progressText: ui.viewer ? ((ui.viewer.currentPage + 1) + " / " + ui.viewer.totalPages) : ""
         fileName: ui.viewer ? ui.viewer.currentName : ""
         relativePath: ui.viewer ? ui.viewer.relativePath : ""
@@ -291,7 +284,7 @@ Item {
 
     // ── 底部类播放器控制条 ──
     //   ★ 2026-10-31（用户）：**没有来源时，不依赖文件的控件照样可用** —— 它们改的是**全局默认**
-    //     （画面缩放 / 阅读版面 / 循环 / 切换速度 / 缩放算法），下一次打开来源时由
+    //     （画面缩放 / 阅读版面 / 循环 / 切换速度），下一次打开来源时由
     //     `applyViewerDefaults()` 生效；依赖文件上下文的（上/下一张、播放、上/下一文件夹、时间轴、
     //     锁定缩放、OSD）由 `hasSource` 禁用。
     FullscreenBottomBar {
@@ -315,15 +308,10 @@ Item {
         overlaysVisible: root.showUi
         onPrevRequested: { if (ui.viewer) ui.viewer.stepPage(-1) }
         onNextRequested: { if (ui.viewer) ui.viewer.stepPage(1) }
-        scaleAlgorithm: ui.viewer ? ui.viewer.scaleAlgorithm : ui.scaleAlgorithm
         //   ★ 没有 viewer 时改**全局默认**（打开下一个来源时生效）；有 viewer 时只改当前阅读态
         onFitModeSelected: function (m) {
             if (ui.viewer) ui.viewer.fitMode = m
             else ui.fitMode = m
-        }
-        onAlgorithmSelected: function (key) {
-            if (ui.viewer) ui.viewer.scaleAlgorithm = key
-            else ui.scaleAlgorithm = key
         }
         onDoublePageSelected: function (on) {
             if (ui.viewer) ui.viewer.doublePage = on
@@ -380,6 +368,191 @@ Item {
     }
     onVisibleChanged: if (visible) openIntervalPopupIfAsked()
     onDebugOpenIntervalPopupChanged: if (debugOpenIntervalPopup) openIntervalPopupIfAsked()
+
+    // ══ 右键菜单（用户 2026-10-31）════════════════════════════════════════════
+    //   参考 vsr-player `ContextMenu.qml`（鼠标位置弹出 / 条目数组 / 分组）；
+    //   外观与交互一律走我们的 `PopupMenu`（DSH 令牌：menuFill / borderL4 / radiusLg / hoverFill）。
+    //   分组 = **打开 / 保存 / 缩放算法 / 设置**（用户给定）。
+    //   ★ 条目带 `action`（语义名），**不按行号分发** —— 多一组、少一组都不会错位。
+    //   ★ 段 2 / 段 3 才有的动作（收藏夹、外部存档、保存）**先禁用**：后端还没有，
+    //     不许"点了什么都不发生"。
+    readonly property var contextMenuItems: {
+        const algo = ui.viewer ? ui.viewer.scaleAlgorithm : ui.scaleAlgorithm
+        const algoName = { nearest: "Nearest", smooth: "Smooth (Qt)", bicubic: "Bicubic",
+                           lanczos2: "Lanczos 2", lanczos3: "Lanczos 3" }[algo] || ""
+        return [
+            { text: "打开收藏夹", icon: Theme.icStarO, action: "open:favorites" },
+            { text: "打开进度文件", action: "open:saved" },
+            { text: "打开文件夹", action: "open:folder" },
+            { text: "打开压缩包", action: "open:archive" },
+            { text: "打开文件", action: "open:file" },
+            { sep: true },
+            //   来源级动作：**重新扫描当前来源**（扫完会按最新磁盘内容重建 rows；
+            //   已关联进度文件的，之后自动保存会把新 rows 写回去）
+            { text: "重新扫描", action: "rescan", enabled: ui.canRescan },
+            { sep: true },
+            { text: "保存进度到收藏夹", action: "save:progress", enabled: ui.viewer !== null },
+            { text: "保存进度到文件", action: "save:progress-as", enabled: ui.viewer !== null },
+            { sep: true },
+            //   ★ 这一组将来叫「图像处理」（用户 2026-10-31）；现在组里只有缩放算法一项。
+            //     二级菜单（悬停展开）—— 5 档全列在主菜单里太长（用户）。
+            { text: "缩放算法", hint: algoName, currentValue: algo,
+              submenu: [
+                  { label: "Nearest",     value: "nearest" },
+                  { label: "Smooth (Qt)", value: "smooth" },
+                  { label: "Bicubic",     value: "bicubic" },
+                  { label: "Lanczos 2",   value: "lanczos2" },
+                  { label: "Lanczos 3",   value: "lanczos3" }
+              ] },
+            { sep: true },
+            { text: "设置", icon: Theme.icSettings, action: "settings" }
+        ]
+    }
+
+    function runContextAction(action) {
+        if (!action)
+            return
+        if (action === "open:folder")         ui.chooseOpenFolder()
+        else if (action === "open:archive")   ui.chooseOpenArchive()
+        else if (action === "open:file")      ui.chooseOpenImage()
+        else if (action === "open:favorites") favoritesPopup.open()
+        else if (action === "open:saved")     ui.openProgressFile()
+        else if (action === "rescan")         ui.rescanSource()
+        else if (action === "save:progress")  root.requestSaveToFavorites()
+        else if (action === "save:progress-as") root.requestSaveToFile()
+        else if (action === "settings")       settingsDialog.open()
+        //   其余动作按需再加
+    }
+
+    // 在 `item` 的 (x, y)（= 鼠标位置）弹出，越界钳制在窗口内
+    function openContextMenu(item, x, y) { contextMenu.showAt(item, x, y) }
+
+    // 缩放算法：有来源 ⇒ 只改当前阅读态；没有来源 ⇒ 改**全局默认**（打开下一个来源时生效）
+    function applyScaleAlgorithm(key) {
+        if (!key)
+            return
+        if (ui.viewer) ui.viewer.scaleAlgorithm = key
+        else ui.scaleAlgorithm = key
+    }
+
+    // ── 收藏夹（弹窗列表；设计 20 §7）──
+    FavoritesPopup {
+        id: favoritesPopup
+    }
+
+    PopupMenu {
+        id: contextMenu
+        items: root.contextMenuItems
+        onItemTriggered: function (i) {
+            const it = root.contextMenuItems[i]
+            root.runContextAction(it ? it.action : "")
+        }
+        onSubItemTriggered: function (row, sub) {
+            const it = root.contextMenuItems[row]
+            const subIt = (it && it.submenu) ? it.submenu[sub] : null
+            if (subIt)
+                root.applyScaleAlgorithm(subIt.value)
+        }
+    }
+
+    // ── 收藏 / 保存（用户 2026-10-31）──
+    //   · 没有来源 ⇒ 不做；
+    //   · **扫描中** ⇒ 信息框「扫描还没完」；
+    //   · **扫描被取消（不完整）** ⇒ 确认框「扫描不完整，确认保存进度吗？…」；
+    //   · 都不是 ⇒ 直接保存。
+    property string pendingSaveTarget: ""        // "favorites" / "file"
+
+    function requestSaveToFavorites() {
+        if (ui.viewer === null)
+            return
+        if (ui.scanning) { scanNotDoneDialog.open(); return }
+        if (ui.scanIncomplete) { pendingSaveTarget = "favorites"; incompleteSaveDialog.open(); return }
+        ui.saveProgressToFavorites()
+    }
+    function requestSaveToFile() {
+        if (ui.viewer === null)
+            return
+        if (ui.scanning) { scanNotDoneDialog.open(); return }
+        if (ui.scanIncomplete) { pendingSaveTarget = "file"; incompleteSaveDialog.open(); return }
+        ui.saveProgressToFile()
+    }
+    function runPendingSave() {
+        if (pendingSaveTarget === "favorites") ui.saveProgressToFavorites()
+        else if (pendingSaveTarget === "file") ui.saveProgressToFile()
+        pendingSaveTarget = ""
+    }
+    function toggleFavorite() {
+        if (ui.viewer === null)
+            return
+        if (ui.sourceFavorited) unfavoriteDialog.open()
+        else requestSaveToFavorites()
+    }
+
+    ConfirmDialog {
+        id: scanNotDoneDialog
+        title: "扫描还没完"
+        message: "等扫描完成后再收藏。"
+        acceptText: "知道了"
+        showReject: false
+    }
+    ConfirmDialog {
+        id: incompleteSaveDialog
+        title: "扫描不完整"
+        message: "扫描不完整，确认保存进度吗？未扫描发现的文件不会被重新发现，建议完整扫描后收藏/保存。"
+        acceptText: "保存"
+        rejectText: "取消"
+        onAccepted: root.runPendingSave()
+    }
+    ConfirmDialog {
+        id: cancelScanDialog
+        title: "取消扫描"
+        message: "要停止这次扫描吗？已经扫到的内容仍然可以查看。"
+        acceptText: "取消扫描"
+        rejectText: "继续扫描"
+        onAccepted: ui.cancelScan()
+    }
+    ConfirmDialog {
+        id: unfavoriteDialog
+        title: "取消收藏"
+        message: "删除这条进度记录？不会删除源文件。"
+        acceptText: "取消收藏"
+        danger: true
+        onAccepted: ui.removeFavorite()
+    }
+
+    //   开发自检（`--dev-dialog <name>`）：启动后打开指定对话框（截图用；默认空 ⇒ 零行为变化）
+    property string debugDialog: ""
+    Timer {
+        interval: 300
+        repeat: false
+        running: root.debugDialog !== ""
+        onTriggered: {
+            if (root.debugDialog === "scan-not-done")     scanNotDoneDialog.open()
+            else if (root.debugDialog === "cancel-scan")  cancelScanDialog.open()
+            else if (root.debugDialog === "unfavorite")   unfavoriteDialog.open()
+            else if (root.debugDialog === "incomplete-save") incompleteSaveDialog.open()
+            else if (root.debugDialog === "favorites")    favoritesPopup.open()
+        }
+    }
+
+    //   开发自检（`--dev-context-menu`）：启动后把菜单打开在画布上一个固定点（截图用）。
+    //   默认 false ⇒ 正常运行时零行为变化。
+    property bool debugOpenContextMenu: false
+    Timer {
+        interval: 250
+        repeat: false
+        running: root.debugOpenContextMenu
+        onTriggered: {
+            root.openContextMenu(canvas, 320, 240)
+            // 截图也看二级面板：把第一项带 `submenu` 的行展开
+            for (let i = 0; i < contextMenu.items.length; ++i) {
+                if (contextMenu.items[i].submenu) {
+                    contextMenu.subRow = i
+                    break
+                }
+            }
+        }
+    }
 
     // ── 键盘（全屏是快捷键面）──
     //   ★ 方向键**不拦截自动重复**：Qt 的按键自动重复正常打进来，每个重复按键自然就是一次

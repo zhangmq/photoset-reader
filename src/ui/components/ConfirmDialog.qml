@@ -20,6 +20,8 @@ Popup {
     property string acceptText: "确认"
     property string rejectText: "取消"
     property bool   danger: false
+    //   单按钮（纯信息框）：只有「确认」，没有「取消」（2026-10-31）
+    property bool   showReject: true
 
     signal accepted()
     signal rejected()
@@ -93,6 +95,7 @@ Popup {
                 Button {
                     id: rejectBtn
                     variant: "outline"
+                    visible: root.showReject
                     label: root.rejectText
                     onClicked: root.close()
                 }

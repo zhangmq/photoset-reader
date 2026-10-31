@@ -78,6 +78,11 @@ add_library(ibcore STATIC
     src/exifmeta.h
     src/appsettings.cpp
     src/appsettings.h
+    # ── 进度文件（`.prsave`）：收藏 / 打开进度的唯一实现（设计 20）──
+    src/progressfile.cpp
+    src/progressfile.h
+    src/progresslistmodel.cpp
+    src/progresslistmodel.h
 )
 
 # ── GPU 缩放的 shader：**qsb 烘焙**（生产代码里不塞裸 GLSL 字符串）──────
@@ -205,6 +210,8 @@ function(ib_add_qml_resources target)
         src/ui/components/Breadcrumb.qml
         src/ui/components/Badge.qml
         src/ui/components/Toast.qml
+        src/ui/components/Spinner.qml
+        src/ui/components/Ring.qml
         src/ui/components/Switch.qml
         src/ui/components/NumberField.qml
         src/ui/components/SettingsDialog.qml
@@ -221,6 +228,7 @@ function(ib_add_qml_resources target)
         src/ui/fullscreen/FullscreenTimeline.qml
         src/ui/fullscreen/FullscreenOsd.qml
         src/ui/fullscreen/NavBtn.qml
+        src/ui/fullscreen/FavoritesPopup.qml
     )
     #   ⚠️ QML 源一律按**绝对路径**进 `QML_FILES`（本函数可能在 `tests/` 里被调用）；
     #      绝对路径**必须**配 `QT_RESOURCE_ALIAS`（相对源码根），否则 Qt 直接 FATAL_ERROR，
