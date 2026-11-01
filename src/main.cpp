@@ -2,6 +2,7 @@
 #include <QApplication>          // 文件对话框用 QFileDialog（QtWidgets）；QApplication ⊂ QGuiApplication
 #include <QStyleHints>
 #include <QQmlApplicationEngine>
+#include <QQuickStyle>
 #include <QQuickWindow>
 #include <QSGRendererInterface>
 #include <QQmlContext>
@@ -61,12 +62,24 @@ private:
 
 int main(int argc, char *argv[])
 {
-    // ★ 强制使用**系统原生**文件对话框（用户要求 #1）。
-    //   本机有 xdg-desktop-portal + KDE/GTK 后端 + Qt 的 libqxdgdesktopportal.so，
-    //   但 QT_QPA_PLATFORMTHEME 未设置时 Qt 会回退到**自带**对话框。
+    // ★ 文件对话框要**系统原生**（用户要求 #1）。这里要选的是**用哪套实现**：
+    //   · KDE 桌面 ⇒ `kde`：plasma-integration 提供 QPlatformFileDialogHelper + KFileWidget，
+    //     KIO 列目录、缩略图异步，和 Dolphin 同一套；
+    //   · 其它桌面 ⇒ `xdgdesktopportal`：走 XDG Desktop Portal。
+    //   ⚠️ 实测（2026-11-01）：在 KDE 上把主题设成 `xdgdesktopportal` 时 Qt 反而**回落到
+    //     自带对话框**（QFileSystemModel 逐项取图标/类型）：5000 个文件的目录要 ~1s 才铺满，
+    //     之后还在零星增长；换成 `kde` 才是 KFileWidget。
     //   ⚠️ 必须在 QGuiApplication **构造之前**设置——Qt 在构造时读取它。
-    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORMTHEME"))
-        qputenv("QT_QPA_PLATFORMTHEME", "xdgdesktopportal");
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORMTHEME")) {
+        const bool kde = qgetenv("XDG_CURRENT_DESKTOP").contains("KDE");
+        qputenv("QT_QPA_PLATFORMTHEME", kde ? "kde" : "xdgdesktopportal");
+    }
+    // ★ Qt Quick Controls 的**风格钉死成 Basic**（可用 `QT_QUICK_CONTROLS_STYLE` 覆盖）。
+    //   我们只用到 Controls 的 `Popup` / `ScrollBar`（其余按钮都是自绘的 `components/Button.qml`），
+    //   而 KDE 桌面上 Qt 的默认风格是 Fusion ⇒ 静态版要白白多带一套风格模块。
+    //   Basic 是 Qt 的兜底风格，任何桌面都可用。⚠️ 必须在加载 QML 之前调用。
+    if (qEnvironmentVariableIsEmpty("QT_QUICK_CONTROLS_STYLE"))
+        QQuickStyle::setStyle(QStringLiteral("Basic"));
     // QApplication（而非 QGuiApplication）：文件对话框走 `QFileDialog`（**只在 ViewModel 里用**，
     //   QML 不写平台相关代码）。QApplication 是 QGuiApplication 的子类，QML 侧完全一致。
     QApplication app(argc, argv);

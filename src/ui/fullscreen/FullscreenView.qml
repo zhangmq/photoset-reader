@@ -277,7 +277,11 @@ Item {
         favorited: ui.sourceFavorited
         onScanCancelRequested: cancelScanDialog.open()
         onFavoriteToggled: root.toggleFavorite()
-        progressText: ui.viewer ? ((ui.viewer.currentPage + 1) + " / " + ui.viewer.totalPages) : ""
+        // 没有条目时显示 `0 / 0`（不能是 `1 / 0`：空目录也是一种合法状态）
+        progressText: !ui.viewer ? ""
+                      : ui.viewer.totalPages > 0
+                        ? ((ui.viewer.currentPage + 1) + " / " + ui.viewer.totalPages)
+                        : "0 / 0"
         fileName: ui.viewer ? ui.viewer.currentName : ""
         relativePath: ui.viewer ? ui.viewer.relativePath : ""
     }

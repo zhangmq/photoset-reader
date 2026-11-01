@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml Widgets ShaderTools)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml QuickControls2 Widgets ShaderTools)
 # QRhi / QShader（rhi/*.h 在 Qt 的私有包含路径下；QQuickRhiItem 文档也是这么要求的）
 find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
 # 7z 头解析要用 liblzma（判 solid 用；不参与解码路径）
@@ -106,7 +106,7 @@ qt_add_shaders(ibcore "gpuscale_shaders"
 )
 
 target_link_libraries(ibcore PUBLIC
-    Qt6::Core Qt6::Gui Qt6::Quick Qt6::Qml Qt6::Widgets
+    Qt6::Core Qt6::Gui Qt6::Quick Qt6::Qml Qt6::QuickControls2 Qt6::Widgets
     Qt6::GuiPrivate
     ${LIBARCHIVE_LIBRARIES}
     ${LIBEXIF_LIBRARIES}
@@ -248,6 +248,17 @@ function(ib_add_qml_resources target)
 endfunction()
 
 ib_add_qml_resources(photoset-reader)
+
+# ══ 静态 Qt：插件必须**显式导入**（2026-11-02 体积实验）══════════════════════
+#   静态构建下 Qt 不会动态加载插件：平台插件 / 图片格式插件 / QML 插件都得 import，
+#   否则「窗口起不来」或「JPEG 打不开」。动态构建时下面这段完全不生效。
+get_target_property(_qtcore_type Qt6::Core TYPE)
+if(_qtcore_type STREQUAL "STATIC_LIBRARY")
+    qt_import_plugins(photoset-reader
+        INCLUDE_BY_TYPE platforms Qt::QOffscreenIntegrationPlugin Qt::QXcbIntegrationPlugin
+        INCLUDE_BY_TYPE imageformats Qt::QJpegPlugin Qt::QGifPlugin Qt::QIcoPlugin)
+    qt_import_qml_plugins(photoset-reader)
+endif()
 
 
 # ══ 开发工具：`ib-iconpicker`（设计 14 §11.1）══════════════════════════════════

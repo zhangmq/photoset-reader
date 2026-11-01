@@ -131,6 +131,7 @@ public:
     Q_INVOKABLE void chooseOpenFolder();
     Q_INVOKABLE void chooseOpenArchive();
     Q_INVOKABLE void chooseOpenImage();
+    QString dialogStartDir() const;      // 上次选过的目录 → 当前来源父目录 → home
 
     // ── 收藏夹 / 进度文件（设计 20）──
     QString favoritesDir() const;
@@ -298,6 +299,7 @@ private:
     QStringList m_pendingChain;
     int         m_pendingPage = 0;
     QString m_lastProgressDir;          // 进度文件对话框的起始目录（会话级）
+    QString m_lastDialogDir;            // 打开对话框的起始目录（会话级）：上次成功选过的地方
     QString m_progressFile;             // 当前来源关联的进度文件（空 = 不自动保存）
     QTimer *m_autosave = nullptr;       // 固定间隔的自动保存
     bool    m_progressDirty = false;    // 位置 / 版面 / 行变过（没变就不重写）

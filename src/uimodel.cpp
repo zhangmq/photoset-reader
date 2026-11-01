@@ -2,6 +2,7 @@
 
 #include "appsettings.h"
 #include "archive.h"                // ArchiveSource::isArchive（"是不是压缩包"的唯一实现）
+#include "natural.h"                // imageSuffixes()：图片扩展名的唯一列表
 #include "gpuscale.h"
 #include "progressfile.h"
 #include "progresslistmodel.h"
@@ -257,11 +258,29 @@ void UiModel::onSequenceChanged()
 }
 
 // ── 打开对话框（**QFileDialog 只在这里**；入口随右键菜单那一批接上）──────────
+//   起始目录：**上次成功选过的目录** ⇒ 当前来源的父目录 ⇒ home。
+//   （不要每次都从 home 起：home 里若有几十万个文件，KDE 的对话框会先把子目录条目数算一遍，
+//     表现就是"打开半天没反应"。会话级记忆，不写设置文件。）
+QString UiModel::dialogStartDir() const
+{
+    if (!m_lastDialogDir.isEmpty()) return m_lastDialogDir;
+    if (!m_path.isEmpty()) {
+        const QFileInfo fi(m_path);
+        return fi.isDir() ? fi.absoluteFilePath() : fi.absolutePath();
+    }
+    return QDir::homePath();
+}
+
 void UiModel::chooseOpenFolder()
 {
+    const qint64 t0 = QDateTime::currentMSecsSinceEpoch();
+    const QString start = dialogStartDir();
     const QString dir = QFileDialog::getExistingDirectory(
-        nullptr, QStringLiteral("打开文件夹"), QDir::homePath());
+        nullptr, QStringLiteral("打开文件夹"), start);
+    qInfo().noquote() << QStringLiteral("[dialog] 打开文件夹：%1ms（起始 %2）")
+                             .arg(QDateTime::currentMSecsSinceEpoch() - t0).arg(start);
     if (dir.isEmpty()) return;
+    m_lastDialogDir = QFileInfo(dir).absolutePath();
     openPath(dir);
 }
 
@@ -269,22 +288,40 @@ void UiModel::chooseOpenArchive()
 {
     const QString filter = QStringLiteral(
         "压缩包 (*.zip *.cbz *.rar *.cbr *.7z *.cb7 *.tar *.cbt *.gz *.bz2 *.xz *.zst);;所有文件 (*)");
+    const qint64 t0 = QDateTime::currentMSecsSinceEpoch();
+    const QString start = dialogStartDir();
     const QString path = QFileDialog::getOpenFileName(
-        nullptr, QStringLiteral("打开压缩包"), QDir::homePath(), filter);
+        nullptr, QStringLiteral("打开压缩包"), start, filter);
+    qInfo().noquote() << QStringLiteral("[dialog] 打开压缩包：%1ms（起始 %2）")
+                             .arg(QDateTime::currentMSecsSinceEpoch() - t0).arg(start);
     if (path.isEmpty()) return;
+    m_lastDialogDir = QFileInfo(path).absolutePath();
     openPath(path);
 }
 
 void UiModel::chooseOpenImage()
 {
-    // 可解码格式的**唯一事实源**是 QImageReader（AGENTS.md「依赖策略」）
+    //   过滤器 = **我们认得的扩展名**（`natural::imageSuffixes()`，唯一来源）∩ **系统真能解码的**
+    //   （`QImageReader`）。别直接用 QImageReader 的全量列表 —— 本机它会给出 **101 项**，
+    //   连 pdf / dds / psd / raw 这些我们根本不支持的也在里面（2026-11-01 实测）。
+    //   HEIC/HEIF 按定案（2026-11-01「不考虑支持」）不列进过滤器。
+    QSet<QByteArray> decodable;
+    for (const QByteArray &f : QImageReader::supportedImageFormats()) decodable.insert(f);
     QStringList pats;
-    for (const QByteArray &f : QImageReader::supportedImageFormats())
-        pats << QStringLiteral("*.") + QString::fromLatin1(f);
+    for (const QString &s : imageSuffixes()) {
+        if (s == QLatin1String("heic") || s == QLatin1String("heif")) continue;
+        if (!decodable.contains(s.toLatin1())) continue;
+        pats << QStringLiteral("*.") + s;
+    }
     const QString filter = QStringLiteral("图片 (%1);;所有文件 (*)").arg(pats.join(QLatin1Char(' ')));
+    const qint64 t0 = QDateTime::currentMSecsSinceEpoch();
+    const QString start = dialogStartDir();
     const QString path = QFileDialog::getOpenFileName(
-        nullptr, QStringLiteral("打开图片"), QDir::homePath(), filter);
+        nullptr, QStringLiteral("打开图片"), start, filter);
+    qInfo().noquote() << QStringLiteral("[dialog] 打开图片：%1ms（起始 %2）")
+                             .arg(QDateTime::currentMSecsSinceEpoch() - t0).arg(start);
     if (path.isEmpty()) return;
+    m_lastDialogDir = QFileInfo(path).absolutePath();
     openPath(path);
 }
 

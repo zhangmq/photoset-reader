@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QStringList>
 
 // 自然排序（设计 §2.7）。**唯一实现**，目录与压缩包共用。
 //   · 数字段按**数值**比较（2 < 10），前导零同值
@@ -16,3 +17,6 @@ QString nameSortKey(const QString &name, bool isDir);
 
 // 是否是我们认得的图片扩展名（唯一实现，供目录与压缩包共用）
 bool isImageSuffix(const QString &suffix);
+
+// 认得的图片扩展名**列表**（扫描与文件对话框过滤器共用同一份，别在别处再抄一遍）
+QStringList imageSuffixes();

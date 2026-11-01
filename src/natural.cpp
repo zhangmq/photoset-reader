@@ -30,9 +30,9 @@ int naturalCompare(const QString &a, const QString &b)
     return 0;
 }
 
-bool isImageSuffix(const QString &suffix)
+QStringList imageSuffixes()
 {
-    static const QSet<QString> exts = {
+    static const QStringList list = {
         QStringLiteral("jpg"),  QStringLiteral("jpeg"), QStringLiteral("png"),
         QStringLiteral("gif"),  QStringLiteral("bmp"),  QStringLiteral("webp"),
         QStringLiteral("tif"),  QStringLiteral("tiff"), QStringLiteral("ico"),
@@ -41,6 +41,16 @@ bool isImageSuffix(const QString &suffix)
         QStringLiteral("qoi"),  QStringLiteral("pnm"),  QStringLiteral("pgm"),
         QStringLiteral("ppm"),  QStringLiteral("pbm"),
     };
+    return list;
+}
+
+bool isImageSuffix(const QString &suffix)
+{
+    static const QSet<QString> exts = [] {
+        QSet<QString> s;
+        for (const QString &e : imageSuffixes()) s.insert(e);
+        return s;
+    }();
     return exts.contains(suffix.toLower());
 }
 
