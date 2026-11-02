@@ -186,33 +186,37 @@ int main(int argc, char *argv[])
     QCoreApplication::setApplicationName(QStringLiteral("photoset-reader"));
     // 配置与库都落在 ~/.config/photoset-reader/（设计 10 §10.1）
     // 旧目录 ~/.config/image-browser/ 按定案放弃、不迁移
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.1-dev"));
+    QCoreApplication::setApplicationVersion(QStringLiteral(PHOTOSET_VERSION));
 
     QCommandLineParser parser;
-    parser.setApplicationDescription(QStringLiteral("photoset-reader（开发期最小壳）"));
+    //   CLI 文案**一律英文**（与日志同一口径：命令行/日志不做 i18n，界面才做）
+    parser.setApplicationDescription(
+        QStringLiteral("Image viewer for manga and very large image sets"));
     parser.addHelpOption();
+    //   `--version`：报 程序名 + 版本 + Qt 版本（报 bug 时第一句话就要这个）
+    parser.addVersionOption();
     QCommandLineOption dirOpt({QStringLiteral("d"), QStringLiteral("dir")},
-                              QStringLiteral("图片目录"), QStringLiteral("path"),
+                              QStringLiteral("Image folder, archive or file"), QStringLiteral("path"),
                               QString());   // ★ 默认空：只有**显式传 -d** 才打开来源，否则窗口空白
     QCommandLineOption shotOpt(QStringLiteral("shot"),
-                               QStringLiteral("离屏截图到文件后退出（开发期自检用）"),
+                               QStringLiteral("Render one frame to this PNG and exit (self-check)"),
                                QStringLiteral("png"));
     QCommandLineOption delayOpt(QStringLiteral("delay"),
-                                QStringLiteral("截图前等待毫秒（默认 2500）"),
+                                QStringLiteral("Delay before the screenshot in ms (default 2500)"),
                                 QStringLiteral("ms"), QStringLiteral("2500"));
     QCommandLineOption idxOpt(QStringLiteral("index"),
-                              QStringLiteral("打开来源时定位到第 N 条（截图前也会跳到这里）"),
+                              QStringLiteral("Jump to item N when opening the source"),
                               QStringLiteral("n"), QStringLiteral("-1"));
     QCommandLineOption pwOpt(QStringLiteral("password"),
-                             QStringLiteral("压缩包密码"), QStringLiteral("pw"));
+                             QStringLiteral("Archive password"), QStringLiteral("pw"));
     QCommandLineOption seekOpt(QStringLiteral("seek-test"),
-                               QStringLiteral("跳到第 N 页并报告结果（验证进度条点击）"),
+                               QStringLiteral("Jump to page N and report the result"),
                                QStringLiteral("n"), QStringLiteral("-1"));
     QCommandLineOption gpuProbeOpt(QStringLiteral("gpuscale-probe"),
-                                   QStringLiteral("诊断：8×8 已知图跑 GPU 1:1 直通并逐像素打印（不参与自检）"));
+                                   QStringLiteral("Diagnostic: push a known 8x8 image through the GPU 1:1 pass and print pixels"));
     // 开发期：**强制走 CPU 缩放**（= 假装软件后端）——在有 GPU 的机器上验收降级画面用
     QCommandLineOption forceCpuOpt(QStringLiteral("force-cpu-scale"),
-                                   QStringLiteral("调试：强制走 CPU 缩放（Smooth (Qt)），用于验收软件后端画面"));
+                                   QStringLiteral("Debug: force CPU scaling (Smooth (Qt))"));
     // ── 调试：启动即打开设置对话框（仅开发用，不在正式 CLI 范畴）──
     //   ★ 接线（2026-10-14 本批）：值经上下文属性 `devOpenSettings` / `devSettingsTab`
     //     在 **QML 加载之前**注入 `Main.qml`，再由它喂两屏各自的 `debugOpenSettings`
@@ -223,40 +227,40 @@ int main(int argc, char *argv[])
     //     把 `--shot` 当成了它的值 ⇒ 截图路径拿不到、进程不退出）。页签因此单列一个选项。
     //   ★ 页签 QML 侧**支持**：`SettingsDialog.tab`（0常规/1图像/2系统/3快捷键）。
     QCommandLineOption debugSettingsOpt(QStringLiteral("debug-settings"),
-                                        QStringLiteral("调试：启动即打开设置对话框"));
+                                        QStringLiteral("Debug: open the settings dialog on startup"));
     QCommandLineOption debugSettingsTabOpt(QStringLiteral("debug-settings-tab"),
-                                           QStringLiteral("调试：设置对话框开在哪一页"
+                                           QStringLiteral("Debug: which settings tab to open"
                                                           "（0常规/1图像/2系统/3快捷键）"),
                                            QStringLiteral("tab"), QStringLiteral("0"));
     // ── 验收用（截图 / 临时探针；不参与正常使用）──
     QCommandLineOption probeArcOpt(QStringLiteral("probe-archive"),
-                                   QStringLiteral("临时探针：量压缩包 dataAt(i) 的代价"),
-                                   QStringLiteral("路径"));
+                                   QStringLiteral("Probe: measure the cost of archive dataAt(i)"),
+                                   QStringLiteral("path"));
     QCommandLineOption probeLaOpt(QStringLiteral("probe-libarchive"),
-                                  QStringLiteral("libarchive 能力探针（能否随机读）"),
-                                  QStringLiteral("路径"));
+                                  QStringLiteral("Probe libarchive for random access support"),
+                                  QStringLiteral("path"));
     QCommandLineOption osdOpt(QStringLiteral("show-osd"),
-                              QStringLiteral("截图前打开信息面板（验证 #7）"));
+                              QStringLiteral("Open the info panel before the screenshot"));
     QCommandLineOption popupOpt(QStringLiteral("show-interval-popup"),
-                                QStringLiteral("截图前打开翻页间隔 popup"));
+                                QStringLiteral("Open the slideshow-interval popup before the screenshot"));
     // ── 开发期专用（**只为验收截图**）──
     QCommandLineOption devContextMenuOpt(QStringLiteral("dev-context-menu"),
-                                         QStringLiteral("调试：启动即在画布上打开右键菜单（截图用）"));
+                                         QStringLiteral("Debug: open the context menu on startup (screenshots)"));
     QCommandLineOption devSaveFavOpt(QStringLiteral("dev-save-favorites"),
-                                     QStringLiteral("调试：打开来源后等一会儿把进度存进收藏夹（验收截图用）"));
+                                     QStringLiteral("Debug: save progress to favorites shortly after opening"));
     QCommandLineOption devOpenProgressOpt(QStringLiteral("dev-open-progress"),
-                                          QStringLiteral("调试：启动后打开这个进度文件（验收截图用）"),
+                                          QStringLiteral("Debug: open this progress file on startup"),
                                           QStringLiteral("path"));
     QCommandLineOption devCancelScanOpt(QStringLiteral("dev-cancel-scan"),
-                                        QStringLiteral("调试：打开来源后停掉扫描（验收「扫描不完整」态）"));
+                                        QStringLiteral("Debug: cancel the scan after opening (incomplete state)"));
     QCommandLineOption devRescanOpt(QStringLiteral("dev-rescan"),
-                                    QStringLiteral("调试：打开来源后重新扫描一次（验收用）"));
+                                    QStringLiteral("Debug: rescan once after opening"));
     QCommandLineOption devDialogOpt(QStringLiteral("dev-dialog"),
-                                    QStringLiteral("调试：启动后打开指定对话框"
+                                    QStringLiteral("Debug: open a specific dialog on startup"
                                                    "（scan-not-done / cancel-scan / unfavorite）"),
                                     QStringLiteral("name"));
     QCommandLineOption devNotifyOpt(QStringLiteral("dev-notify"),
-                                    QStringLiteral("开发：启动后弹一条**瞬时提示**（验收浮层用）"),
+                                    QStringLiteral("Debug: show a toast on startup"),
                                     QStringLiteral("text"));
     parser.addOption(dirOpt);
     parser.addOption(shotOpt);
@@ -325,7 +329,7 @@ int main(int argc, char *argv[])
     //   开发自检可用 `PHOTOSET_NO_SINGLE_INSTANCE=1` 关掉（要同时跑两个实例截图时用）。
     if (qEnvironmentVariableIsEmpty("PHOTOSET_NO_SINGLE_INSTANCE")) {
         if (forwardToRunningInstance(hasSource ? dir : QString(), !hasSource)) {
-            qInfo().noquote() << QStringLiteral("[ipc] 已有实例在运行，已转发：%1")
+            qInfo().noquote() << QStringLiteral("[ipc] another instance is running, forwarded: %1")
                                      .arg(hasSource ? dir : QStringLiteral("（仅激活窗口）"));
             return 0;
         }
@@ -442,7 +446,7 @@ int main(int argc, char *argv[])
         const int at = qEnvironmentVariableIntValue("PHOTOSET_DEV_CANCEL_MS");
         QTimer::singleShot(at > 0 ? at : 300, ui, [ui] {
             ui->cancelScan();
-            qInfo().noquote() << QStringLiteral("[dev] 已请求停止扫描");
+            qInfo().noquote() << QStringLiteral("[dev] scan stop requested");
         });
     }
     if (parser.isSet(devSaveFavOpt)) {

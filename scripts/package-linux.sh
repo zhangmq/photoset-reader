@@ -13,10 +13,13 @@
 set -euo pipefail
 
 BIN=build/photoset-reader
-OUT=${1:-dist/photoset-reader-linux}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 [ -x "$BIN" ] || { echo "先构建：cmake --build build"; exit 1; }
+#   版本号：**只从 CMakeLists.txt 读**（单一来源；--version 打的是同一个）
+VERSION=$(sed -n 's/^project(photoset-reader VERSION \([0-9][0-9.]*\).*/\1/p' "$ROOT/CMakeLists.txt")
+[ -n "$VERSION" ] || { echo "读不到版本号（CMakeLists.txt 的 project(... VERSION）" >&2; exit 1; }
+OUT=${1:-dist/photoset-reader-${VERSION}-linux}
 
 QTQML=$(qmake6 -query QT_INSTALL_QML 2>/dev/null || echo /usr/lib/qt6/qml)
 QTPLUG=$(qmake6 -query QT_INSTALL_PLUGINS 2>/dev/null || echo /usr/lib/qt6/plugins)
@@ -143,6 +146,15 @@ if [ -d "$SMOKE_DIR" ]; then
 else
   echo "  （没有 $SMOKE_DIR，跳过自检）"
 fi
+
+# ⑧ 许可 / 第三方声明 / 桌面入口 / 图标（对外分发必须随附的东西）
+mkdir -p "$OUT/share/doc/photoset-reader" "$OUT/share/applications"
+cp LICENSE THIRD-PARTY.md "$OUT/share/doc/photoset-reader/"
+cp assets/photoset-reader.desktop "$OUT/share/applications/"
+for _sz in 16 24 32 48 64 128 256 512; do
+  mkdir -p "$OUT/share/icons/hicolor/${_sz}x${_sz}/apps"
+  cp "assets/icons/photoset-reader-${_sz}.png" "$OUT/share/icons/hicolor/${_sz}x${_sz}/apps/photoset-reader.png"
+done
 
 du -sh "$OUT" | sed 's/^/  解压后: /'
 tar --zstd -cf "$OUT.tar.zst" -C "$OUT" . && ls -lh "$OUT.tar.zst" | awk '{print "  压缩包: " $5}'

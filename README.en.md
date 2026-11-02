@@ -31,6 +31,21 @@ ctest --test-dir build --output-on-failure
 ./build/photoset-reader -d <folder|archive|image>
 ```
 
+## Install
+
+- **AppImage** (single file): `dist/photoset-reader-<version>-x86_64.AppImage`
+- **Portable tarball** (bundles Qt and the third-party libs): `dist/photoset-reader-<version>-linux.tar.zst`
+- **From source**: `cmake --build build && sudo cmake --install build --prefix /usr/local`
+  (installs the binary, desktop entry, icon set and license files)
+
+## Release
+
+1. bump `project(photoset-reader VERSION x.y.z)` in `CMakeLists.txt` (the only place a version lives);
+2. add an entry to [CHANGELOG.md](CHANGELOG.md);
+3. `ctest`, `./scripts/update-translations.sh --check`, `./scripts/render-icons.sh --check`;
+4. `./scripts/package-appimage.sh` and `./scripts/package-linux.sh` (output names carry the version);
+5. tag and push.
+
 ## Known limitations
 
 - EXIF / color space in the info panel: available for JPEG, PNG, WebP, TIFF and AVIF;

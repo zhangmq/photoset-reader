@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
-project(photoset-reader LANGUAGES CXX)
+#   版本号**唯一来源**（打包脚本从这里读、C++ 用 PHOTOSET_VERSION 编译进去、`--version` 打它）
+project(photoset-reader VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -151,6 +152,7 @@ endif()
 # 开发期便利：把 .testdata/vol01 作为默认目录传给程序（可用 -d 覆盖）
 target_compile_definitions(ibcore PUBLIC
     DEFAULT_TEST_DIR="${CMAKE_SOURCE_DIR}/.testdata/vol01"
+    PHOTOSET_VERSION="${PROJECT_VERSION}"
 )
 
 
@@ -173,6 +175,24 @@ qt_add_executable(photoset-reader
 # ★ 套件全部搬去 `tests/`（T0 第四批）后，应用**不再链 `testsupport`**（设计 14 §11）：
 #   `main.cpp` 里 0 个 `run*SelfTest` / 0 个套件 dispatch；dev CLI 与截图机制自带工具函数。
 target_link_libraries(photoset-reader PRIVATE ibcore)
+
+# ══ 安装规则（`cmake --install` / 打包脚本都走这里；DESTDIR 支持照常）═════════
+#   装：可执行 + 桌面入口 + 全套 hicolor 图标 + 许可/第三方声明。
+#   ★ 翻译 `.qm` 已编进可执行（见下），**不需要**装 translations 目录。
+include(GNUInstallDirs)
+install(TARGETS photoset-reader RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+install(FILES assets/photoset-reader.desktop
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
+foreach(_size 16 24 32 48 64 128 256 512)
+    install(FILES "assets/icons/photoset-reader-${_size}.png"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${_size}x${_size}/apps"
+            RENAME photoset-reader.png)
+endforeach()
+install(FILES assets/icons/photoset-reader.svg
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps"
+        RENAME photoset-reader.svg)
+install(FILES LICENSE THIRD-PARTY.md
+        DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 
 # ══ 应用图标：编进资源（窗口图标 / X11 任务栏用；桌面入口与 hicolor 由安装规则铺）══
 qt_add_resources(photoset-reader "appicon"

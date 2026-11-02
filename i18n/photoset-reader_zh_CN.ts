@@ -434,144 +434,144 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
 <context>
     <name>FullscreenView</name>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="287"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="293"/>
         <source>Loading…</source>
         <translation>载入中…</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="302"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="308"/>
         <source>Scanning…</source>
         <translation>正在扫描…</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="302"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="308"/>
         <source>Nothing to show here</source>
         <translation>这里没有可显示的图片</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="307"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="313"/>
         <source>%1 files found</source>
         <translation>已发现 %1 个文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="308"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="314"/>
         <source>Try another folder, or right-click → Open…</source>
         <translation>换个目录，或右键 → 打开…</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="441"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="451"/>
         <source>Open favorites</source>
         <translation>打开收藏夹</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="442"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="452"/>
         <source>Open progress file</source>
         <translation>打开进度文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="443"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="453"/>
         <source>Open folder</source>
         <translation>打开文件夹</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="444"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="454"/>
         <source>Open archive</source>
         <translation>打开压缩包</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="445"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="455"/>
         <source>Open file</source>
         <translation>打开文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="449"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="459"/>
         <source>Rescan</source>
         <translation>重新扫描</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="451"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="461"/>
         <source>Save progress to favorites</source>
         <translation>保存进度到收藏夹</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="452"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="462"/>
         <source>Save progress to file</source>
         <translation>保存进度到文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="459"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="469"/>
         <source>Scale algorithm</source>
         <translation>缩放算法</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="468"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="478"/>
         <source>Settings</source>
         <translation>设置</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="470"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="480"/>
         <source>Quit</source>
         <translation>退出</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="570"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="580"/>
         <source>Scan not finished</source>
         <translation>扫描还没完</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="571"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="581"/>
         <source>Wait for the scan to finish before adding to favorites.</source>
         <translation>等扫描完成后再收藏。</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="572"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="582"/>
         <source>Got it</source>
         <translation>知道了</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="577"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="587"/>
         <source>Scan incomplete</source>
         <translation>扫描不完整</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="578"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="588"/>
         <source>Scanning incomplete. Save progress anyway? Files that were not scanned will not be found again; finish the scan before saving.</source>
         <translation>扫描不完整，确认保存进度吗？未扫描发现的文件不会被重新发现，建议完整扫描后收藏/保存。</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="579"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="589"/>
         <source>Save</source>
         <translation>保存</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="580"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="590"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="585"/>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="587"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="595"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="597"/>
         <source>Cancel scan</source>
         <translation>取消扫描</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="586"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="596"/>
         <source>Stop this scan? What has been scanned so far is still browsable.</source>
         <translation>要停止这次扫描吗？已经扫到的内容仍然可以查看。</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="588"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="598"/>
         <source>Continue scanning</source>
         <translation>继续扫描</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="593"/>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="595"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="603"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="605"/>
         <source>Remove favorite</source>
         <translation>取消收藏</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="594"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="604"/>
         <source>Delete this progress record? The source files are not deleted.</source>
         <translation>删除这条进度记录？不会删除源文件。</translation>
     </message>
@@ -924,117 +924,117 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
 <context>
     <name>app::UiModel</name>
     <message>
-        <location filename="../src/uimodel.cpp" line="339"/>
+        <location filename="../src/uimodel.cpp" line="377"/>
         <source>Open folder</source>
         <translation>打开文件夹</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="349"/>
+        <location filename="../src/uimodel.cpp" line="387"/>
         <source>Archives (*.zip *.cbz *.rar *.cbr *.7z *.cb7 *.tar *.cbt *.gz *.bz2 *.xz *.zst);;All files (*)</source>
         <translation>压缩包 (*.zip *.cbz *.rar *.cbr *.7z *.cb7 *.tar *.cbt *.gz *.bz2 *.xz *.zst);;所有文件 (*)</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="353"/>
+        <location filename="../src/uimodel.cpp" line="391"/>
         <source>Open archive</source>
         <translation>打开压缩包</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="375"/>
+        <location filename="../src/uimodel.cpp" line="413"/>
         <source>Images (%1);;All files (*)</source>
         <translation>图片 (%1);;所有文件 (*)</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="379"/>
+        <location filename="../src/uimodel.cpp" line="417"/>
         <source>Open image</source>
         <translation>打开图片</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="575"/>
+        <location filename="../src/uimodel.cpp" line="613"/>
         <source>Choose favorites folder</source>
         <translation>选择收藏夹目录</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="606"/>
+        <location filename="../src/uimodel.cpp" line="644"/>
         <source>Slideshow playing</source>
         <translation>幻灯片播放中</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="635"/>
+        <location filename="../src/uimodel.cpp" line="673"/>
         <source>Scan finished: %1 files</source>
         <translation>扫描完成：%1 个文件</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="676"/>
+        <location filename="../src/uimodel.cpp" line="714"/>
         <source>Scanning; try again when it finishes</source>
         <translation>正在扫描，等扫完再重新扫描</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="730"/>
+        <location filename="../src/uimodel.cpp" line="768"/>
         <source>Rescan found nothing; keeping the previous result</source>
         <translation>重新扫描没有扫到内容，保留原来的</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="795"/>
-        <location filename="../src/uimodel.cpp" line="847"/>
-        <location filename="../src/uimodel.cpp" line="863"/>
+        <location filename="../src/uimodel.cpp" line="833"/>
+        <location filename="../src/uimodel.cpp" line="885"/>
+        <location filename="../src/uimodel.cpp" line="901"/>
         <source>No source is open</source>
         <translation>没有打开的来源</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="800"/>
+        <location filename="../src/uimodel.cpp" line="838"/>
         <source>Scan not finished; wait for it before saving</source>
         <translation>扫描还没完，等扫完再保存</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="806"/>
-        <location filename="../src/uimodel.cpp" line="848"/>
+        <location filename="../src/uimodel.cpp" line="844"/>
+        <location filename="../src/uimodel.cpp" line="886"/>
         <source>Only folders and archives can save progress</source>
         <translation>只有文件夹和压缩包能保存进度</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="833"/>
+        <location filename="../src/uimodel.cpp" line="871"/>
         <source>Failed to save progress</source>
         <translation>保存进度失败</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="856"/>
+        <location filename="../src/uimodel.cpp" line="894"/>
         <source>Added to favorites</source>
         <translation>已收藏</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="871"/>
+        <location filename="../src/uimodel.cpp" line="909"/>
         <source>Save progress to file</source>
         <translation>保存进度到文件</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="872"/>
-        <location filename="../src/uimodel.cpp" line="891"/>
+        <location filename="../src/uimodel.cpp" line="910"/>
+        <location filename="../src/uimodel.cpp" line="929"/>
         <source>Progress files (*.prsave)</source>
         <translation>进度文件 (*.prsave)</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="882"/>
+        <location filename="../src/uimodel.cpp" line="920"/>
         <source>Progress saved</source>
         <translation>进度已保存</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="889"/>
+        <location filename="../src/uimodel.cpp" line="927"/>
         <source>Open progress file</source>
         <translation>打开进度文件</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="904"/>
+        <location filename="../src/uimodel.cpp" line="942"/>
         <source>Cannot open progress file</source>
         <translation>打不开进度文件</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="908"/>
+        <location filename="../src/uimodel.cpp" line="946"/>
         <source>Source is gone: %1</source>
         <translation>源不在了：%1</translation>
     </message>
     <message>
-        <location filename="../src/uimodel.cpp" line="945"/>
-        <location filename="../src/uimodel.cpp" line="962"/>
+        <location filename="../src/uimodel.cpp" line="983"/>
+        <location filename="../src/uimodel.cpp" line="1000"/>
         <source>Cannot delete: %1</source>
         <translation>删不掉：%1</translation>
     </message>
@@ -1047,13 +1047,13 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
         <translation>到头 · 幻灯片已停</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="981"/>
+        <location filename="../src/viewermodel.cpp" line="982"/>
         <source>Index</source>
         <translation>序号</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="936"/>
-        <location filename="../src/viewermodel.cpp" line="982"/>
+        <location filename="../src/viewermodel.cpp" line="937"/>
+        <location filename="../src/viewermodel.cpp" line="983"/>
         <source>File</source>
         <translation>文件</translation>
     </message>
@@ -1064,57 +1064,57 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
         <translation>到头</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="937"/>
+        <location filename="../src/viewermodel.cpp" line="938"/>
         <source>Image</source>
         <translation>图像</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="984"/>
+        <location filename="../src/viewermodel.cpp" line="985"/>
         <source>Path</source>
         <translation>路径</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="985"/>
+        <location filename="../src/viewermodel.cpp" line="986"/>
         <source>Folder</source>
         <translation>文件夹</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="992"/>
+        <location filename="../src/viewermodel.cpp" line="993"/>
         <source>Resolution</source>
         <translation>分辨率</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="992"/>
+        <location filename="../src/viewermodel.cpp" line="993"/>
         <source> (rotated by EXIF)</source>
         <translation>（已按 EXIF 旋转）</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="996"/>
+        <location filename="../src/viewermodel.cpp" line="997"/>
         <source>Unknown</source>
         <translation>未知</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="998"/>
+        <location filename="../src/viewermodel.cpp" line="999"/>
         <source>Type</source>
         <translation>类型</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="999"/>
+        <location filename="../src/viewermodel.cpp" line="1000"/>
         <source>Size</source>
         <translation>尺寸</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="1006"/>
+        <location filename="../src/viewermodel.cpp" line="1007"/>
         <source>Color space</source>
         <translation>色彩空间</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="1009"/>
+        <location filename="../src/viewermodel.cpp" line="1010"/>
         <source>Other</source>
         <translation>其他</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="1010"/>
+        <location filename="../src/viewermodel.cpp" line="1011"/>
         <source>… %1 more</source>
         <translation>… 其余 %1 条</translation>
     </message>

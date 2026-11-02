@@ -25,7 +25,7 @@ int runIconPicker(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("photoset-reader"));
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.1-dev"));
+    QCoreApplication::setApplicationVersion(QStringLiteral(PHOTOSET_VERSION));
 
     // ★ 设置的 `load()` 在 `UiModel` 构造里（设计 14 §9.3：运行期设置挂在它身上）——
     //   与旧代码那次单例 `load()` 在这里的时机等价（QML 加载前已完成）。

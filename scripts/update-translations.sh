@@ -48,6 +48,7 @@ INPUTS=(
     "$PROJECT_ROOT"/src/ui/fullscreen/*.qml
     "$PROJECT_ROOT"/src/uimodel.cpp
     "$PROJECT_ROOT"/src/viewermodel.cpp
+    "$PROJECT_ROOT"/src/main.cpp
     "$PROJECT_ROOT"/src/sequence.cpp
     "$PROJECT_ROOT"/src/exifmeta.cpp
 )

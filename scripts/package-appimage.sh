@@ -15,7 +15,10 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DEPS=${DEPS:-$ROOT/.tmp/deps}
-OUT=${OUT:-$ROOT/dist/photoset-reader-x86_64.AppImage}
+#   版本号：**只从 CMakeLists.txt 读**（与 --version 同源）
+VERSION=$(sed -n 's/^project(photoset-reader VERSION \([0-9][0-9.]*\).*/\1/p' "$ROOT/CMakeLists.txt")
+[ -n "$VERSION" ] || { echo "读不到版本号（CMakeLists.txt 的 project(... VERSION）" >&2; exit 1; }
+OUT=${OUT:-$ROOT/dist/photoset-reader-${VERSION}-x86_64.AppImage}
 BIN=$ROOT/build-static/photoset-reader
 
 while [ $# -gt 0 ]; do
@@ -109,6 +112,10 @@ done
 cp "$ROOT/assets/icons/photoset-reader.svg" "$APPDIR/photoset-reader.svg"
 cp "$ROOT/assets/icons/photoset-reader-256.png" "$APPDIR/.DirIcon"
 cp "$ROOT/assets/icons/photoset-reader-256.png" "$APPDIR/photoset-reader.png"
+
+# 许可与第三方声明（AppImage 内也要有：对外分发必须随附）
+mkdir -p "$APPDIR/usr/share/doc/photoset-reader"
+cp "$ROOT/LICENSE" "$ROOT/THIRD-PARTY.md" "$APPDIR/usr/share/doc/photoset-reader/"
 
 mkdir -p "$(dirname "$OUT")"
 cd "$ROOT/.tmp/appimage"
