@@ -113,6 +113,12 @@ Item {
         // 视口变了（窗口尺寸 / 单双幅）⇒ 告诉 ui；它会决定"要不要按当前 fit 重算 zoom"
         onWidthChanged: root.pushViewport()
         onHeightChanged: root.pushViewport()
+        //   ★ **盒宽变了也要推**：双幅时每格只有半宽，一屏从"成对（半宽）"变到
+        //     "宽图单独一屏（整宽）"时窗口尺寸根本没变，只有 `boxW` 变 ——
+        //     不推的话 viewer 仍拿旧的半宽算 fit ⇒ 宽图被当成半幅画（用户 2026-11-02 报的
+        //     "宽图不占满窗口，像是按单幅宽度算的"就是这么来的，而且概率性出现：
+        //     只有"上一次推给它的盒宽"和当前屏不一致时才看得出来）。
+        onBoxWChanged: root.pushViewport()
         Component.onCompleted: root.pushViewport()
 
         // ── 空库屏守卫（2026-10-14）───────────────────────────────────────────
