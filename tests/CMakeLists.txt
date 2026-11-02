@@ -42,6 +42,9 @@ add_test(NAME ib-test-progress COMMAND ib-test-progress
 add_test(NAME ib-test-meta COMMAND ib-test-meta
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
-# ── 可能**整条套件跳过**（夹具 / 环境不具备 ⇒ rc 77）：ctest 显示 skipped ──────
-#   目前两个套件都在缺夹具时**逐项跳过**（打印 `[tag] 跳过：…`、不计入项数），
-#   整条仍照常 pass/fail ⇒ 这里不设 77（加了会是死配置）。
+# ── 可能**整条套件跳过**（夹具 / 环境不具备 ⇒ rc 77）：ctest 显示 *Skipped* ─────
+#   ⚠️ 必须显式 `SKIP_RETURN_CODE 77`：不设的话 ctest 把 77 当**失败**。
+#      全新克隆里没有 `.testdata/`（gitignore），`ib-test-meta` 会整条跳过 ——
+#      没这条时 `scripts/install.sh`（新用户路径）会在 ctest 这步直接失败（实测）。
+set_tests_properties(ib-test-scan ib-test-progress ib-test-meta
+                     PROPERTIES SKIP_RETURN_CODE 77)

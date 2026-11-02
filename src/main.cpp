@@ -26,6 +26,7 @@
 #endif
 
 #include "cpuscaleritem.h"
+#include "logging.h"
 #include "gpuscaleritem.h"
 #include "archive.h"
 
@@ -145,6 +146,10 @@ bool forwardToRunningInstance(const QString &path, bool activateOnly)
 
 int main(int argc, char *argv[])
 {
+    // ★ 分类日志的**最早**初始化：本文件下面第一条诊断日志之前就要落地
+    //   （`PHOTOSET_LOG` 决定 `ib.*` 的最低级别；默认 info）。
+    iblog::init();
+
     // ★ 文件对话框要**系统原生**（用户要求 #1）。这里要选的是**用哪套实现**：
     //   · KDE 桌面 ⇒ `kde`：plasma-integration 提供 QPlatformFileDialogHelper + KFileWidget，
     //     KIO 列目录、缩略图异步，和 Dolphin 同一套；
@@ -178,8 +183,8 @@ int main(int argc, char *argv[])
     //   资源由 CMake 从 `assets/icons/photoset-reader-256.png` 编进来（同一个 SVG 渲染）。
     app.setWindowIcon(QIcon(QStringLiteral(":/icons/photoset-reader-256.png")));
 
-    qInfo().noquote() << QStringLiteral("[ui] 平台主题 = %1（决定文件对话框是否走系统原生）")
-                             .arg(QString::fromLocal8Bit(qgetenv("QT_QPA_PLATFORMTHEME")));
+    qCDebug(lcApp).noquote() << QStringLiteral("[app] platform theme: %1")
+                                     .arg(QString::fromLocal8Bit(qgetenv("QT_QPA_PLATFORMTHEME")));
     // 字体纪律（用户明确）：一律不设字号 / 字体 / 字体样式，基准字号 = **系统默认**。
     //   ⚠️ 这里刻意不做任何调整：曾按"默认字体加大一号"做过 +1pt，已按用户要求收回。
     //   QML 侧只有 Theme.fontSm = 系统默认 − 1（徽标等次要信息），是**派生**值，跟着走。
@@ -316,11 +321,11 @@ int main(int argc, char *argv[])
     if (hasSource) {
         const QFileInfo fi(dir);
         if (!fi.exists()) {
-            qWarning().noquote() << QStringLiteral("路径不存在: %1").arg(dir);
+            qCWarning(lcApp).noquote() << QStringLiteral("[app] source path does not exist: %1").arg(dir);
             return 2;
         }
         if (!fi.isDir() && !ArchiveSource::isArchive(dir) && !isImageSuffix(fi.suffix())) {
-            qWarning().noquote() << QStringLiteral("既不是目录、压缩包，也不是图片: %1").arg(dir);
+            qCWarning(lcApp).noquote() << QStringLiteral("[app] source is neither folder, archive nor image: %1").arg(dir);
             return 2;
         }
     }
@@ -329,8 +334,8 @@ int main(int argc, char *argv[])
     //   开发自检可用 `PHOTOSET_NO_SINGLE_INSTANCE=1` 关掉（要同时跑两个实例截图时用）。
     if (qEnvironmentVariableIsEmpty("PHOTOSET_NO_SINGLE_INSTANCE")) {
         if (forwardToRunningInstance(hasSource ? dir : QString(), !hasSource)) {
-            qInfo().noquote() << QStringLiteral("[ipc] another instance is running, forwarded: %1")
-                                     .arg(hasSource ? dir : QStringLiteral("（仅激活窗口）"));
+            qCInfo(lcApp).noquote() << QStringLiteral("[app] forwarded to running instance: %1")
+                                        .arg(hasSource ? dir : QStringLiteral("activate only"));
             return 0;
         }
     }
@@ -356,8 +361,8 @@ int main(int argc, char *argv[])
             ? QFontDatabase::applicationFontFamilies(fid).value(0)
             : QString();
         engine.rootContext()->setContextProperty(QStringLiteral("iconFont"), family);
-        qInfo().noquote() << QStringLiteral("[font] 图标字体: %1 (id=%2)")
-                                 .arg(family.isEmpty() ? QStringLiteral("失败") : family).arg(fid);
+        qCDebug(lcApp).noquote() << QStringLiteral("[app] icon font: %1 (id=%2)")
+                                     .arg(family.isEmpty() ? QStringLiteral("failed") : family).arg(fid);
     }
 
     // ★ 2026-10-31：缩略图 provider **已随浏览 / 图集库删除** —— 界面里没有任何缩略图，
@@ -430,15 +435,15 @@ int main(int argc, char *argv[])
                                              parser.value(devDialogOpt));
     if (parser.isSet(devOpenProgressOpt)) {
         QTimer::singleShot(600, ui, [ui, p = parser.value(devOpenProgressOpt)] {
-            qInfo().noquote() << QStringLiteral("[dev] 打开进度文件：%1")
-                                     .arg(ui->openProgress(p) ? QStringLiteral("成功")
-                                                              : QStringLiteral("失败"));
+            qCInfo(lcApp).noquote() << QStringLiteral("[app] dev: open progress file: %1")
+                                        .arg(ui->openProgress(p) ? QStringLiteral("ok")
+                                                                 : QStringLiteral("failed"));
         });
     }
     if (parser.isSet(devRescanOpt)) {
         const int at = qEnvironmentVariableIntValue("PHOTOSET_DEV_RESCAN_MS");
         QTimer::singleShot(at > 0 ? at : 800, ui, [ui] {
-            qInfo().noquote() << QStringLiteral("[dev] 重新扫描");
+            qCInfo(lcApp).noquote() << QStringLiteral("[app] dev: rescan requested");
             ui->rescanSource();
         });
     }
@@ -446,20 +451,20 @@ int main(int argc, char *argv[])
         const int at = qEnvironmentVariableIntValue("PHOTOSET_DEV_CANCEL_MS");
         QTimer::singleShot(at > 0 ? at : 300, ui, [ui] {
             ui->cancelScan();
-            qInfo().noquote() << QStringLiteral("[dev] scan stop requested");
+            qCInfo(lcApp).noquote() << QStringLiteral("[app] dev: scan stop requested");
         });
     }
     if (parser.isSet(devSaveFavOpt)) {
         QTimer::singleShot(1200, ui, [ui] {
-            qInfo().noquote() << QStringLiteral("[dev] 保存进度到收藏夹：%1")
-                                     .arg(ui->saveProgressToFavorites() ? QStringLiteral("成功")
-                                                                        : QStringLiteral("失败"));
+            qCInfo(lcApp).noquote() << QStringLiteral("[app] dev: save progress to favorites: %1")
+                                        .arg(ui->saveProgressToFavorites() ? QStringLiteral("ok")
+                                                                           : QStringLiteral("failed"));
         });
     }
 
     engine.load(QUrl(QStringLiteral("qrc:/qt/qml/AppUi/src/ui/Main.qml")));
     if (engine.rootObjects().isEmpty()) {
-        qWarning() << "QML 加载失败";
+        qCWarning(lcApp) << QStringLiteral("[app] QML load failed");
         return 1;
     }
 
@@ -467,7 +472,7 @@ int main(int argc, char *argv[])
     auto *ipc = new QLocalServer(&app);
     QLocalServer::removeServer(QString::fromLatin1(PHOTOSET_IPC_NAME));   // 清掉上次留下的 socket
     if (!ipc->listen(QString::fromLatin1(PHOTOSET_IPC_NAME))) {
-        qWarning().noquote() << QStringLiteral("[ipc] 监听失败：%1").arg(ipc->errorString());
+        qCWarning(lcApp).noquote() << QStringLiteral("[app] ipc listen failed: %1").arg(ipc->errorString());
     } else {
         QQuickWindow *rootWin = qobject_cast<QQuickWindow *>(engine.rootObjects().value(0));
         QObject::connect(ipc, &QLocalServer::newConnection, ipc, [ipc, ui, rootWin]() {
@@ -475,7 +480,7 @@ int main(int argc, char *argv[])
                 if (sock->waitForReadyRead(300)) {
                     const QString path = QString::fromUtf8(sock->readAll()).trimmed();
                     if (!path.isEmpty()) {
-                        qInfo().noquote() << QStringLiteral("[ipc] 收到路径：%1").arg(path);
+                        qCInfo(lcApp).noquote() << QStringLiteral("[app] ipc received path: %1").arg(path);
                         ui->openPath(path);
                     }
                 }
@@ -495,11 +500,15 @@ int main(int argc, char *argv[])
     //   `QQuickRhiItem` 什么都不画 ⇒ 没有这条，阅读屏在 llvmpipe / 强制 software 时是黑的。
     if (QQuickWindow *win = qobject_cast<QQuickWindow *>(engine.rootObjects().value(0))) {
         auto probeBackend = [win, ui]() {
+            // ★ 本回调会被调两次（`sceneGraphInitialized` 与下面那次立即探测）⇒ 降级只报一次
+            static bool fallbackReported = false;
             if (auto *ri = win->rendererInterface()) {
                 const bool sw = (ri->graphicsApi() == QSGRendererInterface::Software);
-                if (sw)
-                    qInfo().noquote() << QStringLiteral(
-                        "[scale] 场景图后端 = software ⇒ 阅读屏缩放降级为 Smooth (Qt)");
+                if (sw && !fallbackReported) {
+                    fallbackReported = true;
+                    qCWarning(lcApp).noquote() << QStringLiteral(
+                        "[app] scene graph backend is software; reader scaling falls back to Smooth (Qt)");
+                }
                 ui->setSoftwareBackend(sw);
             }
         };
@@ -512,7 +521,8 @@ int main(int argc, char *argv[])
         QObject::connect(win, &QQuickWindow::sceneGraphInitialized, ui, probeBackend);
         probeBackend();          // 已经初始化过的情况（例如窗口已 expose）
         if (parser.isSet(forceCpuOpt)) {
-            qInfo().noquote() << QStringLiteral("[scale] --force-cpu-scale ⇒ 按软件后端处理（走 CPU 缩放）");
+            qCInfo(lcApp).noquote()
+                << QStringLiteral("[app] --force-cpu-scale: using software backend (CPU scaling)");
             ui->setSoftwareBackend(true);
         }
     }

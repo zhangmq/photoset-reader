@@ -1,4 +1,5 @@
 #include "screenshot.h"
+#include "logging.h"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -27,9 +28,9 @@ void setupShot(QGuiApplication &app, QQmlApplicationEngine &engine,
 {
     QTimer::singleShot(delayMs, &app, [&engine, outPath, shotIndex, popup, osdShown, seekPage, uiModel]() {
         const auto roots = engine.rootObjects();
-        if (roots.isEmpty()) { qWarning() << "[shot] 没有根对象"; return; }
+        if (roots.isEmpty()) { qCWarning(lcApp) << QStringLiteral("[app] shot: no root objects"); return; }
         auto *win = qobject_cast<QQuickWindow *>(roots.first());
-        if (!win) { qWarning() << "[shot] 根对象不是 QQuickWindow"; return; }
+        if (!win) { qCWarning(lcApp) << QStringLiteral("[app] shot: root object is not a QQuickWindow"); return; }
 
         // 新壳：画的是 `ui.viewer`（阅读屏的图由 viewer 直接给）
         fetch::ViewerModel *vm = uiModel ? uiModel->viewerCore() : nullptr;
@@ -40,7 +41,7 @@ void setupShot(QGuiApplication &app, QQmlApplicationEngine &engine,
             // ⚠️ 取图是**异步**的（解码线程取好再 post 回来）⇒ 这里报不出跳转后的页号；
             //    单幅版面下"第 N 页"== 第 N 条 ⇒ 投递 jump(N) 即可。真实页号看下面的 VM 状态。
             vm->jump(seekPage);
-            qInfo().noquote() << QStringLiteral("[seek] 已投递 jump(%1)（当前页号 %2，异步刷新）")
+            qCInfo(lcApp).noquote() << QStringLiteral("[app] shot: jump(%1) posted (current page %2, async)")
                 .arg(seekPage).arg(vm->currentPage());
         }
         //   ★ `--show-interval-popup` 由阅读屏自己接线（`devShowIntervalPopup` 上下文属性）；
@@ -53,19 +54,19 @@ void setupShot(QGuiApplication &app, QQmlApplicationEngine &engine,
             if (auto *ri = win->rendererInterface()) {
                 const auto api = ri->graphicsApi();
                 if (api == QSGRendererInterface::Software)
-                    qWarning().noquote()
-                        << QStringLiteral("[shot] ⚠ 场景图后端 = software（不是 RHI）⇒ "
-                                          "阅读屏截图不含 GPU 缩放画面，请在有 /dev/dri 的环境重跑");
+                    qCWarning(lcApp).noquote()
+                        << QStringLiteral("[app] shot: scene graph backend is software (not RHI); "
+                                          "screenshot excludes GPU-scaled frames");
                 else
-                    qInfo().noquote() << QStringLiteral("[shot] 场景图后端 = RHI（graphicsApi=%1）")
+                    qCInfo(lcApp).noquote() << QStringLiteral("[app] shot: scene graph backend is RHI (graphicsApi=%1)")
                                              .arg(int(api));
             }
             // 主路径的可观测状态：截图 + 这行日志一起才算"看到"
             if (uiModel) {
                 if (auto *v = uiModel->viewerCore()) {
-                    qInfo().noquote()
-                        << QStringLiteral("[shot] VM 状态：keyCount=%1 cursor=%2 count=%3 "
-                                          "totalPages=%4 currentPage=%5 loading=%6 imageA=%7x%8 imageB=%9x%10")
+                    qCInfo(lcApp).noquote()
+                        << QStringLiteral("[app] shot: viewer state items=%1 cursor=%2 count=%3 "
+                                          "pages=%4 page=%5 loading=%6 imageA=%7x%8 imageB=%9x%10")
                                .arg(v->keyCount()).arg(v->cursor())
                                .arg(v->itemCount()).arg(v->totalPages()).arg(v->currentPage())
                                .arg(v->loading() ? QStringLiteral("true") : QStringLiteral("false"))
@@ -74,12 +75,12 @@ void setupShot(QGuiApplication &app, QQmlApplicationEngine &engine,
                 }
             }
             const QImage img = win->grabWindow();
-            if (img.isNull()) { qWarning() << "[shot] grabWindow 返回空"; return; }
+            if (img.isNull()) { qCWarning(lcApp) << QStringLiteral("[app] shot: grabWindow returned null"); return; }
             if (img.save(outPath))
-                qInfo().noquote() << QStringLiteral("[shot] 已保存 %1  (%2x%3)")
+                qCInfo(lcApp).noquote() << QStringLiteral("[app] shot: saved %1 (%2x%3)")
                                          .arg(outPath).arg(img.width()).arg(img.height());
             else
-                qWarning() << QStringLiteral("[shot] 保存失败 %1").arg(outPath);
+                qCWarning(lcApp) << QStringLiteral("[app] shot: save failed: %1").arg(outPath);
             QCoreApplication::quit();
         });
     });

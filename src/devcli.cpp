@@ -1,4 +1,5 @@
 #include "devcli.h"
+#include "logging.h"
 
 #include <QDir>
 #include <QElapsedTimer>
@@ -31,11 +32,11 @@ int runLibarchiveProbe(const QString &path)
     archive_read_support_filter_all(a);
     archive_read_support_format_all(a);
     if (archive_read_open_filename(a, path.toUtf8().constData(), 65536) != ARCHIVE_OK) {
-        qWarning().noquote() << QStringLiteral("[probe-la] 打不开：%1").arg(path);
+        qCWarning(lcApp).noquote() << QStringLiteral("[app] probe-la open failed: %1").arg(path);
         archive_read_free(a);
         return 1;
     }
-    qInfo().noquote() << QStringLiteral("[probe-la] %1").arg(QFileInfo(path).fileName());
+    qCInfo(lcApp).noquote() << QStringLiteral("[app] probe-la file: %1").arg(QFileInfo(path).fileName());
 
     // 走两条，再试 seek（**能 seek = 能随机读**）
     struct archive_entry *e = nullptr;
@@ -46,9 +47,10 @@ int runLibarchiveProbe(const QString &path)
     }
     const la_int64_t rEnd = archive_seek_data(a, 0, SEEK_END);
     const la_int64_t rSet = archive_seek_data(a, 0, SEEK_SET);
-    qInfo().noquote() << QStringLiteral("[probe-la]   seek_data(END) → %1   seek_data(SET,0) → %2   ⇒ %3")
-                             .arg(rEnd).arg(rSet)
-                             .arg(rEnd >= 0 ? QStringLiteral("能随机读 ✓") : QStringLiteral("不能随机读 ✗"));
+    qCInfo(lcApp).noquote()
+        << QStringLiteral("[app] probe-la seek_data(END)=%1 seek_data(SET,0)=%2 random_access=%3")
+               .arg(rEnd).arg(rSet)
+               .arg(rEnd >= 0 ? QStringLiteral("yes") : QStringLiteral("no"));
     archive_read_free(a);
     return 0;
 }
@@ -59,7 +61,7 @@ int runArchiveProbe(const QString &path)
     using namespace fetch;
     ArchiveSource a;
     if (!a.open(path, QString(), ArchiveSource::Entries::All)) {
-        qWarning().noquote() << QStringLiteral("[probe-arc] 打不开：%1").arg(path);
+        qCWarning(lcApp).noquote() << QStringLiteral("[app] probe-arc open failed: %1").arg(path);
         return 1;
     }
     {   // 7z/cb7：先报"能不能随机读"的判定
@@ -67,19 +69,19 @@ int runArchiveProbe(const QString &path)
         if (suf == QLatin1String("7z") || suf == QLatin1String("cb7")) {
             QString why;
             const bool ok = sevenZipIsRandomAccessible(path, &why);
-            qInfo().noquote() << QStringLiteral("[probe-arc] 7z 判定：%1（%2）")
-                                     .arg(ok ? QStringLiteral("能随机读 ✓ 支持")
-                                             : QStringLiteral("不能随机读 ✗ 不支持"))
-                                     .arg(why);
+            qCInfo(lcApp).noquote()
+                << QStringLiteral("[app] probe-arc 7z random_access=%1 (%2)")
+                       .arg(ok ? QStringLiteral("yes") : QStringLiteral("no"), why);
         }
     }
     qint64 totalBytes = 0;
     for (int i = 0; i < a.count(); ++i) totalBytes += a.sizeAt(i);
-    qInfo().noquote() << QStringLiteral("[probe-arc] 条目 %1  归档 %2 MB  解压后共 %3 MB  格式 %4")
-                             .arg(a.count())
-                             .arg(QFileInfo(path).size() / 1048576.0, 0, 'f', 1)
-                             .arg(totalBytes / 1048576.0, 0, 'f', 1)
-                             .arg(a.formatName());
+    qCInfo(lcApp).noquote()
+        << QStringLiteral("[app] probe-arc entries=%1 archive=%2 MB uncompressed=%3 MB format=%4")
+               .arg(a.count())
+               .arg(QFileInfo(path).size() / 1048576.0, 0, 'f', 1)
+               .arg(totalBytes / 1048576.0, 0, 'f', 1)
+               .arg(a.formatName());
 
     // 前缀字节（第 i 条之前的总字节数）= solid 归档"定位到第 i 条"必须解压的量
     QVector<qint64> prefix(a.count() + 1, 0);
@@ -93,12 +95,13 @@ int runArchiveProbe(const QString &path)
         t.start();
         const QByteArray d = a.dataAt(i);
         const qint64 ms = qMax<qint64>(1, t.elapsed());
-        qInfo().noquote() << QStringLiteral("[probe-arc] dataAt(%1)\t%2 ms\t前缀 %3 MB\t吞吐 %4 MB/s")
-                                 .arg(i).arg(t.elapsed())
-                                 .arg(prefix[i] / 1048576.0, 0, 'f', 1)
-                                 .arg(prefix[i] / 1048576.0 / (ms / 1000.0), 0, 'f', 0);
+        qCInfo(lcApp).noquote()
+            << QStringLiteral("[app] probe-arc dataAt(%1): %2 ms, prefix %3 MB, %4 MB/s")
+                   .arg(i).arg(t.elapsed())
+                   .arg(prefix[i] / 1048576.0, 0, 'f', 1)
+                   .arg(prefix[i] / 1048576.0 / (ms / 1000.0), 0, 'f', 0);
         if (t.elapsed() > 60000) {
-            qInfo().noquote() << QStringLiteral("[probe-arc] 单次已超 60s，停止采样");
+            qCInfo(lcApp).noquote() << QStringLiteral("[app] probe-arc single read exceeded 60s, stop sampling");
             break;
         }
     }
@@ -110,7 +113,11 @@ int runArchiveProbe(const QString &path)
     qint64 bytes = 0;
     for (int i = 0; i < seqN; ++i) {
         bytes += a.dataAt(i).size();
-        if (t.elapsed() > 60000) { qInfo().noquote() << QStringLiteral("[probe-arc] 顺序读 60s 到第 %1 条"); break; }
+        if (t.elapsed() > 60000) {
+            qCInfo(lcApp).noquote()
+                << QStringLiteral("[app] probe-arc sequential read hit 60s at entry %1").arg(i);
+            break;
+        }
     }
     {   // 顺带：真扫一遍这个包（验证"归档内子目录"修好后能不能全扫到）
         Sequence sq;
@@ -122,16 +129,18 @@ int runArchiveProbe(const QString &path)
             QThread::msleep(5);
         }
         sq.drain();
-        qInfo().noquote() << QStringLiteral("[probe-arc] 真实扫描：%1 条  状态 %2  用时 %3 ms")
-                                 .arg(sq.count())
-                                 .arg(sq.state() == Sequence::State::Scaned
-                                          ? QStringLiteral("scanned")
-                                          : QStringLiteral("stopped/other"))
-                                 .arg(st.elapsed());
+        qCInfo(lcApp).noquote()
+            << QStringLiteral("[app] probe-arc scan finished: %1 items state=%2 in %3 ms")
+                   .arg(sq.count())
+                   .arg(sq.state() == Sequence::State::Scaned
+                            ? QStringLiteral("scanned")
+                            : QStringLiteral("stopped/other"))
+                   .arg(st.elapsed());
     }
-    qInfo().noquote() << QStringLiteral("[probe-arc] 顺序前 %1 条\t%2 ms\t%3 MB\t每条 %4 ms")
-                             .arg(seqN).arg(t.elapsed()).arg(bytes / 1048576.0, 0, 'f', 1)
-                             .arg(double(t.elapsed()) / seqN, 0, 'f', 1);
+    qCInfo(lcApp).noquote()
+        << QStringLiteral("[app] probe-arc first %1 entries: %2 ms, %3 MB, %4 ms/entry")
+               .arg(seqN).arg(t.elapsed()).arg(bytes / 1048576.0, 0, 'f', 1)
+               .arg(double(t.elapsed()) / seqN, 0, 'f', 1);
     return 0;
 }
 
@@ -143,7 +152,7 @@ void runDevCommands(const DevRequest &req, app::UiModel *ui)
     if (req.notifySet) {
         const QString text = req.notify;
         QTimer::singleShot(300, ui, [ui, text] { ui->notify(text); });
-        qInfo().noquote() << QStringLiteral("[dev] 瞬时提示：%1").arg(text);
+        qCInfo(lcApp).noquote() << QStringLiteral("[app] dev: toast: %1").arg(text);
     }
 }
 

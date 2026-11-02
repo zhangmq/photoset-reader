@@ -1,4 +1,5 @@
 #include "uimodel.h"
+#include "logging.h"
 
 #include "appsettings.h"
 #include "archive.h"                // ArchiveSource::isArchive（"是不是压缩包"的唯一实现）
@@ -50,9 +51,9 @@ UiModel::UiModel(QObject *parent)
         const QString current = cfg + QStringLiteral("/favorites");
         if (QFileInfo::exists(legacy) && !QFileInfo::exists(current)) {
             if (QDir().rename(legacy, current))
-                qInfo().noquote() << QStringLiteral("[ui] 收藏夹目录迁移：%1 → %2").arg(legacy, current);
+                qCInfo(lcUi).noquote() << QStringLiteral("[ui] favorites dir migrated: %1 -> %2").arg(legacy, current);
             else
-                qWarning().noquote() << QStringLiteral("[ui] 收藏夹目录迁移失败：%1").arg(legacy);
+                qCWarning(lcUi).noquote() << QStringLiteral("[ui] favorites dir migration failed: %1").arg(legacy);
         }
     }
 
@@ -67,7 +68,10 @@ UiModel::UiModel(QObject *parent)
         if (!seq) { m_sessionProbe->stop(); return; }
         const QString why = seq->unsupportedReason();
         if (!why.isEmpty()) {
-            qWarning().noquote() << QStringLiteral("[ui] 来源不支持：%1").arg(why);
+            qCWarning(lcUi).noquote()
+                << QStringLiteral("[ui] source unsupported: %1")
+                       .arg(seq->unsupportedLogReason().isEmpty() ? QStringLiteral("(see UI message)")
+                                                                  : seq->unsupportedLogReason());
             notify(why);
             m_sessionProbe->stop();
             return;
@@ -75,7 +79,8 @@ UiModel::UiModel(QObject *parent)
         const QString notice = seq->noticeText();
         if (!notice.isEmpty() && notice != m_sessionNotice) {
             m_sessionNotice = notice;
-            qWarning().noquote() << QStringLiteral("[ui] 来源提示：%1").arg(notice);
+            //   通知**是界面文案**（可能是中文）⇒ 日志只记"有这条通知"，内容走界面
+            qCInfo(lcUi).noquote() << QStringLiteral("[ui] source notice raised (see UI toast)");
             notify(notice);
         }
         if (seq->scanFinished()) m_sessionProbe->stop();
@@ -95,7 +100,6 @@ UiModel::UiModel(QObject *parent)
     m_favorites->setDirectory(favoritesDir());
 
     // ★ `ui.viewer` 在**没打开来源时就是 null**（QML 一律先判非空）。
-    qInfo().noquote() << QStringLiteral("[ui] 初始化：只有一个查看界面；打开过的来源不写盘");
 }
 
 QObject *UiModel::viewer() const { return m_src.vm; }
@@ -161,12 +165,12 @@ void UiModel::applyLanguage()
         if (t->load(QStringLiteral(":/i18n/photoset-reader_") + cand)) {
             QCoreApplication::installTranslator(t);
             m_translator = t;
-            qInfo().noquote() << QStringLiteral("[i18n] 已装载翻译：%1").arg(cand);
+            qCInfo(lcUi).noquote() << QStringLiteral("[ui] language: %1 (translation installed)").arg(cand);
             return;
         }
         delete t;
     }
-    qInfo().noquote() << QStringLiteral("[i18n] 没有 %1 的翻译文件 ⇒ 用源串（英文）").arg(code);
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] language: %1 (no translation, English source strings)").arg(code);
 }
 
 UiModel::~UiModel()
@@ -375,7 +379,7 @@ void UiModel::chooseOpenFolder()
     const QString start = dialogStartDir();
     const QString dir = QFileDialog::getExistingDirectory(
         nullptr, tr("Open folder"), start);
-    qInfo().noquote() << QStringLiteral("[dialog] 打开文件夹：%1ms（起始 %2）")
+    qCDebug(lcUi).noquote() << QStringLiteral("[ui] dialog open folder: %1 ms (start %2)")
                              .arg(QDateTime::currentMSecsSinceEpoch() - t0).arg(start);
     if (dir.isEmpty()) return;
     m_lastDialogDir = QFileInfo(dir).absolutePath();
@@ -389,7 +393,7 @@ void UiModel::chooseOpenArchive()
     const QString start = dialogStartDir();
     const QString path = QFileDialog::getOpenFileName(
         nullptr, tr("Open archive"), start, filter);
-    qInfo().noquote() << QStringLiteral("[dialog] 打开压缩包：%1ms（起始 %2）")
+    qCDebug(lcUi).noquote() << QStringLiteral("[ui] dialog open archive: %1 ms (start %2)")
                              .arg(QDateTime::currentMSecsSinceEpoch() - t0).arg(start);
     if (path.isEmpty()) return;
     m_lastDialogDir = QFileInfo(path).absolutePath();
@@ -415,7 +419,7 @@ void UiModel::chooseOpenImage()
     const QString start = dialogStartDir();
     const QString path = QFileDialog::getOpenFileName(
         nullptr, tr("Open image"), start, filter);
-    qInfo().noquote() << QStringLiteral("[dialog] 打开图片：%1ms（起始 %2）")
+    qCDebug(lcUi).noquote() << QStringLiteral("[ui] dialog open image: %1 ms (start %2)")
                              .arg(QDateTime::currentMSecsSinceEpoch() - t0).arg(start);
     if (path.isEmpty()) return;
     m_lastDialogDir = QFileInfo(path).absolutePath();
@@ -428,7 +432,7 @@ void UiModel::notify(const QString &text)
     if (text.isEmpty()) return;
     m_notification = text;
     ++m_notificationSeq;
-    qInfo().noquote() << QStringLiteral("[ui] 瞬时提示：%1").arg(text);
+    qCDebug(lcUi).noquote() << QStringLiteral("[ui] toast: %1").arg(text);
     emit notificationChanged();
 }
 
@@ -733,7 +737,7 @@ void UiModel::startRescan()
     });
     m_rescanSeq->startScan(m_path, m_settings.recurseDepth(), m_settings.scanHidden(),
                            Sequence::ScanOptions{ qint64(m_settings.innerArchiveMaxMb()) });
-    qInfo().noquote() << QStringLiteral("[seq] 后台重扫开始：%1").arg(m_path);
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] rescan started: %1").arg(m_path);
     refreshScanning();
 }
 
@@ -779,7 +783,7 @@ void UiModel::applyRescan()
                         : fresh->indexOfChain(m_rescanChain, m_rescanPage);
     m_src.vm->jump(idx >= 0 ? idx : 0);
     delete old;                            // 旧序列已不被 viewer 引用
-    qInfo().noquote() << QStringLiteral("[seq] 后台重扫完成，已替换当前序列（%1 条，落到 %2）")
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] rescan finished, sequence replaced: %1 items, cursor %2")
                              .arg(fresh->count()).arg(qMax(0, idx));
     m_rescanChain.clear();
     markProgressDirty();                   // 内容可能变了 ⇒ 让自动保存按新 rows 更新
@@ -797,7 +801,7 @@ void UiModel::cancelRescan()
     s->requestStop();
     delete s;                              // 析构里 join 生产者（已置停止位，通常立刻退出）
     m_rescanChain.clear();
-    qInfo().noquote() << QStringLiteral("[seq] 后台重扫已作废");
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] rescan cancelled");
     refreshScanning();
 }
 
@@ -869,10 +873,11 @@ bool UiModel::writeProgress(const QString &filePath, bool quiet)
     QString err;
     if (!progressfile::write(filePath, d, &err)) {
         if (!quiet) notify(err.isEmpty() ? tr("Failed to save progress") : err);
-        else qWarning().noquote() << QStringLiteral("[progress] 自动保存失败：%1").arg(err);
+        else qCWarning(lcUi).noquote()
+                 << QStringLiteral("[ui] autosave failed: %1 (details in the UI message)").arg(filePath);
         return false;
     }
-    qInfo().noquote() << QStringLiteral("[progress] 已保存 %1（%2 条）")
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] progress saved: %1 (%2 rows)")
                              .arg(filePath).arg(d.rows.size());
     snapshotSavedState(d.meta, d.rows.size());
     return true;
@@ -969,7 +974,7 @@ bool UiModel::openProgress(const QString &filePath)
     m_sessionNotice.clear();
     refreshScanning();
     refreshFavorited();
-    qInfo().noquote() << QStringLiteral("[progress] 已恢复 %1（%2 条，落到 %3）")
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] progress restored: %1 (%2 rows, entry %3)")
                              .arg(filePath).arg(d.rows.size()).arg(d.meta.done);
     return true;
 }
@@ -983,7 +988,7 @@ bool UiModel::removeProgressFile(const QString &filePath)
         notify(tr("Cannot delete: %1").arg(filePath));
         return false;
     }
-    qInfo().noquote() << QStringLiteral("[progress] 已删除 %1").arg(filePath);
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] progress file removed: %1").arg(filePath);
     if (QFileInfo(filePath).absoluteFilePath() == QFileInfo(m_progressFile).absoluteFilePath())
         stopTrackingProgress();                    // 别在下一个间隔点把它"复活"
     refreshFavorited();
@@ -1002,7 +1007,7 @@ bool UiModel::removeFavorite()
     }
     refreshFavorited();
     if (m_favorites) m_favorites->reload();
-    qInfo().noquote() << QStringLiteral("[progress] 已删除 %1").arg(file);
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] favorite removed, progress file deleted: %1").arg(file);
     stopTrackingProgress();
     return true;
 }
@@ -1017,7 +1022,7 @@ void UiModel::autosaveProgress()
     if (m_src.seq->state() != Sequence::State::Scaned)
         return;
     if (!QFileInfo::exists(m_progressFile)) {
-        qInfo().noquote() << QStringLiteral("[progress] 关联的文件不在了，停止自动保存：%1")
+        qCWarning(lcUi).noquote() << QStringLiteral("[ui] autosave stopped, progress file is gone: %1")
                                  .arg(m_progressFile);
         stopTrackingProgress();
         return;
@@ -1029,7 +1034,7 @@ void UiModel::autosaveProgress()
     if (!writeProgress(m_progressFile, /*quiet=*/true))
         return;
     m_progressDirty = false;
-    qInfo().noquote() << QStringLiteral("[progress] 自动保存 %1").arg(m_progressFile);
+    qCDebug(lcUi).noquote() << QStringLiteral("[ui] autosave: %1").arg(m_progressFile);
 }
 
 //   文件里"已经记着"的状态 = **刚写进文件 / 刚从文件读出**的那一份（不是运行态：
@@ -1079,7 +1084,7 @@ void UiModel::cancelScan()
     if (!m_src.seq || m_src.seq->scanFinished())
         return;
     m_src.seq->requestStop();            // 只是请求：生产者自己退，已有内容照旧可看
-    qInfo().noquote() << QStringLiteral("[seq] 用户请求停止扫描");
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] scan stop requested");
 }
 
 } // namespace app

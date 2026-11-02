@@ -1,4 +1,5 @@
 #include "appsettings.h"
+#include "logging.h"
 
 #include <QDebug>
 #include <QDir>
@@ -37,7 +38,7 @@ void AppSettings::load()
     if (!f.exists())
         return;                                  // 首次运行：用默认值
     if (!f.open(QIODevice::ReadOnly)) {
-        qWarning().noquote() << QStringLiteral("[settings] 读不了 %1").arg(filePath());
+        qCWarning(lcApp).noquote() << QStringLiteral("[app] settings read failed: %1").arg(filePath());
         return;
     }
     const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
@@ -89,7 +90,7 @@ void AppSettings::save()
     // 整文件全量写入（最后写的赢）
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        qWarning().noquote() << QStringLiteral("[settings] 写不了 %1").arg(path);
+        qCWarning(lcApp).noquote() << QStringLiteral("[app] settings write failed: %1").arg(path);
         return;
     }
     f.write(QJsonDocument(o).toJson(QJsonDocument::Indented));

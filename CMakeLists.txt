@@ -42,6 +42,9 @@ find_path(UNRAR_INCLUDE_DIR NAMES unrar/dll.hpp REQUIRED)
 # ══ ibcore：应用与测试**共用同一份实现**（设计 14 §11）════════════════════════
 #   除 `src/main.cpp` 外的全部源都在这里；`photoset-reader` 与各 `ib-test-*` 都链它。
 add_library(ibcore STATIC
+    # ── 分类日志（`QLoggingCategory`）：全应用日志的唯一入口（名字 / 级别见 src/logging.h）──
+    src/logging.cpp
+    src/logging.h
     src/sevenzcheck.cpp
     src/sevenzcheck.h
     src/viewermodel.cpp

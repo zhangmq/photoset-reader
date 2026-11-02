@@ -25,7 +25,7 @@ namespace {
 
 QString eglErr(const char *what)
 {
-    return QStringLiteral("EGL %1 失败（0x%2）").arg(QLatin1String(what))
+    return QStringLiteral("EGL %1 failed (0x%2)").arg(QLatin1String(what))
         .arg(eglGetError(), 0, 16);
 }
 
@@ -49,7 +49,7 @@ Context *Context::create(QString *err)
     if (dpy == EGL_NO_DISPLAY)
         dpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     if (dpy == EGL_NO_DISPLAY)
-        return fail(QStringLiteral("拿不到 EGL display（surfaceless 与默认都失败）"));
+        return fail(QStringLiteral("cannot get an EGL display (both surfaceless and default failed)"));
 
     EGLint maj = 0, min = 0;
     if (!eglInitialize(dpy, &maj, &min))
@@ -100,7 +100,7 @@ Context *Context::create(QString *err)
     self->m_display = dpy;
     self->m_eglContext = ectx;
     if (!qtCtx)
-        self->m_adoptErr = QStringLiteral("QEGLContext::fromNative 失败（当前 QPA 平台不是 EGL 平台）");
+        self->m_adoptErr = QStringLiteral("QEGLContext::fromNative failed (the current QPA platform is not an EGL platform)");
 
     // ⑤ 记下 renderer/version（用 eglGetProcAddress 拿 glGetString，避免依赖 GL 链接）
     auto glGetStringFn = reinterpret_cast<const GLubyte *(*)(GLenum)>(eglGetProcAddress("glGetString"));
@@ -115,7 +115,7 @@ Context *Context::create(QString *err)
     return self;
 #else
     if (err)
-        *err = QStringLiteral("本平台没有 EGL（headless GL 引导不可用）");
+        *err = QStringLiteral("no EGL on this platform (headless GL bootstrap unavailable)");
     return nullptr;
 #endif
 }
@@ -156,7 +156,7 @@ Context::~Context()
 QRhi *createRhi(Context *ctx, QString *err)
 {
     if (!ctx || !ctx->isValid()) {
-        if (err) *err = QStringLiteral("headless GL 上下文不可用");
+        if (err) *err = QStringLiteral("headless GL context unavailable");
         return nullptr;
     }
     if (!ctx->hasQtContext()) {
@@ -170,7 +170,7 @@ QRhi *createRhi(Context *ctx, QString *err)
     handles.context = ctx->qtContext();
     QRhi *rhi = QRhi::create(QRhi::OpenGLES2, &params, {}, &handles);
     if (!rhi && err)
-        *err = QStringLiteral("QRhi::create(OpenGL, 导入上下文) 失败");
+        *err = QStringLiteral("QRhi::create(OpenGL, imported context) failed");
     return rhi;
 }
 

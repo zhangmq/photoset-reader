@@ -1,4 +1,5 @@
 #include "gpuscaleritem.h"
+#include "logging.h"
 
 #include "gpuscale.h"
 
@@ -24,7 +25,7 @@ public:
         m_pipe = new gpuscale::Pipeline(rhi());
         m_pipeRhi = rhi();
         if (!m_pipe->isValid())
-            qWarning().noquote() << QStringLiteral("[GpuScalerItem] 管线不可用：%1").arg(m_pipe->error());
+            qCWarning(lcGpu).noquote() << QStringLiteral("[gpu] pipeline unavailable: %1").arg(m_pipe->error());
     }
 
     void synchronize(QQuickRhiItem *item) override
@@ -47,8 +48,9 @@ public:
         if (rt->pixelSize() != m_plan.dst) {
             if (!m_sizeWarned) {
                 m_sizeWarned = true;
-                qWarning().noquote()
-                    << QStringLiteral("[GpuScalerItem] 颜色缓冲 %1x%2 与目标 %3x%4 不一致，本帧跳过（下一帧应已一致）")
+                qCDebug(lcGpu).noquote()
+                    << QStringLiteral("[gpu] color buffer %1x%2 does not match target %3x%4; "
+                                       "skipping frame (next frame should match)")
                            .arg(rt->pixelSize().width()).arg(rt->pixelSize().height())
                            .arg(m_plan.dst.width()).arg(m_plan.dst.height());
             }
@@ -59,7 +61,7 @@ public:
         if (!m_pipe->render(cb, rub, m_plan, rt)) {
             if (!m_sizeWarned) {
                 m_sizeWarned = true;
-                qWarning().noquote() << QStringLiteral("[GpuScalerItem] 渲染失败：%1").arg(m_pipe->error());
+                qCWarning(lcGpu).noquote() << QStringLiteral("[gpu] render failed: %1").arg(m_pipe->error());
             }
         }
     }
@@ -90,7 +92,7 @@ void GpuScalerItem::setSourceImage(const QImage &img)
     if (img.isNull()) {
         m_source = QImage();
         ++m_sourceGen;
-        setStatus(QStringLiteral("无源图"));
+        setStatus(QStringLiteral("no source image"));
         emit sourceChanged();
         updatePlan();
         return;
@@ -98,7 +100,7 @@ void GpuScalerItem::setSourceImage(const QImage &img)
     // 上传口径：RGBA8888（与 CPU 侧 gpuscale::resize 的 RGB32 同像素；alpha 一律不透明）
     m_source = (img.format() == QImage::Format_RGBA8888) ? img : img.convertToFormat(QImage::Format_RGBA8888);
     ++m_sourceGen;
-    setStatus(QStringLiteral("源 %1×%2").arg(m_source.width()).arg(m_source.height()));
+    setStatus(QStringLiteral("src %1x%2").arg(m_source.width()).arg(m_source.height()));
     emit sourceChanged();
     updatePlan();
 }
@@ -231,13 +233,13 @@ void GpuScalerItem::updatePlan()
     }
 
     if (!m_source.isNull()) {
-        setStatus(QStringLiteral("源 %1×%2 · 出 %3×%4 · 全 %5×%6 · %7 · %8%9")
+        setStatus(QStringLiteral("src %1x%2 · out %3x%4 · full %5x%6 · %7 · %8%9")
                       .arg(m_source.width()).arg(m_source.height())
                       .arg(m_plan.dst.width()).arg(m_plan.dst.height())
                       .arg(m_plan.full.width()).arg(m_plan.full.height())
                       .arg(QLatin1String(gpuscale::algorithmLabel(m_params.algorithm)))
                       .arg(m_plan.offX || m_plan.offY
-                               ? QStringLiteral(" · 窗(%1,%2)").arg(m_plan.offX).arg(m_plan.offY)
+                               ? QStringLiteral(" · window(%1,%2)").arg(m_plan.offX).arg(m_plan.offY)
                                : QString()));
     }
     emit targetSizeChanged();

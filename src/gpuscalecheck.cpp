@@ -1,4 +1,5 @@
 #include "gpuscalecheck.h"
+#include "logging.h"
 
 #include "gpuscale.h"
 #include "headlessgl.h"
@@ -73,15 +74,16 @@ int runGpuScaleProbe()
     headlessgl::Context *gl = headlessgl::Context::create(&err);
     QRhi *rhi = gl ? headlessgl::createRhi(gl, &err) : nullptr;
     if (rhi) {
-        qWarning().noquote() << QStringLiteral("[probe] 本环境有 QRhi，probe 走 raw GL 需要无 QRhi 环境");
+        qCWarning(lcGpu).noquote()
+            << QStringLiteral("[gpu] probe: QRhi is present, raw GL probe needs a QRhi-free environment");
         return 2;
     }
     rawgl::Driver *raw = rawgl::Driver::create(&err);
     if (!raw) {
-        qWarning().noquote() << QStringLiteral("[probe] 建不出 GL：%1").arg(err);
+        qCWarning(lcGpu).noquote() << QStringLiteral("[gpu] probe: cannot create GL context: %1").arg(err);
         return 2;
     }
-    qInfo().noquote() << QStringLiteral("[probe] 设备 = %1").arg(raw->rendererInfo());
+    qCInfo(lcGpu).noquote() << QStringLiteral("[gpu] probe: device = %1").arg(raw->rendererInfo());
 
     // 8×8：每行一个灰度（行号 0..7 → 0,32,64,...,224），再放一个不对称标记
     QImage src(8, 8, QImage::Format_RGB32);
@@ -99,7 +101,7 @@ int runGpuScaleProbe()
     const gpuscale::Plan plan = gpuscale::makePlan(src.size(), src.size(), 1.0, 0, 0, p);
     QImage gpu;
     if (!raw->render(src, plan, &gpu, &err)) {
-        qWarning().noquote() << QStringLiteral("[probe] 渲染失败：%1").arg(err);
+        qCWarning(lcGpu).noquote() << QStringLiteral("[gpu] probe: render failed: %1").arg(err);
         return 3;
     }
     auto dump = [](const char *what, const QImage &img) {
@@ -113,14 +115,16 @@ int runGpuScaleProbe()
             }
             rows << cols.join(QLatin1Char(' '));
         }
-        qInfo().noquote() << QStringLiteral("[probe] %1（行 0 = 上）:\n%2")
-                                 .arg(QLatin1String(what), rows.join(QLatin1String("\n")));
+        qCInfo(lcGpu).noquote() << QStringLiteral("[gpu] probe: %1 (row 0 = top):\n%2")
+                                    .arg(QLatin1String(what), rows.join(QLatin1String("\n")));
     };
     raw->dumpProgramInfo();
-    dump("源图", src);
-    dump("GPU 输出", gpu);
+    dump("source image", src);
+    dump("gpu output", gpu);
     const gpuscalecheck::Diff d = gpuscalecheck::compare(src, gpu);
-    qInfo().noquote() << QStringLiteral("[probe] 1:1 直通色差 = %1").arg(gpuscalecheck::text(d));
+    qCInfo(lcGpu).noquote()
+        << QStringLiteral("[gpu] probe: 1:1 passthrough max channel diff = %1")
+               .arg(gpuscalecheck::text(d));
     delete raw;
     return 0;
 }

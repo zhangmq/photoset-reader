@@ -26,8 +26,8 @@ void CpuScalerItem::setSourceImage(const QImage &img)
         m_source = img.convertToFormat(img.hasAlphaChannel() ? QImage::Format_ARGB32_Premultiplied
                                                              : QImage::Format_RGB32);
     }
-    setStatus(m_source.isNull() ? QStringLiteral("无源图")
-                                : QStringLiteral("源 %1×%2").arg(m_source.width()).arg(m_source.height()));
+    setStatus(m_source.isNull() ? QStringLiteral("no source image")
+                                : QStringLiteral("src %1x%2").arg(m_source.width()).arg(m_source.height()));
     emit sourceChanged();
     updatePlan();
 }
@@ -109,7 +109,7 @@ void CpuScalerItem::updatePlan()
     std::atomic_store(&m_snapshot, std::shared_ptr<const Snapshot>(std::move(snap)));
 
     if (!m_source.isNull()) {
-        setStatus(QStringLiteral("Smooth (Qt) · 源 %1×%2 · 出 %3×%4 · 全 %5×%6")
+        setStatus(QStringLiteral("Smooth (Qt) · src %1x%2 · out %3x%4 · full %5x%6")
                       .arg(m_source.width()).arg(m_source.height())
                       .arg(m_plan.dst.width()).arg(m_plan.dst.height())
                       .arg(m_plan.full.width()).arg(m_plan.full.height()));

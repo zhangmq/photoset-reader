@@ -1,4 +1,5 @@
 #include "archive.h"
+#include "logging.h"
 #include "natural.h"
 
 #include <QDir>
@@ -22,7 +23,7 @@ constexpr int kBlockSize = 10240;
 QString archiveError(struct archive *a)
 {
     const char *e = archive_error_string(a);
-    return e ? QString::fromUtf8(e) : QStringLiteral("(无错误信息)");
+    return e ? QString::fromUtf8(e) : QStringLiteral("(no error message)");
 }
 
 // ★ v7：RAR 的**魔数**（内容判定，不看扩展名 —— 上层零分派的第一步）。
@@ -117,17 +118,17 @@ struct UnrarReader {
 QString unrarErrorText(unsigned int code)
 {
     switch (code) {
-    case ERAR_SUCCESS:           return QStringLiteral("成功");
-    case ERAR_END_ARCHIVE:       return QStringLiteral("归档结束");
-    case ERAR_NO_MEMORY:         return QStringLiteral("内存不足");
-    case ERAR_BAD_DATA:          return QStringLiteral("数据损坏");
-    case ERAR_BAD_ARCHIVE:       return QStringLiteral("不是有效归档");
-    case ERAR_UNKNOWN_FORMAT:    return QStringLiteral("未知格式");
-    case ERAR_EOPEN:             return QStringLiteral("打开失败");
-    case ERAR_MISSING_PASSWORD:  return QStringLiteral("缺少密码");
-    case ERAR_BAD_PASSWORD:      return QStringLiteral("密码错误");
-    case ERAR_LARGE_DICT:        return QStringLiteral("字典过大（被拒绝）");
-    default:                     return QStringLiteral("错误码 %1").arg(code);
+    case ERAR_SUCCESS:           return QStringLiteral("ok");
+    case ERAR_END_ARCHIVE:       return QStringLiteral("end of archive");
+    case ERAR_NO_MEMORY:         return QStringLiteral("out of memory");
+    case ERAR_BAD_DATA:          return QStringLiteral("corrupt data");
+    case ERAR_BAD_ARCHIVE:       return QStringLiteral("not a valid archive");
+    case ERAR_UNKNOWN_FORMAT:    return QStringLiteral("unknown format");
+    case ERAR_EOPEN:             return QStringLiteral("open failed");
+    case ERAR_MISSING_PASSWORD:  return QStringLiteral("password required");
+    case ERAR_BAD_PASSWORD:      return QStringLiteral("wrong password");
+    case ERAR_LARGE_DICT:        return QStringLiteral("dictionary too large (rejected)");
+    default:                     return QStringLiteral("error code %1").arg(code);
     }
 }
 
@@ -168,28 +169,34 @@ bool ArchiveSource::open(const QString &path, const QString &password, Entries e
         if (!openLibarchive(path, password, entries, progress)) {
             // 枚举被取消（不是"打不开"）⇒ 不要再回退 / 不要再报错
             if (progress && !progress()) return false;
-            qInfo().noquote() << QStringLiteral("[archive] libarchive 失败，回退 libunrar");
+            qCWarning(lcScan).noquote()
+                << QStringLiteral("[scan] libarchive open failed, falling back to libunrar: %1")
+                       .arg(QFileInfo(path).fileName());
             if (!openUnrar(path, password, entries, progress)) return false;
         }
     }
 
     if (m_names.isEmpty()) {
-        qWarning().noquote() << QStringLiteral("[archive] 无可用条目: %1").arg(path);
+        qCWarning(lcScan).noquote() << QStringLiteral("[scan] no usable entries: %1").arg(path);
         close();
         return false;
     }
 
     m_path = QFileInfo(path).absoluteFilePath();
     m_reopenPath = m_path;                       // 顺序游标回退时重开的就是它
-    qInfo().noquote() << QStringLiteral("[archive] %1  后端=%2  格式=%3  图片数=%4  加密=%5")
-                             .arg(QFileInfo(path).fileName(),
-                                  m_backend == Backend::Unrar ? QStringLiteral("libunrar")
-                                                              : QStringLiteral("libarchive"),
-                                  m_format)
-                             .arg(m_names.size())
-                             .arg(m_encrypted ? QStringLiteral("是") : QStringLiteral("否"));
-    qInfo().noquote() << QStringLiteral("           首=%1").arg(m_names.first());
-    qInfo().noquote() << QStringLiteral("           末=%1").arg(m_names.last());
+    //   ★ 同一个包会被**每个解码线程各打开一次**（各自一份句柄缓存）⇒ 这条摘要**每个包只报一次**
+    //     （否则一个 117 页的 CBZ 开一次就刷 20 行；默认级别看不到，debug 下也不该刷屏）
+    if (iblog::firstTime(QStringLiteral("scan/archive-open:") + m_path))
+        qCDebug(lcScan).noquote()
+            << QStringLiteral("[scan] archive opened: file=%1 backend=%2 format=%3 images=%4 "
+                              "encrypted=%5 first=%6 last=%7")
+                   .arg(QFileInfo(path).fileName(),
+                        m_backend == Backend::Unrar ? QStringLiteral("libunrar")
+                                                    : QStringLiteral("libarchive"),
+                        m_format)
+                   .arg(m_names.size())
+                   .arg(m_encrypted ? QStringLiteral("yes") : QStringLiteral("no"))
+                   .arg(m_names.first(), m_names.last());
     return true;
 }
 
@@ -218,10 +225,12 @@ bool ArchiveSource::openBytes(const QByteArray &bytes, const QString &label,
         return false;
     }
     m_path = label;
-    qInfo().noquote() << QStringLiteral("[archive] 内存容器 %1  格式=%2  条目数=%3")
-                             .arg(label.isEmpty() ? QStringLiteral("(无标签)") : label,
-                                  m_format)
-                             .arg(m_names.size());
+    //   ★ 同一条链上的内层包会被反复物化 ⇒ 摘要按 label **只报一次**（同上）
+    if (iblog::firstTime(QStringLiteral("scan/archive-open-mem:") + label))
+        qCDebug(lcScan).noquote()
+            << QStringLiteral("[scan] archive opened from memory: label=%1 format=%2 entries=%3")
+                   .arg(label.isEmpty() ? QStringLiteral("(no label)") : label, m_format)
+                   .arg(m_names.size());
     return true;
 }
 
@@ -237,8 +246,8 @@ static bool listLibarchive(ArcReader &r, ArchiveSource::Entries entries, QString
         // ★★ **枚举期间也在推进**：每 `kProgressEvery` 条汇报一次（生产者 = 扫描线程）。
         //   返回 false ⇒ 立刻停止枚举（取消 / 已放弃），**不再碰任何状态**。
         if (++idx % ArchiveSource::kProgressEvery == 0 && progress && !progress()) {
-            qInfo().noquote()
-                << QStringLiteral("[archive/libarchive] 枚举被取消（已读 %1 条）").arg(idx);
+            qCDebug(lcScan).noquote()
+                << QStringLiteral("[scan] libarchive enumeration cancelled after %1 entries").arg(idx);
             return false;
         }
         const char *raw = archive_entry_pathname(entry);
@@ -257,8 +266,8 @@ static bool listLibarchive(ArcReader &r, ArchiveSource::Entries entries, QString
         archive_read_data_skip(r.a);
     }
     if (names->isEmpty()) {
-        qWarning().noquote() << QStringLiteral("[archive/libarchive] 无可用条目 (rc=%1 %2)")
-                                    .arg(rc).arg(archiveError(r.a));
+        qCWarning(lcScan).noquote() << QStringLiteral("[scan] libarchive: no usable entries (rc=%1 %2)")
+                                   .arg(rc).arg(archiveError(r.a));
         return false;
     }
     const char *fn = archive_format_name(r.a);
@@ -272,8 +281,8 @@ bool ArchiveSource::openLibarchive(const QString &path, const QString &password,
 {
     ArcReader r;
     if (!r.open(path, password)) {
-        qWarning().noquote() << QStringLiteral("[archive/libarchive] 打开失败: %1 (%2)")
-                                    .arg(path, archiveError(r.a));
+        qCWarning(lcScan).noquote() << QStringLiteral("[scan] libarchive open failed: %1 (%2)")
+                                   .arg(path, archiveError(r.a));
         return false;
     }
     if (!listLibarchive(r, entries, &m_names, &m_sizes, &m_archiveOrder, &m_format, &m_encrypted,
@@ -289,8 +298,8 @@ bool ArchiveSource::openLibarchiveBytes(const QByteArray &bytes, const QString &
 {
     ArcReader r;
     if (!r.openMemory(bytes, password)) {
-        qWarning().noquote() << QStringLiteral("[archive/libarchive] 内存打开失败 (%1)")
-                                    .arg(archiveError(r.a));
+        qCWarning(lcScan).noquote() << QStringLiteral("[scan] libarchive memory open failed: %1")
+                                   .arg(archiveError(r.a));
         return false;
     }
     if (!listLibarchive(r, entries, &m_names, &m_sizes, &m_archiveOrder, &m_format, &m_encrypted,
@@ -307,8 +316,8 @@ bool ArchiveSource::openUnrar(const QString &path, const QString &password, Entr
 {
     UnrarReader r;
     if (!r.open(path, password, RAR_OM_LIST)) {
-        qWarning().noquote() << QStringLiteral("[archive/libunrar] 打开失败: %1")
-                                    .arg(unrarErrorText(r.openResult));
+        qCWarning(lcScan).noquote() << QStringLiteral("[scan] libunrar open failed: %1")
+                                   .arg(unrarErrorText(r.openResult));
         return false;
     }
 
@@ -328,8 +337,8 @@ bool ArchiveSource::openUnrar(const QString &path, const QString &password, Entr
         // ★★ **枚举期间也在推进**：每 `kProgressEvery` 条汇报一次（生产者 = 扫描线程）。
         //   返回 false ⇒ 立刻停止枚举（取消 / 已放弃），**不再碰任何状态**。
         if (++idx % ArchiveSource::kProgressEvery == 0 && progress && !progress()) {
-            qInfo().noquote()
-                << QStringLiteral("[archive/libunrar] 枚举被取消（已读 %1 条）").arg(idx);
+            qCDebug(lcScan).noquote()
+                << QStringLiteral("[scan] libunrar enumeration cancelled after %1 entries").arg(idx);
             return false;
         }
         // ★ 用宽字符文件名（中文必需）
@@ -348,8 +357,8 @@ bool ArchiveSource::openUnrar(const QString &path, const QString &password, Entr
         RARProcessFile(r.h, RAR_SKIP, nullptr, nullptr);
     }
     if (names.isEmpty()) {
-        qWarning().noquote() << QStringLiteral("[archive/libunrar] 无图片条目 (rc=%1 %2)")
-                                    .arg(rc).arg(unrarErrorText(unsigned(rc)));
+        qCWarning(lcScan).noquote() << QStringLiteral("[scan] libunrar: no image entries (rc=%1 %2)")
+                                   .arg(rc).arg(unrarErrorText(unsigned(rc)));
         return false;
     }
 
@@ -361,8 +370,8 @@ bool ArchiveSource::openUnrar(const QString &path, const QString &password, Entr
     // ★ RAR 的 solid 标记（用户 2026-10-13 定的原则：**能随机读的才支持**）
     m_solid = (r.flags & ROADF_SOLID) != 0;
     if (m_solid)
-        qInfo().noquote() << QStringLiteral("[archive/libunrar] %1 是 **solid**（不能随机读）")
-                                 .arg(QFileInfo(path).fileName());
+        qCWarning(lcScan).noquote() << QStringLiteral("[scan] solid archive, random access unsupported: %1")
+                                   .arg(QFileInfo(path).fileName());
     m_backend = Backend::Unrar;
     sortNames();
     return true;
@@ -378,15 +387,15 @@ bool ArchiveSource::openUnrarBytes(const QByteArray &bytes, const QString &label
 {
     m_temp = new QTemporaryFile(QDir::tempPath() + QStringLiteral("/photoset-reader-inner-XXXXXX.rar"));
     if (!m_temp->open()) {
-        qWarning().noquote() << QStringLiteral("[archive/libunrar] 内存容器落临时文件失败: %1")
-                                    .arg(m_temp->errorString());
+        qCWarning(lcScan).noquote() << QStringLiteral("[scan] libunrar: cannot create temp file: %1")
+                                   .arg(m_temp->errorString());
         delete m_temp; m_temp = nullptr;
         return false;
     }
     const QString tempPath = m_temp->fileName();
     if (m_temp->write(bytes) != bytes.size()) {
-        qWarning().noquote() << QStringLiteral("[archive/libunrar] 临时文件写入不完整: %1")
-                                    .arg(tempPath);
+        qCWarning(lcScan).noquote() << QStringLiteral("[scan] libunrar: short write to temp file: %1")
+                                   .arg(tempPath);
         delete m_temp; m_temp = nullptr;         // 析构即删
         return false;
     }
@@ -398,10 +407,12 @@ bool ArchiveSource::openUnrarBytes(const QByteArray &bytes, const QString &label
     }
     m_reopenPath = tempPath;                     // ★ 顺序游标回退时重开的是**临时文件**
     m_path = label;                              // 对外只认 label（临时文件名不出现在日志/路径里）
-    qInfo().noquote() << QStringLiteral("[archive] 内存容器(RAR) %1  条目数=%2  临时文件=%3")
-                             .arg(label.isEmpty() ? QStringLiteral("(无标签)") : label)
-                             .arg(m_names.size())
-                             .arg(QFileInfo(tempPath).fileName());
+    if (iblog::firstTime(QStringLiteral("scan/archive-open-mem-rar:") + label))
+        qCDebug(lcScan).noquote()
+            << QStringLiteral("[scan] archive opened from memory (RAR): label=%1 entries=%2 temp=%3")
+                   .arg(label.isEmpty() ? QStringLiteral("(no label)") : label)
+                   .arg(m_names.size())
+                   .arg(QFileInfo(tempPath).fileName());
     return true;
 }
 
@@ -492,8 +503,8 @@ QByteArray ArchiveSource::dataLibarchive(int index) const
         const bool ok = m_memory ? seq->r.openMemory(m_bytes, m_password)
                                  : seq->r.open(m_path, m_password);
         if (!ok) {
-            qWarning().noquote() << QStringLiteral("[archive/libarchive] 打开失败: %1")
-                                        .arg(archiveError(seq->r.a));
+            qCWarning(lcScan).noquote() << QStringLiteral("[scan] libarchive reopen failed: %1")
+                .arg(archiveError(seq->r.a));
             delete seq;
             m_seqArc = nullptr;
             return {};
@@ -516,8 +527,8 @@ QByteArray ArchiveSource::dataLibarchive(int index) const
                 const la_ssize_t got = archive_read_data(seq->r.a, out.data() + total,
                                                          size_t(wantSize - total));
                 if (got < 0) {
-                    qWarning().noquote() << QStringLiteral("[archive/libarchive] 解出 %1 出错: %2")
-                                                .arg(m_names.at(index), archiveError(seq->r.a));
+                    qCWarning(lcScan).noquote() << QStringLiteral("[scan] libarchive extraction failed: %1 (%2)")
+                        .arg(m_names.at(index), archiveError(seq->r.a));
                     bad = true;
                     break;
                 }
@@ -527,8 +538,9 @@ QByteArray ArchiveSource::dataLibarchive(int index) const
             ++seq->pos;                             // 游标前进（下一条接着读）
             if (bad || total != wantSize) {
                 if (!bad)
-                    qWarning().noquote() << QStringLiteral("[archive/libarchive] 解出 %1 不完整: %2/%3")
-                                                .arg(m_names.at(index)).arg(total).arg(wantSize);
+                    qCWarning(lcScan).noquote()
+                        << QStringLiteral("[scan] libarchive extraction incomplete: %1 (%2/%3 bytes)")
+                               .arg(m_names.at(index)).arg(total).arg(wantSize);
                 delete seq;                         // 出错 ⇒ 游标作废（下次重开）
                 m_seqArc = nullptr;
                 return {};
@@ -538,8 +550,8 @@ QByteArray ArchiveSource::dataLibarchive(int index) const
         archive_read_data_skip(seq->r.a);
         ++seq->pos;
     }
-    qWarning().noquote() << QStringLiteral("[archive/libarchive] 未找到条目 %1 (rc=%2)")
-                                .arg(m_names.at(index)).arg(rc);
+    qCWarning(lcScan).noquote() << QStringLiteral("[scan] libarchive entry not found: %1 (rc=%2)")
+                                   .arg(m_names.at(index)).arg(rc);
     delete seq;
     m_seqArc = nullptr;
     return {};
@@ -555,8 +567,8 @@ QByteArray ArchiveSource::dataUnrar(int index) const
         delete seq;
         seq = new UnrarSeq;
         if (!seq->r.open(m_reopenPath, m_password, RAR_OM_EXTRACT)) {
-            qWarning().noquote() << QStringLiteral("[archive/libunrar] 打开失败: %1")
-                                        .arg(unrarErrorText(seq->r.openResult));
+            qCWarning(lcScan).noquote() << QStringLiteral("[scan] libunrar reopen failed: %1")
+                                   .arg(unrarErrorText(seq->r.openResult));
             delete seq;
             m_seqUnrar = nullptr;
             return {};
@@ -581,15 +593,16 @@ QByteArray ArchiveSource::dataUnrar(int index) const
             const int pr = RARProcessFile(seq->r.h, RAR_TEST, nullptr, nullptr);
             ++seq->pos;                             // 游标前进
             if (pr != ERAR_SUCCESS) {
-                qWarning().noquote() << QStringLiteral("[archive/libunrar] 解出 %1 失败: %2")
-                                            .arg(m_names.at(index), unrarErrorText(unsigned(pr)));
+                qCWarning(lcScan).noquote() << QStringLiteral("[scan] libunrar extraction failed: %1 (%2)")
+                    .arg(m_names.at(index), unrarErrorText(unsigned(pr)));
                 delete seq;
                 m_seqUnrar = nullptr;
                 return {};
             }
             if (out.size() != wantSize) {
-                qWarning().noquote() << QStringLiteral("[archive/libunrar] 解出 %1 不完整: %2/%3")
-                                            .arg(m_names.at(index)).arg(out.size()).arg(wantSize);
+                qCWarning(lcScan).noquote()
+                    << QStringLiteral("[scan] libunrar extraction incomplete: %1 (%2/%3 bytes)")
+                           .arg(m_names.at(index)).arg(out.size()).arg(wantSize);
                 delete seq;
                 m_seqUnrar = nullptr;
                 return {};
@@ -599,8 +612,8 @@ QByteArray ArchiveSource::dataUnrar(int index) const
         RARProcessFile(seq->r.h, RAR_SKIP, nullptr, nullptr);
         ++seq->pos;
     }
-    qWarning().noquote() << QStringLiteral("[archive/libunrar] 未找到条目 %1 (rc=%2)")
-                                .arg(m_names.at(index)).arg(rc);
+    qCWarning(lcScan).noquote() << QStringLiteral("[scan] libunrar entry not found: %1 (rc=%2)")
+                                   .arg(m_names.at(index)).arg(rc);
     delete seq;
     m_seqUnrar = nullptr;
     return {};

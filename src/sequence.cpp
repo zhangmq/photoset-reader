@@ -1,4 +1,5 @@
 #include "sequence.h"
+#include "logging.h"
 
 #include "archive.h"
 #include "dirwalker.h"
@@ -865,6 +866,7 @@ void Sequence::startScan(const QString &path, int maxDepth, bool hidden, const S
     m_cancel.store(false, std::memory_order_relaxed);
     m_abandoned.store(false, std::memory_order_relaxed);
     m_unsupported.clear();
+    m_unsupportedLog.clear();
     setNotice(QString());
 
     // ★★ **扫描线程启动时就算一次进度**（"创建线程那一刻"）—— 否则看门狗会把
@@ -887,12 +889,14 @@ void Sequence::startScan(const QString &path, int maxDepth, bool hidden, const S
 QString Sequence::checkSupported(const QString &path, const std::function<bool()> &progress)
 {
     m_unsupported.clear();
+    m_unsupportedLog.clear();
     // ★ v7：**根不可用** ⇒ 序列**空跑完**（Scaned + 0 条）—— 失败**不写特例状态**，
     //   原因只走瞬时提示 + 日志（上层 `scanFailed` → `UiModel::notify`）。
     {
         const QFileInfo root(path);
         if (!root.exists() || !root.isReadable()) {
             m_unsupported = QCoreApplication::translate("Sequence", "Root unavailable: %1").arg(path);
+            m_unsupportedLog = QStringLiteral("root unavailable: %1").arg(path);
             return m_unsupported;
         }
     }
@@ -901,26 +905,34 @@ QString Sequence::checkSupported(const QString &path, const std::function<bool()
         || suf == QLatin1String("xz") || suf == QLatin1String("zst")) {
         m_unsupported = QCoreApplication::translate("Sequence",
                         "Stream-compressed (.%1) cannot be read randomly; extract it to a folder first").arg(suf);
+        m_unsupportedLog = QStringLiteral("stream-compressed suffix=.%1").arg(suf);
     } else if (suf == QLatin1String("7z") || suf == QLatin1String("cb7")) {
         QString why;
-        if (!sevenZipIsRandomAccessible(path, &why))
+        if (!sevenZipIsRandomAccessible(path, &why)) {
             m_unsupported = QCoreApplication::translate("Sequence",
                         "7z cannot be read randomly (%1); extract it to a folder first").arg(why);
+            m_unsupportedLog = QStringLiteral("7z not randomly accessible: %1").arg(why);
+        }
     } else if (suf == QLatin1String("rar") || suf == QLatin1String("cbr")) {
         ArchiveSource probe;
         // ★ 枚举期间也要汇报进度（这两个探针在大包上很贵）
         if (probe.open(path, QString(), ArchiveSource::Entries::ImagesOnly, progress)
             && probe.isSolid())
+        {
             m_unsupported = QCoreApplication::translate("Sequence",
                         "RAR is solid and cannot be read randomly; extract it to a folder first");
+            m_unsupportedLog = QStringLiteral("rar solid archive");
+        }
     }
     // ★ v5：容器**打不开**也算不支持（"该容器不出现 + 瞬时提示"，Phase 3 接 notification）。
     //   在这里（扫描线程最开头）判定 ⇒ 不跨线程改这个字符串。
     if (m_unsupported.isEmpty() && ArchiveSource::isArchive(path)) {
         ArchiveSource probe;
-        if (!probe.open(path, QString(), ArchiveSource::Entries::All, progress))
+        if (!probe.open(path, QString(), ArchiveSource::Entries::All, progress)) {
             m_unsupported = QCoreApplication::translate("Sequence",
                         "Cannot open archive: %1").arg(QFileInfo(path).fileName());
+            m_unsupportedLog = QStringLiteral("cannot open archive: %1").arg(QFileInfo(path).fileName());
+        }
     }
     return m_unsupported;
 }
@@ -940,10 +952,13 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
         // ★ 是被**取消**（不是真"不支持"）⇒ 不记"不支持"日志、原因也清掉
         if (stopRequested()) {
             m_unsupported.clear();
+            m_unsupportedLog.clear();
             writeTerminal(State::ScanStoped);    // ★ 写终态 + 唤醒消费者（唯一入口）
             return;
         }
-        qInfo().noquote() << QStringLiteral("[seq] 不支持：%1 —— %2").arg(path, m_unsupported);
+        qCWarning(lcScan).noquote()
+            << QStringLiteral("[scan] unsupported source: %1 (%2)")
+                   .arg(path, m_unsupportedLog.isEmpty() ? m_unsupported : m_unsupportedLog);
         writeTerminal(State::Scaned);
         return;
     }
@@ -1124,7 +1139,12 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
                             .arg(e.leaf)
                             .arg(a.sizeAt(idx) / 1048576.0, 0, 'f', 1)
                             .arg(limit / 1048576);
-                    qInfo().noquote() << QStringLiteral("[seq] %1").arg(why);
+                    qCWarning(lcScan).noquote()
+                        << QStringLiteral("[scan] nested archive over size limit, not expanded: "
+                                           "%1 (%2 MB > %3 MB)")
+                               .arg(e.leaf)
+                               .arg(a.sizeAt(idx) / 1048576.0, 0, 'f', 1)
+                               .arg(limit / 1048576);
                     setNotice(why);
                     continue;
                 }
@@ -1138,8 +1158,8 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
                 if (!inner.openBytes(bytes, e.leaf, QString(),
                                      ArchiveSource::Entries::All, progressFn)) {
                     if (stopRequested()) return;             // 取消 ⇒ 不是"打不开"，不记日志
-                    qWarning().noquote()
-                        << QStringLiteral("[seq] 嵌套容器打不开（该容器不出现）：%1").arg(e.name);
+                    qCWarning(lcScan).noquote()
+                        << QStringLiteral("[scan] nested archive open failed, container skipped: %1").arg(e.name);
                     continue;
                 }
                 QStringList members = cMembers;
@@ -1199,8 +1219,8 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
                     //   打不开 ⇒ 该容器不出现（+ 日志）
                     if (!a.open(e.path, QString(), ArchiveSource::Entries::All, progressFn)) {
                         if (stopRequested()) return;           // 取消 ⇒ 不是"打不开"，不记日志
-                        qWarning().noquote()
-                            << QStringLiteral("[seq] 压缩包打不开（该容器不出现）：%1").arg(e.path);
+                        qCWarning(lcScan).noquote()
+                            << QStringLiteral("[scan] archive open failed, container skipped: %1").arg(e.path);
                         continue;
                     }
                     const int arcOrd = emitNode(Kind::Archive, e.name, nodeOrd);
@@ -1228,7 +1248,7 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
                 writeTerminal(State::ScanStoped);
                 return;
             }
-            qWarning().noquote() << QStringLiteral("[seq] 压缩包打不开（来源根）：%1").arg(path);
+            qCWarning(lcScan).noquote() << QStringLiteral("[scan] archive open failed: %1").arg(path);
             writeTerminal(State::Scaned);
             return;
         }
@@ -1266,6 +1286,7 @@ void Sequence::clear()
     m_archivePages = false;
     m_rootIsArchive = false;
     m_unsupported.clear();
+    m_unsupportedLog.clear();
     setNotice(QString());
     m_state.store(State::NotReady, std::memory_order_relaxed);
     // ★ 换来源：**把队列与"已收尾"一起重置**（旧成员 m_wHead / m_wTail 的重置由它取代）

@@ -256,6 +256,9 @@ public:
     // ★ v7：**瞬时提示**（扫描线程产出 —— 例如"内层压缩包超过上限，未展开"）。
     //   读取方 = GUI 侧轮询（`UiModel`）⇒ 一律走 `UiModel::notify`；**不写入磁盘、不是失败**。
     QString noticeText() const;
+    //  ★ 给**日志**用的英文原因（与 `unsupportedReason()` 分开：那个是**界面文案**、已翻译；
+    //    日志一律英文，不把界面文案写进日志（用户 2026-11-03 口径：日志全英文）。
+    QString unsupportedLogReason() const { return m_unsupportedLog; }
     bool  scanFinished() const
     {
         const State s = state();
@@ -518,6 +521,7 @@ private:
 
     QString m_unsupported;
     // ★ v7：瞬时提示（扫描线程写 / GUI 侧读 ⇒ 互斥；**不写入磁盘**）
+    QString        m_unsupportedLog;   // 英文诊断（只进日志）
     mutable QMutex m_noticeMutex;
     QString        m_notice;
     QString m_root;

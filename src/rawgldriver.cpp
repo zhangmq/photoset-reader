@@ -1,4 +1,5 @@
 #include "rawgldriver.h"
+#include "logging.h"
 
 #include "gpuscale.h"
 #include "headlessgl.h"
@@ -30,7 +31,9 @@ GLuint compile(GLenum type, const QByteArray &src, const char *what)
     if (!ok) {
         char log[4096] = {0};
         glGetShaderInfoLog(s, sizeof(log) - 1, nullptr, log);
-        qWarning().noquote() << QStringLiteral("[rawgl] 编译 %1 失败：%2").arg(QLatin1String(what), QLatin1String(log));
+        qCWarning(lcGpu).noquote()
+            << QStringLiteral("[gpu] rawgl: compile %1 failed: %2")
+                   .arg(QLatin1String(what), QLatin1String(log));
         return 0;
     }
     return s;
@@ -40,12 +43,12 @@ QShader qsbShader(const QString &path, const char *what)
 {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly)) {
-        qWarning().noquote() << QStringLiteral("[rawgl] 打不开 %1").arg(path);
+        qCWarning(lcGpu).noquote() << QStringLiteral("[gpu] rawgl: cannot open %1").arg(path);
         return QShader();
     }
     const QShader sh = QShader::fromSerialized(f.readAll());
     if (!sh.isValid())
-        qWarning().noquote() << QStringLiteral("[rawgl] %1 反序列化失败").arg(path);
+        qCWarning(lcGpu).noquote() << QStringLiteral("[gpu] rawgl: deserialization failed: %1").arg(path);
     Q_UNUSED(what);
     return sh;
 }
@@ -68,9 +71,10 @@ QByteArray glslFromQsb(const QShader &sh, const char *what)
                 continue;
             const bool block = t.contains("uniform buf\n{") || t.contains("uniform buf {")
                                || t.contains("layout(std140) uniform buf");
-            qInfo().noquote() << QStringLiteral("[rawgl] %1: GLSL %2 可用  块写法=%3")
-                                     .arg(QLatin1String(what)).arg(v)
-                                     .arg(block ? QStringLiteral("真 UBO 块") : QStringLiteral("展平成 uniform 结构"));
+            qCInfo(lcGpu).noquote() << QStringLiteral("[gpu] rawgl: %1 GLSL %2 available (block form=%3)")
+                                        .arg(QLatin1String(what)).arg(v)
+                                        .arg(block ? QStringLiteral("true UBO block")
+                                                   : QStringLiteral("flattened uniform struct"));
         }
     }
     for (int v : { 460, 450, 440, 430, 420, 410, 400, 330, 150, 140, 130 }) {
@@ -79,15 +83,16 @@ QByteArray glslFromQsb(const QShader &sh, const char *what)
     }
     const QShaderCode code{ picked, QByteArrayLiteral("main") };
     if (code.shader().isEmpty()) {
-        qWarning().noquote() << QStringLiteral("[rawgl] %1 里没有任何 GLSL 变体（qsb 的 -g 列表？）").arg(what);
+        qCWarning(lcGpu).noquote() << QStringLiteral("[gpu] rawgl: %1 has no GLSL variants (qsb -g list?)").arg(what);
         return QByteArray();
     }
     if (qEnvironmentVariableIsSet("PHOTOSET_RAWGL_DEBUG"))
-        qInfo().noquote() << QStringLiteral("[rawgl] %1 → 用 GLSL %2").arg(QLatin1String(what)).arg(pickedVer);
+        qCInfo(lcGpu).noquote()
+            << QStringLiteral("[gpu] rawgl: %1 using GLSL %2").arg(QLatin1String(what)).arg(pickedVer);
     if (qEnvironmentVariableIsSet("PHOTOSET_RAWGL_DEBUG")) {
         const QByteArray src = code.shader();
-        qInfo().noquote() << QStringLiteral("[rawgl] %1 的 GLSL 330（前 1200 字节）:\n%2")
-                                 .arg(QLatin1String(what), QString::fromUtf8(src.left(1200)));
+        qCInfo(lcGpu).noquote() << QStringLiteral("[gpu] rawgl: %1 GLSL 330 (first 1200 bytes):\n%2")
+                                    .arg(QLatin1String(what), QString::fromUtf8(src.left(1200)));
     }
     return code.shader();
 }
@@ -113,7 +118,9 @@ GLuint link(const QString &vsPath, const QString &fsPath, const char *what, QByt
     if (!ok) {
         char log[4096] = {0};
         glGetProgramInfoLog(p, sizeof(log) - 1, nullptr, log);
-        qWarning().noquote() << QStringLiteral("[rawgl] 链接 %1 失败：%2").arg(QLatin1String(what), QLatin1String(log));
+        qCWarning(lcGpu).noquote()
+            << QStringLiteral("[gpu] rawgl: link %1 failed: %2")
+                   .arg(QLatin1String(what), QLatin1String(log));
         return 0;
     }
     // 真 UBO 块（若该 GLSL 变体保留了块）→ binding 0
@@ -163,7 +170,7 @@ GLuint makeFbo(GLuint tex, GLuint minTex = 0, GLuint maxTex = 0)
         glDrawBuffers(3, bufs);
     }
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        qWarning() << "[rawgl] FBO 不完整";
+        qCWarning(lcGpu) << QStringLiteral("[gpu] rawgl: framebuffer incomplete");
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     return fb;
 }
@@ -181,7 +188,7 @@ Driver *Driver::create(QString *err)
         return nullptr;
     }
     if (!ctx->makeCurrent()) {
-        if (err) *err = QStringLiteral("EGL makeCurrent 失败");
+        if (err) *err = QStringLiteral("EGL makeCurrent failed");
         delete ctx;
         return nullptr;
     }
@@ -191,7 +198,7 @@ Driver *Driver::create(QString *err)
     return d;
 #else
     if (err)
-        *err = QStringLiteral("本平台没有 EGL/GL（raw GL 自检驱动不可用）");
+        *err = QStringLiteral("no EGL/GL on this platform (raw GL self-check driver unavailable)");
     return nullptr;
 #endif
 }
@@ -212,9 +219,9 @@ void Driver::dumpProgramInfo()
         const GLint lIn = glGetUniformLocation(x.p, "uIn");
         const GLint lMin = glGetUniformLocation(x.p, "uMin");
         const GLint lMax = glGetUniformLocation(x.p, "uMax");
-        qInfo().noquote() << QStringLiteral("[rawgl] %1: blockIdx=%2 blockSize=%3 uIn=%4 uMin=%5 uMax=%6")
-                                 .arg(QLatin1String(x.name)).arg(bi).arg(blockSize)
-                                 .arg(lIn).arg(lMin).arg(lMax);
+        qCInfo(lcGpu).noquote() << QStringLiteral("[gpu] rawgl: %1 blockIdx=%2 blockSize=%3 uIn=%4 uMin=%5 uMax=%6")
+                                    .arg(QLatin1String(x.name)).arg(bi).arg(blockSize)
+                                    .arg(lIn).arg(lMin).arg(lMax);
     }
 #endif
 }
@@ -265,7 +272,7 @@ bool Driver::createProgramsAndBuffers(QString *err)
     m_progArV = link(QStringLiteral(":/gpuscale.vert.qsb"),
                      QStringLiteral(":/gpuscale_resample_ar_v.frag.qsb"), "resample-ar-V", &m_prefixArV);
     if (!m_progLin || !m_progRes || !m_progArH || !m_progArV) {
-        if (err) *err = QStringLiteral("shader 编译/链接失败");
+        if (err) *err = QStringLiteral("shader compile/link failed");
         return false;
     }
     glGenVertexArrays(1, &m_vao);
@@ -336,15 +343,15 @@ bool Driver::render(const QImage &src32, const gpuscale::Plan &plan, QImage *out
 {
 #ifdef GPUWIRE_HAVE_RAWGL
     if (!m_ctx) {
-        if (err) *err = QStringLiteral("驱动未初始化");
+        if (err) *err = QStringLiteral("driver not initialized");
         return false;
     }
     if (!plan.valid()) {
-        if (err) *err = QStringLiteral("无效的 Plan");
+        if (err) *err = QStringLiteral("invalid plan");
         return false;
     }
     if (src32.size() != plan.src) {
-        if (err) *err = QStringLiteral("源尺寸与 Plan 不符");
+        if (err) *err = QStringLiteral("source size does not match the plan");
         return false;
     }
     if (!ensure(plan, err))
@@ -359,7 +366,7 @@ bool Driver::render(const QImage &src32, const gpuscale::Plan &plan, QImage *out
         const QByteArray vb = gpuscale::tapBoundsBytes(plan.src.height(), plan.full.height(), plan.offY,
                                                        plan.dst.height(), plan.params, !plan.useLinearize);
         if (hb.isEmpty() || vb.isEmpty()) {
-            if (err) *err = QStringLiteral("抽头边界数据生成失败");
+            if (err) *err = QStringLiteral("tap-boundary data generation failed");
             return false;
         }
         if (m_boundsH) { glDeleteTextures(1, &m_boundsH); m_boundsH = 0; }
@@ -387,9 +394,9 @@ bool Driver::render(const QImage &src32, const gpuscale::Plan &plan, QImage *out
         float packed[16];
         u.pack(packed);
         if (dbg)
-            qInfo().noquote() << QStringLiteral("[rawgl] pass prog=%1 fbo=%2 in=%3 %4x%5 uniforms=%6")
-                                     .arg(prog).arg(fbo).arg(inTex).arg(outW).arg(outH)
-                                     .arg(QString::fromLatin1(QByteArray(reinterpret_cast<const char *>(packed), sizeof(packed)).toHex(' ')));
+            qCInfo(lcGpu).noquote() << QStringLiteral("[gpu] rawgl: pass prog=%1 fbo=%2 in=%3 %4x%5 uniforms=%6")
+                                        .arg(prog).arg(fbo).arg(inTex).arg(outW).arg(outH)
+                                        .arg(QString::fromLatin1(QByteArray(reinterpret_cast<const char *>(packed), sizeof(packed)).toHex(' ')));
         glBindBuffer(GL_UNIFORM_BUFFER, m_ubo);
         glBufferSubData(GL_UNIFORM_BUFFER, 0, 64, packed);
         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
@@ -453,7 +460,7 @@ bool Driver::render(const QImage &src32, const gpuscale::Plan &plan, QImage *out
     *out = img.mirrored(false, true);
 
     if (const GLenum e = glGetError(); e != GL_NO_ERROR) {
-        if (err) *err = QStringLiteral("GL 错误 0x%1").arg(e, 0, 16);
+        if (err) *err = QStringLiteral("GL error 0x%1").arg(e, 0, 16);
         return false;
     }
     return true;
@@ -461,7 +468,7 @@ bool Driver::render(const QImage &src32, const gpuscale::Plan &plan, QImage *out
     Q_UNUSED(src32);
     Q_UNUSED(plan);
     Q_UNUSED(out);
-    if (err) *err = QStringLiteral("本平台没有 EGL/GL");
+    if (err) *err = QStringLiteral("no EGL/GL on this platform");
     return false;
 #endif
 }

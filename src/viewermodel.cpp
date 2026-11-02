@@ -1,4 +1,5 @@
 #include "viewermodel.h"
+#include "logging.h"
 
 #include "exifmeta.h"
 #include "gpuscale.h"
@@ -862,12 +863,12 @@ void ViewerModel::judge()
             ++m_skipped;                       // 整屏坏 ⇒ 跳过（按当前方向）
             const int next = nextScreen(start, m_dir);      // 跳过也按当前方向换屏
             if (next < 0 || next == origin) {               // 到头 / 绕一圈回到出发那屏 ⇒ 停
-                qInfo().noquote() << QStringLiteral("[viewer] 本屏（起点 %1）是坏的，且后面没有了"
-                                                    "（累计跳过 %2）")
+                qCWarning(lcUi).noquote() << QStringLiteral("[ui] viewer: screen at %1 is bad and no further "
+                                                    "screen exists (skipped %2)")
                                          .arg(start).arg(m_skipped);
                 return;
             }
-            qInfo().noquote() << QStringLiteral("[viewer] 本屏（起点 %1）是坏的 ⇒ 跳过（累计 %2）")
+            qCDebug(lcUi).noquote() << QStringLiteral("[ui] viewer: screen at %1 is bad, skipping (total skipped %2)")
                                      .arg(start).arg(m_skipped);
             observeOperation(m_dir);           // 同方向再换一屏
             m_pos = next;

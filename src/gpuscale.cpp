@@ -1,4 +1,5 @@
 #include "gpuscale.h"
+#include "logging.h"
 
 #include <QDebug>
 #include <QFile>
@@ -58,12 +59,14 @@ QShader loadShader(const QString &path)
 {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly)) {
-        qWarning().noquote() << QStringLiteral("[gpuscale] 打不开 shader %1（qsb 烘焙产物应在资源里）").arg(path);
+        qCWarning(lcGpu).noquote()
+            << QStringLiteral("[gpu] cannot open shader %1 (qsb artifacts must be in resources)")
+                   .arg(path);
         return QShader();
     }
     const QShader s = QShader::fromSerialized(f.readAll());
     if (!s.isValid())
-        qWarning().noquote() << QStringLiteral("[gpuscale] shader %1 反序列化失败").arg(path);
+        qCWarning(lcGpu).noquote() << QStringLiteral("[gpu] shader deserialization failed: %1").arg(path);
     return s;
 }
 
@@ -277,7 +280,7 @@ Pipeline::Pipeline(QRhi *rhi)
     : m_rhi(rhi)
 {
     if (!m_rhi) {
-        m_err = QStringLiteral("QRhi 为空");
+        m_err = QStringLiteral("QRhi is null");
         return;
     }
 
@@ -287,7 +290,7 @@ Pipeline::Pipeline(QRhi *rhi)
     const QShader fsArH = loadShader(QStringLiteral(":/gpuscale_resample_ar_h.frag.qsb"));
     const QShader fsArV = loadShader(QStringLiteral(":/gpuscale_resample_ar_v.frag.qsb"));
     if (!vs.isValid() || !fsLin.isValid() || !fsRes.isValid() || !fsArH.isValid() || !fsArV.isValid()) {
-        m_err = QStringLiteral("shader 资源缺失（qsb 未烘焙进资源？）");
+        m_err = QStringLiteral("shader resource missing (was qsb baked into resources?)");
         return;
     }
     m_vs = vs;
@@ -300,7 +303,7 @@ Pipeline::Pipeline(QRhi *rhi)
                                   QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge);
     m_sampler->setName(QByteArrayLiteral("gpuscale.sampler"));
     if (!m_sampler->create()) {
-        m_err = QStringLiteral("采样器创建失败");
+        m_err = QStringLiteral("sampler creation failed");
         return;
     }
 
@@ -309,7 +312,7 @@ Pipeline::Pipeline(QRhi *rhi)
     m_vbuf = m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(kQuad));
     m_vbuf->setName(QByteArrayLiteral("gpuscale.quad"));
     if (!m_vbuf->create()) {
-        m_err = QStringLiteral("顶点缓冲创建失败");
+        m_err = QStringLiteral("vertex buffer creation failed");
         return;
     }
     m_vbufPending = true;
@@ -329,7 +332,7 @@ Pipeline::Pipeline(QRhi *rhi)
     m_uboArH = makeUbo("gpuscale.ubo.arH");
     m_uboArV = makeUbo("gpuscale.ubo.arV");
     if (!m_uboLin || !m_uboResH || !m_uboResV || !m_uboArH || !m_uboArV) {
-        m_err = QStringLiteral("uniform 缓冲创建失败");
+        m_err = QStringLiteral("uniform buffer creation failed");
         return;
     }
 
@@ -339,7 +342,7 @@ Pipeline::Pipeline(QRhi *rhi)
     m_tpl16c = m_rhi->newTexture(QRhiTexture::RGBA16F, QSize(1, 1), 1, QRhiTexture::RenderTarget);
     m_tpl8 = m_rhi->newTexture(QRhiTexture::RGBA8, QSize(1, 1), 1, QRhiTexture::RenderTarget);
     if (!m_tpl16->create() || !m_tpl16b->create() || !m_tpl16c->create() || !m_tpl8->create()) {
-        m_err = QStringLiteral("管线模板纹理创建失败");
+        m_err = QStringLiteral("pipeline template texture creation failed");
         return;
     }
     m_tplRt16 = m_rhi->newTextureRenderTarget(rtDesc1(m_tpl16));
@@ -352,7 +355,7 @@ Pipeline::Pipeline(QRhi *rhi)
     m_tplRt3->setRenderPassDescriptor(m_tplRp3);
     m_tplRt8->setRenderPassDescriptor(m_tplRp8);
     if (!m_tplRt16->create() || !m_tplRt3->create() || !m_tplRt8->create()) {
-        m_err = QStringLiteral("管线模板 FBO 创建失败");
+        m_err = QStringLiteral("pipeline template FBO creation failed");
         return;
     }
 
@@ -490,7 +493,7 @@ bool Pipeline::ensureSource(QRhiResourceUpdateBatch *rub)
         m_srcTex = m_rhi->newTexture(QRhiTexture::RGBA8, m_srcSize, 1, QRhiTexture::UsedAsTransferSource);
         m_srcTex->setName(QByteArrayLiteral("gpuscale.src"));
         if (!m_srcTex->create()) {
-            m_lastErr = QStringLiteral("源纹理创建失败 %1x%2").arg(m_srcSize.width()).arg(m_srcSize.height());
+            m_lastErr = QStringLiteral("source texture creation failed %1x%2").arg(m_srcSize.width()).arg(m_srcSize.height());
             return false;
         }
         m_srcTexSize = m_srcSize;
@@ -508,7 +511,7 @@ bool Pipeline::ensurePipelines(QRhiRenderPassDescriptor *finalRp)
     if (m_pLin)
         return true;
     if (!m_tplRt16 || !m_tplRt3) {
-        m_lastErr = QStringLiteral("管线模板缺失，无法建管线");
+        m_lastErr = QStringLiteral("pipeline template missing; cannot build pipeline");
         return false;
     }
     if (!finalRp)
@@ -518,7 +521,7 @@ bool Pipeline::ensurePipelines(QRhiRenderPassDescriptor *finalRp)
     //   而且 GL 后端在 create() 时会按 shader 声明的资源去 SRB 里找绑定 ⇒ 必须**先有内容**。
     //   所以管线一律在 ensureBindings() 把 SRB 填好之后才建。
     if (!m_srbLin || !m_srbResH || !m_srbResV || !m_srbArH || !m_srbArV) {
-        m_lastErr = QStringLiteral("SRB 尚未创建，不能建管线");
+        m_lastErr = QStringLiteral("SRB not created yet; cannot build pipeline");
         return false;
     }
 
@@ -565,7 +568,7 @@ bool Pipeline::ensurePipelines(QRhiRenderPassDescriptor *finalRp)
                               { &m_pArH, "arH" }, { &m_pArV, "arV" } };
     for (const PipeRef &r : refs) {
         if (!(*r.p)->create()) {
-            m_lastErr = QStringLiteral("管线创建失败：%1").arg(QLatin1String(r.name));
+            m_lastErr = QStringLiteral("pipeline creation failed: %1").arg(QLatin1String(r.name));
             return false;
         }
     }
@@ -575,7 +578,7 @@ bool Pipeline::ensurePipelines(QRhiRenderPassDescriptor *finalRp)
 bool Pipeline::ensureFinalPipelines(QRhiRenderPassDescriptor *rp)
 {
     if (!rp) {
-        m_lastErr = QStringLiteral("渲染目标没有 renderPassDescriptor");
+        m_lastErr = QStringLiteral("render target has no renderPassDescriptor");
         return false;
     }
     if (m_pResV && m_finalRp == rp)
@@ -585,14 +588,14 @@ bool Pipeline::ensureFinalPipelines(QRhiRenderPassDescriptor *rp)
     if (m_pResV) {
         m_pResV->setRenderPassDescriptor(rp);
         if (!m_pResV->create()) {
-            m_lastErr = QStringLiteral("最终趟管线重建失败（resample V）");
+            m_lastErr = QStringLiteral("final pass pipeline rebuild failed (resample V)");
             return false;
         }
     }
     if (m_pArV) {
         m_pArV->setRenderPassDescriptor(rp);
         if (!m_pArV->create()) {
-            m_lastErr = QStringLiteral("最终趟管线重建失败（anti-ringing V）");
+            m_lastErr = QStringLiteral("final pass pipeline rebuild failed (anti-ringing V)");
             return false;
         }
     }
@@ -643,7 +646,7 @@ bool Pipeline::ensureTargets(const Plan &plan, bool needOwnOut)
         m_boundsH->setName(QByteArrayLiteral("gpuscale.boundsH"));
         m_boundsV->setName(QByteArrayLiteral("gpuscale.boundsV"));
         if (!m_boundsH->create() || !m_boundsV->create()) {
-            m_lastErr = QStringLiteral("抽头边界纹理创建失败（RGBA32F 采样是否受支持？）");
+            m_lastErr = QStringLiteral("tap-boundary texture creation failed (is RGBA32F sampling supported?)");
             return false;
         }
         m_boundsUploaded = false;      // 内容在 render 里随 rub 上传
@@ -654,10 +657,10 @@ bool Pipeline::ensureTargets(const Plan &plan, bool needOwnOut)
         m_linSize = linSize;
         m_linTex = m_rhi->newTexture(QRhiTexture::RGBA16F, m_linSize, 1, QRhiTexture::RenderTarget);
         m_linTex->setName(QByteArrayLiteral("gpuscale.lin"));
-        if (!m_linTex->create()) { m_lastErr = QStringLiteral("线性化纹理创建失败"); return false; }
+        if (!m_linTex->create()) { m_lastErr = QStringLiteral("linearize texture creation failed"); return false; }
         m_rtLin = m_rhi->newTextureRenderTarget(rtDesc1(m_linTex));
         m_rtLin->setName(QByteArrayLiteral("gpuscale.rt.lin"));
-        if (!m_rtLin->create()) { m_lastErr = QStringLiteral("线性化 FBO 创建失败"); return false; }
+        if (!m_rtLin->create()) { m_lastErr = QStringLiteral("linearize FBO creation failed"); return false; }
     }
 
     if (!m_hTex) {
@@ -665,23 +668,23 @@ bool Pipeline::ensureTargets(const Plan &plan, bool needOwnOut)
         m_hAr = ar;
         m_hTex = m_rhi->newTexture(QRhiTexture::RGBA16F, m_hSize, 1, QRhiTexture::RenderTarget);
         m_hTex->setName(QByteArrayLiteral("gpuscale.h"));
-        if (!m_hTex->create()) { m_lastErr = QStringLiteral("水平趟纹理创建失败"); return false; }
+        if (!m_hTex->create()) { m_lastErr = QStringLiteral("horizontal pass texture creation failed"); return false; }
         if (m_hAr) {
             m_hMinTex = m_rhi->newTexture(QRhiTexture::RGBA16F, m_hSize, 1, QRhiTexture::RenderTarget);
             m_hMaxTex = m_rhi->newTexture(QRhiTexture::RGBA16F, m_hSize, 1, QRhiTexture::RenderTarget);
             m_hMinTex->setName(QByteArrayLiteral("gpuscale.hmin"));
             m_hMaxTex->setName(QByteArrayLiteral("gpuscale.hmax"));
             if (!m_hMinTex->create() || !m_hMaxTex->create()) {
-                m_lastErr = QStringLiteral("anti-ringing min/max 纹理创建失败");
+                m_lastErr = QStringLiteral("anti-ringing min/max texture creation failed");
                 return false;
             }
             m_rtHAr = m_rhi->newTextureRenderTarget(rtDesc3(m_hTex, m_hMinTex, m_hMaxTex));
             m_rtHAr->setName(QByteArrayLiteral("gpuscale.rt.h.ar"));
-            if (!m_rtHAr->create()) { m_lastErr = QStringLiteral("anti-ringing FBO 创建失败"); return false; }
+            if (!m_rtHAr->create()) { m_lastErr = QStringLiteral("anti-ringing FBO creation failed"); return false; }
         } else {
             m_rtH = m_rhi->newTextureRenderTarget(rtDesc1(m_hTex));
             m_rtH->setName(QByteArrayLiteral("gpuscale.rt.h"));
-            if (!m_rtH->create()) { m_lastErr = QStringLiteral("水平趟 FBO 创建失败"); return false; }
+            if (!m_rtH->create()) { m_lastErr = QStringLiteral("horizontal pass FBO creation failed"); return false; }
         }
     }
 
@@ -690,10 +693,10 @@ bool Pipeline::ensureTargets(const Plan &plan, bool needOwnOut)
         m_outTex = m_rhi->newTexture(QRhiTexture::RGBA8, m_outSize, 1,
                                      QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource);
         m_outTex->setName(QByteArrayLiteral("gpuscale.out"));
-        if (!m_outTex->create()) { m_lastErr = QStringLiteral("输出纹理创建失败"); return false; }
+        if (!m_outTex->create()) { m_lastErr = QStringLiteral("output texture creation failed"); return false; }
         m_rtOut = m_rhi->newTextureRenderTarget(rtDesc1(m_outTex));
         m_rtOut->setName(QByteArrayLiteral("gpuscale.rt.out"));
-        if (!m_rtOut->create()) { m_lastErr = QStringLiteral("输出 FBO 创建失败"); return false; }
+        if (!m_rtOut->create()) { m_lastErr = QStringLiteral("output FBO creation failed"); return false; }
     }
     m_srbDirty = true;
     return true;
@@ -719,7 +722,7 @@ bool Pipeline::ensureBindings(bool useLin, QRhiRenderPassDescriptor *finalRp)
             return false;
         const QRhiShaderResourceBinding::StageFlags fs = QRhiShaderResourceBinding::FragmentStage;
         if (!m_boundsH || !m_boundsV) {
-            m_lastErr = QStringLiteral("抽头边界纹理缺失");
+            m_lastErr = QStringLiteral("tap-boundary texture missing");
             return false;
         }
         // 绑定号：0 = UBO，1 = 输入纹理，2 = 抽头边界，3/4 = anti-ringing 的 min/max
@@ -745,7 +748,7 @@ bool Pipeline::ensureBindings(bool useLin, QRhiRenderPassDescriptor *finalRp)
                 binds << QRhiShaderResourceBinding::sampledTexture(4, fs, s.maxT, m_sampler);
             s.srb->setBindings(binds.cbegin(), binds.cend());
             if (!s.srb->create()) {
-                m_lastErr = QStringLiteral("shader resource bindings 创建失败");
+                m_lastErr = QStringLiteral("shader resource bindings creation failed");
                 return false;
             }
         }
@@ -768,17 +771,17 @@ bool Pipeline::render(QRhiCommandBuffer *cb, QRhiResourceUpdateBatch *rub, const
     if (!m_err.isEmpty())
         return false;
     if (!plan.valid()) {
-        m_lastErr = QStringLiteral("无效的 Plan（源或目标尺寸为空）");
+        m_lastErr = QStringLiteral("invalid plan (empty source or target size)");
         return false;
     }
     if (plan.src != m_srcSize) {
-        m_lastErr = QStringLiteral("Plan 的源尺寸 %1x%2 与已设源图 %3x%4 不一致")
+        m_lastErr = QStringLiteral("plan source size %1x%2 does not match the set source image %3x%4")
                         .arg(plan.src.width()).arg(plan.src.height())
                         .arg(m_srcSize.width()).arg(m_srcSize.height());
         return false;
     }
     if (!finalRT && plan.dst.isEmpty()) {
-        m_lastErr = QStringLiteral("离屏输出尺寸为空");
+        m_lastErr = QStringLiteral("offscreen output size is empty");
         return false;
     }
 
@@ -801,7 +804,7 @@ bool Pipeline::render(QRhiCommandBuffer *cb, QRhiResourceUpdateBatch *rub, const
         const QByteArray vb = tapBoundsBytes(plan.src.height(), plan.full.height(), plan.offY,
                                             plan.dst.height(), plan.params, !plan.useLinearize);
         if (hb.isEmpty() || vb.isEmpty()) {
-            m_lastErr = QStringLiteral("抽头边界数据生成失败");
+            m_lastErr = QStringLiteral("tap-boundary data generation failed");
             return false;
         }
         rub->uploadTexture(m_boundsH, QRhiTextureUploadDescription(QRhiTextureUploadEntry(
@@ -811,7 +814,7 @@ bool Pipeline::render(QRhiCommandBuffer *cb, QRhiResourceUpdateBatch *rub, const
         m_boundsUploaded = true;
     }
     if (!m_rtLin || !m_hTex || (!m_rtH && !m_rtHAr) || (!finalRT && !m_rtOut)) {
-        m_lastErr = QStringLiteral("渲染资源不完整");
+        m_lastErr = QStringLiteral("render resources are incomplete");
         return false;
     }
 
@@ -863,9 +866,9 @@ bool Pipeline::render(QRhiCommandBuffer *cb, QRhiResourceUpdateBatch *rub, const
          plan.useAR ? m_uboArV : m_uboResV, v, nPass == 0 ? rub : nullptr, readback);
     ++nPass;
 
-    m_passLog = QStringLiteral("%1 趟：线性化=%2 H(%3x%4) V(%5x%6) 核=%7/半径=%8")
+    m_passLog = QStringLiteral("%1 pass: linearize=%2 H(%3x%4) V(%5x%6) kernel=%7/radius=%8")
                     .arg(nPass)
-                    .arg(plan.useLinearize ? QStringLiteral("有") : QStringLiteral("跳过nearest"))
+                    .arg(plan.useLinearize ? QStringLiteral("yes") : QStringLiteral("skipped (nearest)"))
                     .arg(plan.full.width()).arg(plan.full.height())
                     .arg(plan.dst.width()).arg(plan.dst.height())
                     .arg(plan.filterIdx)

@@ -1,4 +1,5 @@
 #include "imageread.h"
+#include "logging.h"
 
 #include "archive.h"
 
@@ -104,11 +105,11 @@ QByteArray readBytesAt(const QString &diskPath, const QStringList &containerChai
         const int idx = t_archive.index.value(containerChain.first(), -1);
         if (idx < 0) return {};
         if (outer->sizeAt(idx) > limit) {
-            qWarning().noquote()
-                << QStringLiteral("[seq] 内层包超过上限（%1 MB > %2 MB），不展开：%3")
+            qCWarning(lcDecode).noquote()
+                << QStringLiteral("[decode] inner archive over limit, not expanded: %1 (%2 MB > %3 MB)")
+                       .arg(containerChain.first())
                        .arg(outer->sizeAt(idx) / 1048576.0, 0, 'f', 1)
-                       .arg(limit / 1048576)
-                       .arg(containerChain.first());
+                       .arg(limit / 1048576);
             return {};
         }
         cur = outer->dataAt(idx);
@@ -119,11 +120,11 @@ QByteArray readBytesAt(const QString &diskPath, const QStringList &containerChai
         const int idx = indexOfName(&mid, containerChain.at(i));
         if (idx < 0) return {};
         if (mid.sizeAt(idx) > limit) {
-            qWarning().noquote()
-                << QStringLiteral("[seq] 内层包超过上限（%1 MB > %2 MB），不展开：%3")
+            qCWarning(lcDecode).noquote()
+                << QStringLiteral("[decode] inner archive over limit, not expanded: %1 (%2 MB > %3 MB)")
+                       .arg(containerChain.at(i))
                        .arg(mid.sizeAt(idx) / 1048576.0, 0, 'f', 1)
-                       .arg(limit / 1048576)
-                       .arg(containerChain.at(i));
+                       .arg(limit / 1048576);
             return {};
         }
         cur = mid.dataAt(idx);

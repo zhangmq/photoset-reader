@@ -1,4 +1,5 @@
 #include "iconpicker.h"
+#include "logging.h"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -23,6 +24,9 @@
 
 int runIconPicker(int argc, char *argv[])
 {
+    // ★ 本工具自己也有 `main()`（`tools/` 的独立目标）：日志分类同样要尽早初始化，
+    //   否则 `PHOTOSET_LOG` 对它无效、默认级别也只剩分类默认的 info。
+    iblog::init();
     QGuiApplication app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("photoset-reader"));
     QCoreApplication::setApplicationVersion(QStringLiteral(PHOTOSET_VERSION));
@@ -45,8 +49,8 @@ int runIconPicker(int argc, char *argv[])
             ? QFontDatabase::applicationFontFamilies(fid).value(0)
             : QString();
         engine.rootContext()->setContextProperty(QStringLiteral("iconFont"), family);
-        qInfo().noquote() << QStringLiteral("[font] 图标字体: %1 (id=%2)")
-                                 .arg(family.isEmpty() ? QStringLiteral("失败") : family).arg(fid);
+        qCDebug(lcApp).noquote() << QStringLiteral("[app] icon font: %1 (id=%2)")
+                                     .arg(family.isEmpty() ? QStringLiteral("failed") : family).arg(fid);
     }
 
     const QString q = QStringLiteral(
@@ -74,10 +78,10 @@ int runIconPicker(int argc, char *argv[])
         "}\n");
     engine.loadData(q.toUtf8(), QUrl(QStringLiteral("qrc:/iconpicker.qml")));
     if (engine.rootObjects().isEmpty()) {
-        qWarning().noquote() << QStringLiteral("[iconpicker] QML 加载失败");
+        qCWarning(lcApp).noquote() << QStringLiteral("[app] QML load failed");
         return 1;
     }
-    qInfo().noquote() << QStringLiteral("[iconpicker] 已加载 src/ui/debug/IconPicker.qml");
+    qCInfo(lcApp).noquote() << QStringLiteral("[app] icon picker loaded: src/ui/debug/IconPicker.qml");
     return app.exec();
 }
 
