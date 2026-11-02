@@ -263,7 +263,9 @@ private:
     void cancelRescan();             // 作废：停止 + 析构，**不替换**
     QString currentFavoritesFile() const;   // 空 = 没来源 / 来源不是文件夹或压缩包
     void refreshFavorited();                // 值真变才 emit
-    void refreshScanning();                 // 扫描中 / 已发现数（值真变才 emit）
+    void refreshScanning();
+    //   幻灯片播放时抑制屏幕休眠（org.freedesktop.ScreenSaver），停下就解除。
+    void updateScreenSaverInhibit();                 // 扫描中 / 已发现数（值真变才 emit）
     void dropSource();                  // 释放当前来源（先停播，再拆组）
 
     // ★★ 运行期设置的**唯一实例**（没有单例、没有第二个副本）
@@ -285,6 +287,9 @@ private:
     // 收藏 / 扫描状态（派生值，只在这里缓存"上次 emit 的值"）
     bool m_sourceFavorited = false;
     bool m_scanning = false;
+    //   扫描开始时刻（毫秒）——只用来判断"这次扫描够不够久，值得弹一条完成提示"
+    qint64 m_scanStartedMs = 0;
+    uint   m_inhibitCookie = 0;        // ScreenSaver Inhibit 的 cookie（0 = 没抑制）
     bool m_scanIncomplete = false;
     bool m_canRescan = false;
     //   后台重扫（与当前序列并行；完成后替换）

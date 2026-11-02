@@ -603,6 +603,39 @@ void ViewerModel::zoomAtPoint(qreal factor, qreal anchorX, qreal anchorY)
     setPanY(np.y());
 }
 
+//   绝对倍率缩放：直接给 zoom（不是乘系数），pan 归零 ⇒ 居中；并让 fit 让位
+//   （`m_freeZoom = true`，否则下一次视口变化会被 applyFit 覆盖回去）。
+//   Chrome 的缩放档位（110% / 125% / 150% …）。以**当前 zoom × 100** 找相邻档，
+//   而不是按倍率连乘 —— 这样从 43%（fit）按一次“放大”会落到 50%，符合预期。
+void ViewerModel::zoomStep(int dir)
+{
+    static const qreal steps[] = {0.25, 0.33, 0.50, 0.67, 0.75, 0.80, 0.90, 1.00,
+                                  1.10, 1.25, 1.50, 1.75, 2.00, 2.50, 3.00, 4.00, 5.00};
+    const int n = int(sizeof(steps) / sizeof(steps[0]));
+    const qreal cur = m_zoom;
+    //   ★ 到头就是**到头**（不动），不许"倒着弹回最近一档"：
+    //     旧实现在 cur < 25%（fit 到比最小档还小）按"缩小"会跳回 25% —— 缩小反而变大；
+    //     cur > 500% 按"放大"会跳到 500% —— 放大反而变小。
+    if (dir > 0) {
+        for (int i = 0; i < n; ++i)
+            if (steps[i] > cur * 1.001) return zoomToRatio(steps[i]);
+    } else {
+        for (int i = n - 1; i >= 0; --i)
+            if (steps[i] < cur * 0.999) return zoomToRatio(steps[i]);
+    }
+}
+
+void ViewerModel::zoomToRatio(qreal ratio)
+{
+    if (!(ratio > 0)) return;
+    const QImage img = geometryImage();
+    if (img.isNull() || m_viewport.isEmpty()) return;
+    m_freeZoom = true;
+    setZoom(qBound(qreal(0.02), ratio, qreal(64.0)));
+    setPanX(0);
+    setPanY(0);
+}
+
 // ══ 每个动作（stepPage / jump / 换版面）═════════════════════════════════════
 //   就三件：改位置 → 当场判 → 就位就上屏、没就位就派活再等。
 //   不做排队：一切走主线程正常的 Qt 事件逻辑，一次按键事件处理一次。

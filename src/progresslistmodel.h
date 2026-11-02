@@ -77,8 +77,7 @@ private:
     QString            m_filter;
     QStringList        m_files;      // 全部 `.prsave`（已排序）
     QVector<Row>       m_rows;       // 过滤后的行
-    QFileSystemWatcher m_watcher;
-    QTimer             m_reloadTimer;
+
 
     mutable QHash<QString, Meta> m_meta;      // 懒读缓存（FIFO 32 条）
     mutable QList<QString>       m_metaOrder;

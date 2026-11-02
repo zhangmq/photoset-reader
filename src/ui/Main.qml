@@ -32,6 +32,74 @@ ApplicationWindow {
         // ★「收藏」（★）的规则见设计 18 §7 —— 段 2 接「保存阅读进度」；本段按钮只占位
     }
 
+    // ★ 没有来源时的占位（用户 2026-11-02）：一个虚线拖放框 + 两行说明。
+    //   它是**纯展示**（内部没有 MouseArea），所以不会挡住下面 DropArea 的拖放。
+    Item {
+        id: emptyState
+        anchors.fill: parent
+        visible: ui.viewer === null
+
+        Canvas {                       // 虚线圆角框（拖放区）
+            id: dropZone
+            anchors.centerIn: parent
+            width: Math.min(parent.width - 160, 560)
+            height: 300
+            //   描边色**绑定成属性**：换主题（浅 ↔ 深）时颜色会变，Canvas 必须跟着重画
+            //   （Canvas 不会因为 strokeStyle 的来源变了就自己重绘）。
+            property color strokeColor: Theme.borderL5
+            //   ⚠️ Canvas 的第一次 paint 可能发生在拿到尺寸之前 ⇒ 显式请求一次；
+            //      尺寸/主题变了也重画（否则只画一次、还是空画布）。
+            Component.onCompleted: requestPaint()
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            onStrokeColorChanged: requestPaint()
+            onPaint: {
+                const ctx = getContext("2d")
+                ctx.reset()
+                ctx.strokeStyle = dropZone.strokeColor   // 虚线要当图形看 ⇒ 比浮层描边亮一档
+                ctx.lineWidth = 1
+                ctx.setLineDash([6, 6])
+                //   Canvas 2D 没有 roundedRect ⇒ 自己拼四条边 + 四个圆角
+                const w = width - 1, h = height - 1, r = Theme.radiusLg
+                const HALF_PI = Math.PI / 2
+                ctx.beginPath()
+                ctx.moveTo(r + 0.5, 0.5)
+                ctx.lineTo(w - r, 0.5)
+                ctx.arc(w - r, r, r, -HALF_PI, 0)
+                ctx.lineTo(w, h - r)
+                ctx.arc(w - r, h - r, r, 0, HALF_PI)
+                ctx.lineTo(r + 0.5, h)
+                ctx.arc(r, h - r, r, HALF_PI, Math.PI)
+                ctx.lineTo(0.5, r)
+                ctx.arc(r, r, r, Math.PI, Math.PI + HALF_PI)
+                ctx.closePath()
+                ctx.stroke()
+            }
+        }
+        Column {
+            anchors.centerIn: parent
+            spacing: Theme.spaceMd
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: Theme.icFolder
+                font.family: iconFont
+                font.pixelSize: 56
+                color: Theme.textSecondary
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: qsTr("把文件夹、压缩包或图片拖到这里")
+                color: Theme.textPrimary
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: qsTr("也可以右键 → 打开…")
+                color: Theme.textCaption
+                font.pointSize: Theme.fontSm
+            }
+        }
+    }
+
     // ★ 没有来源时**整窗接受拖放**（有来源时不接收：那是画布的手势区）。
     //   只取第一个 URL（多个 = 以第一个为准），非本地 URL 由 `ui.openPath` 忽略。
     DropArea {

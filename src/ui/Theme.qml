@@ -63,7 +63,10 @@ QtObject {
     //   卡片属于 surface 类，所以取 `bg-module-platform`，不是 layer。
 
     // 页面底            ← DSH: --dsw-alias-bg-base
-    readonly property color bgBase:    isDark ? _s.nb950 : _s.nb00
+    //   ★ 浅色下**不是纯白**（用户 2026-11-02）：设置对话框的表面是 `bgLayer2` = nb00（纯白），
+    //     页面底若也用 nb00，对话框边界完全看不出来（白压白）⇒ 页面底降一档到 nb75，
+    //     对话框（白）与菜单（menuFill）就都浮在浅灰页面上了。
+    readonly property color bgBase:    isDark ? _s.nb950 : _s.nb75
 
     // 卡片 / 面板        ← DSH: --dsw-alias-bg-module-platform (== specific-selector == bg-multi-select)
     readonly property color bgCard:    isDark ? _s.nb800 : _s.nb60
@@ -150,6 +153,9 @@ QtObject {
     readonly property color borderL3:  isDark ? "#29ffffff" : "#1f000000"
     // 浮层描边（elevation stroke 用色）← DSH: --dsw-alias-border-l4
     readonly property color borderL4:  isDark ? "#33ffffff" : "#29000000"
+    // 强调描边（比 L4 再亮一档）—— 给**虚线拖放框**这类"要当图形看"的线用：
+    //   深色下 L4 只有 20% 白，1px 虚线贴在本就接近黑的页面底上几乎看不出来（用户 2026-11-02）。
+    readonly property color borderL5:  isDark ? "#4dffffff" : "#33000000"
 
     // 文字              ← DSH: --dsw-alias-label-primary / -secondary / -tertiary / -caption
     // ★ 主文本色（text-primary）—— **不是**"主色"。主色是下面的 `brand`，两者颜色不同
@@ -305,6 +311,8 @@ QtObject {
     readonly property string icFullscreen: String.fromCodePoint(0xF0293) // fullscreen（切全屏窗口）
     readonly property string icFullscreenExit: String.fromCodePoint(0xF0294) // fullscreen-exit
     readonly property string icMinus:   String.fromCodePoint(0xF0374)   // minus（减速）
+    readonly property string icPlus:    String.fromCodePoint(0xF0415)   // plus（加速 / 放大）
+    readonly property string icPower:   String.fromCodePoint(0xF0425)   // power（退出，与 vsr-player 同款）
     readonly property string icFolderPrev: String.fromCodePoint(0xF19EA)  // folder-arrow-left
     readonly property string icFolderNext: String.fromCodePoint(0xF19EE)  // folder-arrow-right
     // ── 全屏浮层：画面缩放 / 阅读版面 ──

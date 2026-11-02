@@ -33,11 +33,8 @@ QString titleFromFileName(const QString &fileName)
 ProgressListModel::ProgressListModel(QObject *parent)
     : QAbstractListModel(parent)
 {
-    m_reloadTimer.setSingleShot(true);
-    m_reloadTimer.setInterval(300);          // 目录变化合并（一次保存会产生多次事件）
-    connect(&m_reloadTimer, &QTimer::timeout, this, &ProgressListModel::reload);
-    connect(&m_watcher, &QFileSystemWatcher::directoryChanged,
-            this, &ProgressListModel::scheduleReload);
+    //   ★ 2026-11-02（用户）：收藏夹**打开时列一次**即可，不监控目录 ——
+    //     目录监听会带来"编辑期间列表跳动"和平台差异，收益也就是少按一次刷新。
 }
 
 void ProgressListModel::setDirectory(const QString &dir)
@@ -45,13 +42,10 @@ void ProgressListModel::setDirectory(const QString &dir)
     const QString v = QDir::cleanPath(dir);
     if (v == m_dir)
         return;
-    if (!m_watcher.directories().isEmpty())
-        m_watcher.removePaths(m_watcher.directories());
     m_dir = v;
-    if (QFileInfo(m_dir).isDir())
-        m_watcher.addPath(m_dir);            // 不存在就算了（保存时会被建出来）
     emit directoryChanged();
-    reload();
+    //   ⚠️ 这里**不 reload**：收藏夹目录的列举只在**弹框打开**时做（用户 2026-11-02），
+    //      应用启动 / 改设置都不去碰磁盘。
 }
 
 void ProgressListModel::setFilter(const QString &text)
@@ -61,11 +55,6 @@ void ProgressListModel::setFilter(const QString &text)
     m_filter = text;
     emit filterChanged();
     rebuildRows();
-}
-
-void ProgressListModel::scheduleReload()
-{
-    m_reloadTimer.start();
 }
 
 void ProgressListModel::reload()
@@ -79,8 +68,6 @@ void ProgressListModel::reload()
         files.reserve(infos.size());
         for (const QFileInfo &fi : infos)
             files << fi.absoluteFilePath();
-        if (!m_watcher.directories().contains(m_dir) && m_watcher.addPath(m_dir))
-            { /* 目录刚出现：补挂监控 */ }
     }
     m_files = files;
     m_meta.clear();                          // 内容可能变了；缓存只是加速，随时可丢

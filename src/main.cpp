@@ -11,7 +11,18 @@
 #include <QFileInfo>
 #include <QFontDatabase>
 #include <QEvent>
+#include <QKeyEvent>
+#include <QKeySequence>
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <QSocketNotifier>
 #include <QTimer>
+
+#ifdef Q_OS_UNIX
+#  include <csignal>
+#  include <sys/socket.h>
+#  include <unistd.h>
+#endif
 
 #include "cpuscaleritem.h"
 #include "gpuscaleritem.h"
@@ -59,6 +70,77 @@ protected:
 private:
     app::UiModel *m_vm;
 };
+
+#ifdef Q_OS_UNIX
+namespace {
+//   会话注销 / 关机 / 终端挂断：窗口管理器发 SIGTERM（或 SIGHUP）。
+//   默认行为是**立刻死掉**，而"退出前补一次自动保存"是在 `~UiModel` 里做的 ⇒ 会丢掉
+//   最多一个保存间隔的进度。这里把信号变成一次**正常退出**（自管道 + QSocketNotifier，
+//   信号处理器里只 write 一个字节）。
+int g_signalFds[2] = {-1, -1};
+void onQuitSignal(int)
+{
+    const char c = 1;
+    ssize_t n = ::write(g_signalFds[1], &c, 1);
+    (void)n;
+}
+} // namespace
+#endif
+
+// ── 应用级快捷键：只用 Qt 的**标准键**（QKeySequence），不自创键位 ──────────
+//   · 退出：`QKeySequence::Quit` = Ctrl+Q（Linux / Windows 一致）
+//   · 全屏 / 最大化 / 最小化 / 关闭：**不由应用绑键** —— 那是窗口管理器的协议与职责，
+//     应用只经 QWindow 的窗口状态接入（见下面 windowStateChanged 的同步）。
+class StandardShortcutFilter : public QObject
+{
+public:
+    explicit StandardShortcutFilter(QObject *parent = nullptr)
+        : QObject(parent), m_quit(QKeySequence::keyBindings(QKeySequence::Quit)) {}
+
+protected:
+    bool eventFilter(QObject *, QEvent *e) override
+    {
+        if (e->type() != QEvent::KeyPress) return false;
+        auto *ke = static_cast<QKeyEvent *>(e);
+        if (ke->isAutoRepeat()) return false;
+        const QKeySequence seq(ke->keyCombination());
+        if (m_quit.contains(seq)) { QCoreApplication::quit(); return true; }
+        //   全屏**不在这里处理**：它是窗口管理器的事 —— 应用只经 QWindow 的窗口状态
+        //   （`Window.FullScreen` ⇒ EWMH `_NET_WM_STATE_FULLSCREEN`）接入协议，
+        //   WM 用它自己的快捷键怎么切，由 WM 决定。
+        return false;
+    }
+
+private:
+    QList<QKeySequence> m_quit;
+};
+
+#ifndef PHOTOSET_IPC_NAME
+#  define PHOTOSET_IPC_NAME "photoset-reader-ipc"
+#endif
+
+//   单实例（用户 2026-11-02 选 A）：**第二次启动把路径转发给已运行的实例并退出**。
+//   用 `QLocalServer`（Linux 上就是 Unix domain socket，Windows 上是命名管道）。
+namespace {
+
+bool forwardToRunningInstance(const QString &path, bool activateOnly)
+{
+    QLocalSocket sock;
+    sock.connectToServer(QString::fromLatin1(PHOTOSET_IPC_NAME), QIODevice::WriteOnly);
+    if (!sock.waitForConnected(300))
+        return false;                      // 没有实例在跑
+    QByteArray msg = path.toUtf8();
+    if (activateOnly)
+        msg.clear();                       // 空消息 = 只把已有窗口提到前面
+    sock.write(msg);
+    sock.write("\n");
+    sock.flush();
+    sock.waitForBytesWritten(300);
+    sock.disconnectFromServer();
+    return true;
+}
+
+} // namespace
 
 int main(int argc, char *argv[])
 {
@@ -195,13 +277,35 @@ int main(int argc, char *argv[])
     parser.addOption(forceCpuOpt);
     parser.process(app);
 
+#ifdef Q_OS_UNIX
+    //   只在能建出自管道时装（建不出来就退回默认行为，不挡启动）
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, g_signalFds) == 0) {
+        auto *sigNotifier = new QSocketNotifier(g_signalFds[0], QSocketNotifier::Read, &app);
+        QObject::connect(sigNotifier, &QSocketNotifier::activated, &app, [sigNotifier]() {
+            sigNotifier->setEnabled(false);
+            char c = 0;
+            ssize_t n = ::read(g_signalFds[0], &c, 1);
+            (void)n;
+            QCoreApplication::quit();
+        });
+        std::signal(SIGTERM, onQuitSignal);   // 注销 / 关机
+        std::signal(SIGINT, onQuitSignal);    // Ctrl+C
+        std::signal(SIGHUP, onQuitSignal);    // 终端挂断
+    }
+#endif
+
     if (parser.isSet(probeArcOpt))
         return devcli::runArchiveProbe(parser.value(probeArcOpt));
     if (parser.isSet(probeLaOpt))
         return devcli::runLibarchiveProbe(parser.value(probeLaOpt));
 
-    const QString dir = parser.value(dirOpt);
-    if (parser.isSet(dirOpt)) {
+    //   来源 = `-d <路径>`，或**一个位置参数** —— 文件管理器按 .desktop 的
+    //   `Exec=photoset-reader %F` 启动我们时，路径就是以位置参数传进来的。
+    QString dir = parser.value(dirOpt);
+    if (dir.isEmpty() && !parser.positionalArguments().isEmpty())
+        dir = parser.positionalArguments().first();
+    const bool hasSource = !dir.isEmpty();
+    if (hasSource) {
         const QFileInfo fi(dir);
         if (!fi.exists()) {
             qWarning().noquote() << QStringLiteral("路径不存在: %1").arg(dir);
@@ -210,6 +314,16 @@ int main(int argc, char *argv[])
         if (!fi.isDir() && !ArchiveSource::isArchive(dir) && !isImageSuffix(fi.suffix())) {
             qWarning().noquote() << QStringLiteral("既不是目录、压缩包，也不是图片: %1").arg(dir);
             return 2;
+        }
+    }
+
+    // ── 单实例（用户 2026-11-02 选 A）：已有实例 ⇒ 把路径转发过去，自己退出 ──
+    //   开发自检可用 `PHOTOSET_NO_SINGLE_INSTANCE=1` 关掉（要同时跑两个实例截图时用）。
+    if (qEnvironmentVariableIsEmpty("PHOTOSET_NO_SINGLE_INSTANCE")) {
+        if (forwardToRunningInstance(hasSource ? dir : QString(), !hasSource)) {
+            qInfo().noquote() << QStringLiteral("[ipc] 已有实例在运行，已转发：%1")
+                                     .arg(hasSource ? dir : QStringLiteral("（仅激活窗口）"));
+            return 0;
         }
     }
 
@@ -273,7 +387,7 @@ int main(int argc, char *argv[])
 
     // 命令行 `-d <路径>` = **打开来源**（文件夹 / 压缩包 / 文件同一套）；
     //   `--index N` 定位到第 N 条（不给 = 第 0 条）。只有一个界面 ⇒ 不需要再切屏。
-    if (parser.isSet(dirOpt))
+    if (hasSource)
         ui->openPath(dir, parser.value(idxOpt).toInt());
 
     // ── 开发期专用 CLI（**只为验收截图**）──
@@ -335,6 +449,33 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    // ── 单实例的服务端：收第二条实例转发来的路径（空串 = 只激活窗口）──
+    auto *ipc = new QLocalServer(&app);
+    QLocalServer::removeServer(QString::fromLatin1(PHOTOSET_IPC_NAME));   // 清掉上次留下的 socket
+    if (!ipc->listen(QString::fromLatin1(PHOTOSET_IPC_NAME))) {
+        qWarning().noquote() << QStringLiteral("[ipc] 监听失败：%1").arg(ipc->errorString());
+    } else {
+        QQuickWindow *rootWin = qobject_cast<QQuickWindow *>(engine.rootObjects().value(0));
+        QObject::connect(ipc, &QLocalServer::newConnection, ipc, [ipc, ui, rootWin]() {
+            while (QLocalSocket *sock = ipc->nextPendingConnection()) {
+                if (sock->waitForReadyRead(300)) {
+                    const QString path = QString::fromUtf8(sock->readAll()).trimmed();
+                    if (!path.isEmpty()) {
+                        qInfo().noquote() << QStringLiteral("[ipc] 收到路径：%1").arg(path);
+                        ui->openPath(path);
+                    }
+                }
+                if (rootWin) {
+                    rootWin->show();
+                    rootWin->raise();
+                    rootWin->requestActivate();
+                }
+                sock->disconnectFromServer();
+                sock->deleteLater();
+            }
+        });
+    }
+
     // ── 场景图后端是不是 software？⇒ 告诉 VM（QML 据此把阅读屏切到 CpuScalerItem）──
     //   只能等场景图建好才问得准（`QQuickWindow::rendererInterface()`）；软件后端下
     //   `QQuickRhiItem` 什么都不画 ⇒ 没有这条，阅读屏在 llvmpipe / 强制 software 时是黑的。
@@ -348,6 +489,12 @@ int main(int argc, char *argv[])
                 ui->setSoftwareBackend(sw);
             }
         };
+        win->installEventFilter(new StandardShortcutFilter(win));   // 退出用平台标准键（Ctrl+Q）
+        //   全屏是**窗口管理器协议**：WM 改窗口状态（它自己的快捷键 / 最大化按钮）时，
+        //   把状态回写到 VM，界面图标与行为跟着走；应用侧只发请求（QML 设 visibility）。
+        QObject::connect(win, &QWindow::windowStateChanged, ui, [ui](Qt::WindowState st) {
+            ui->setWindowFullscreen((st & Qt::WindowFullScreen) == Qt::WindowFullScreen);
+        });
         QObject::connect(win, &QQuickWindow::sceneGraphInitialized, ui, probeBackend);
         probeBackend();          // 已经初始化过的情况（例如窗口已 expose）
         if (parser.isSet(forceCpuOpt)) {

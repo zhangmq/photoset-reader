@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml QuickControls2 Widgets ShaderTools)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml QuickControls2 Widgets ShaderTools DBus)
 # QRhi / QShader（rhi/*.h 在 Qt 的私有包含路径下；QQuickRhiItem 文档也是这么要求的）
 find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
 # 7z 头解析要用 liblzma（判 solid 用；不参与解码路径）
@@ -106,7 +106,7 @@ qt_add_shaders(ibcore "gpuscale_shaders"
 )
 
 target_link_libraries(ibcore PUBLIC
-    Qt6::Core Qt6::Gui Qt6::Quick Qt6::Qml Qt6::QuickControls2 Qt6::Widgets
+    Qt6::Core Qt6::Gui Qt6::Quick Qt6::Qml Qt6::QuickControls2 Qt6::Widgets Qt6::DBus
     Qt6::GuiPrivate
     ${LIBARCHIVE_LIBRARIES}
     ${LIBEXIF_LIBRARIES}

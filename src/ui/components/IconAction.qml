@@ -22,6 +22,10 @@ Rectangle {
     property bool   highlighted: false    // 收藏态等强调
     property bool   expanded: false       // 菜单展开中（由 IconDropdownButton 提供）
     property bool   danger: false         // 破坏性动作 ← DSH `.danger{color:state-error-primary}`
+    //   尺寸：`medium`（默认，controlMd） / `small`（controlSm，放进菜单行这类紧凑场合）
+    property bool   focusOnClick: true     // 菜单里点按钮不该把焦点从菜单抢走
+    property string size: "medium"
+    readonly property bool small: size === "small"
     signal triggered()
 
     // 键盘可达：Tab 能选中、点击即获焦
@@ -33,11 +37,12 @@ Rectangle {
     Keys.enabled: root.enabled
 
     // ★ 用 implicit* 而非 Layout.*：这样放进普通 Row 也能拿到尺寸
-    implicitWidth: Theme.controlMd
-    implicitHeight: Theme.controlMd
-    radius: Theme.radiusMd
+    implicitWidth: small ? Theme.controlSm : Theme.controlMd
+    implicitHeight: small ? Theme.controlSm : Theme.controlMd
+    radius: small ? Theme.radiusSm : Theme.radiusMd
     // 破坏性动作 hover 用 danger 底 ← DSH `.danger:hover{background:interactive-bg-hover-danger}`
-    color: (ma.containsMouse || root.expanded)
+    color: ma.pressed ? (root.danger ? Theme.dangerSoft : Theme.activeFill)
+         : (ma.containsMouse || root.expanded)
            ? (root.danger ? Theme.dangerSoft : Theme.hoverFill) : "transparent"
     Behavior on color { ColorAnimation { duration: Theme.durFast } }
 
@@ -45,7 +50,7 @@ Rectangle {
         anchors.centerIn: parent
         text: root.glyph
         font.family: iconFont
-        font.pixelSize: Theme.iconMd
+        font.pixelSize: root.small ? Theme.iconSm : Theme.iconMd
         renderType: Text.NativeRendering
         color: root.danger ? Theme.danger
              : root.highlighted ? Theme.warn : Theme.textSecondary
@@ -73,7 +78,7 @@ Rectangle {
         // ★ 显式守卫（不依赖 Item.enabled 的传播）；禁用 ⇒ 不收鼠标事件 ⇒ containsMouse 恒 false
         enabled: root.enabled
         cursorShape: root.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-        onPressed: root.forceActiveFocus()
+        onPressed: if (root.focusOnClick) root.forceActiveFocus()
         onClicked: root.triggered()
     }
 

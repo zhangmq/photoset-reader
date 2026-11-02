@@ -46,10 +46,37 @@ Item {
         function onViewerChanged() { root.pushViewport() }
     }
 
+    // ── 幻灯片时的"鼠标静止"处理（参考 vsr-player 的 CursorAutoHide）────────
+    //   播放中且鼠标静止 2.5 s ⇒ 隐藏指针并收起浮层；任何鼠标移动 / 按键立刻恢复。
+    readonly property bool playing: ui.viewer ? ui.viewer.playing : false
+    property bool cursorHidden: false
+    function wakeUi() {
+        if (root.cursorHidden)
+            root.cursorHidden = false
+        if (root.playing)
+            idleTimer.restart()
+    }
+    Timer {
+        id: idleTimer
+        interval: 2500
+        repeat: false
+        running: root.playing
+        onTriggered: if (root.playing && !root.cursorHidden) root.cursorHidden = true
+    }
+    Connections {
+        target: ui.viewer
+        enabled: ui.viewer !== null
+        function onPlayingChanged() {
+            if (ui.viewer.playing) idleTimer.restart()
+            else { idleTimer.stop(); root.cursorHidden = false }
+        }
+    }
+
     // ── 浮层显隐：纯函数（照抄 vsr-player main.qml）──
     readonly property bool showUi: root.debugForceUi
-                                   || topBar.mouseInRegion || bottomBar.mouseInRegion
-                                   || bottomBar.popupOpen
+                                   || (!root.cursorHidden
+                                       && (topBar.mouseInRegion || bottomBar.mouseInRegion
+                                           || bottomBar.popupOpen))
     Component.onCompleted: {
         if (root.debugOpenSettings) {
             settingsDialog.tab = root.debugSettingsTab
@@ -189,18 +216,22 @@ Item {
             anchors.fill: parent
             //   ★ 2026-10-31：右键 = **右键菜单**（用户）；拖拽平移仍只跟左键。
             acceptedButtons: Qt.LeftButton | Qt.RightButton
+            hoverEnabled: true                // 只为"鼠标静止 → 隐藏指针"服务
             property bool panning: false
             property real lastX: 0
             property real lastY: 0
-            cursorShape: panning ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+            cursorShape: root.cursorHidden ? Qt.BlankCursor
+                                           : (panning ? Qt.ClosedHandCursor : Qt.OpenHandCursor)
 
             function openContextMenu(x, y) { root.openContextMenu(canvas, x, y) }
 
             onClicked: (m) => {
+                root.wakeUi()
                 if (m.button === Qt.RightButton)
                     openContextMenu(m.x, m.y)
             }
             onPressed: (m) => {
+                root.wakeUi()
                 if (m.button !== Qt.LeftButton) return
                 panning = true
                 lastX = m.x
@@ -209,6 +240,7 @@ Item {
             onReleased: panning = false
             onCanceled: panning = false
             onPositionChanged: (m) => {
+                root.wakeUi()
                 if (!panning) return
                 // 内容跟着指针走：**位移交给 ui 换算并夹取**（`panBy` 里知道"完整缩放后尺寸"）。
                 //   ★ 别在这里直接 `ui.panX -= dx`：没有夹取就会出现"拖过头、再拖回来要空走一段"。
@@ -217,6 +249,7 @@ Item {
                 lastY = m.y
             }
             onWheel: (w) => {
+                root.wakeUi()
                 const k = w.angleDelta.y > 0 ? 1.1 : (1 / 1.1)
                 // 以**鼠标位置**为锚点缩放（几何在 ui / gpuscale 里算，QML 只报位置）
                 if (ui.viewer) ui.viewer.zoomAtPoint(k, w.x, w.y)
@@ -255,6 +288,26 @@ Item {
                 color: Theme.textSecondary
                 font.pointSize: Theme.fontSm
             }
+        }
+    }
+
+    // ★ 空来源（打开成功但 0 条）：别留一整块黑。扫描中报进度，扫完给说明。
+    Column {
+        anchors.centerIn: parent
+        spacing: Theme.spaceSm
+        z: 1
+        visible: ui.viewer !== null && ui.viewer.totalPages === 0
+        Text {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: ui.scanning ? qsTr("正在扫描…") : qsTr("这里没有可显示的图片")
+            color: Theme.textPrimary
+        }
+        Text {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: ui.scanning ? qsTr("已发现 %1 个文件").arg(ui.discoveredCount)
+                              : qsTr("换个目录，或右键 → 打开…")
+            color: Theme.textCaption
+            font.pointSize: Theme.fontSm
         }
     }
 
@@ -398,9 +451,12 @@ Item {
             { text: "保存进度到收藏夹", action: "save:progress", enabled: ui.viewer !== null },
             { text: "保存进度到文件", action: "save:progress-as", enabled: ui.viewer !== null },
             { sep: true },
+            //   Chrome 式的缩放（用户 2026-11-02）：**一行控件** `缩放  [−] 100% [+]`，
+            //   点百分比回到 100%；快捷键仍是 Ctrl+= / Ctrl+-。
+            { zoomRow: true },
             //   ★ 这一组将来叫「图像处理」（用户 2026-10-31）；现在组里只有缩放算法一项。
             //     二级菜单（悬停展开）—— 5 档全列在主菜单里太长（用户）。
-            { text: "缩放算法", hint: algoName, currentValue: algo,
+            { text: "缩放算法", kind: "scale", hint: algoName, currentValue: algo,
               submenu: [
                   { label: "Nearest",     value: "nearest" },
                   { label: "Smooth (Qt)", value: "smooth" },
@@ -409,7 +465,9 @@ Item {
                   { label: "Lanczos 3",   value: "lanczos3" }
               ] },
             { sep: true },
-            { text: "设置", icon: Theme.icSettings, action: "settings" }
+            { text: "设置", icon: Theme.icSettings, action: "settings" },
+            { sep: true },
+            { text: "退出", icon: Theme.icPower, hint: "Ctrl+Q", action: "quit" }
         ]
     }
 
@@ -425,11 +483,20 @@ Item {
         else if (action === "save:progress")  root.requestSaveToFavorites()
         else if (action === "save:progress-as") root.requestSaveToFile()
         else if (action === "settings")       settingsDialog.open()
+        else if (action === "quit")           Qt.quit()
         //   其余动作按需再加
     }
 
     // 在 `item` 的 (x, y)（= 鼠标位置）弹出，越界钳制在窗口内
     function openContextMenu(item, x, y) { contextMenu.showAt(item, x, y) }
+
+    // 缩放动作（Chrome 式档位）：in = 放大一档、out = 缩小一档
+    function applyZoomPreset(v) {
+        if (!ui.viewer)
+            return
+        if (v === "in")       ui.viewer.zoomStep(1)
+        else if (v === "out") ui.viewer.zoomStep(-1)
+    }
 
     // 缩放算法：有来源 ⇒ 只改当前阅读态；没有来源 ⇒ 改**全局默认**（打开下一个来源时生效）
     function applyScaleAlgorithm(key) {
@@ -447,15 +514,21 @@ Item {
     PopupMenu {
         id: contextMenu
         items: root.contextMenuItems
+        //   缩放百分比是**独立绑定**（不进 items —— 否则每缩放一次整张菜单都被重建）
+        zoomPercent: ui.viewer ? ui.viewer.zoom : 1.0
         onItemTriggered: function (i) {
             const it = root.contextMenuItems[i]
             root.runContextAction(it ? it.action : "")
         }
+        onZoomInRequested: root.applyZoomPreset("in")
+        onZoomOutRequested: root.applyZoomPreset("out")
+        onZoomResetRequested: if (ui.viewer) ui.viewer.zoomToRatio(1.0)
         onSubItemTriggered: function (row, sub) {
             const it = root.contextMenuItems[row]
             const subIt = (it && it.submenu) ? it.submenu[sub] : null
-            if (subIt)
-                root.applyScaleAlgorithm(subIt.value)
+            if (!subIt)
+                return
+            root.applyScaleAlgorithm(subIt.value)
         }
     }
 
@@ -569,6 +642,7 @@ Item {
     //   ★ 2026-10-31：只剩这一个界面 ⇒ 焦点恒在本视图（没有别的屏可切）
     focus: true
     Keys.onPressed: function (event) {
+        root.wakeUi()
         switch (event.key) {
         //   ★ `Esc` = **退出全屏**（播放中也一样）；暂停**只由 `Space`** 负责
         //     （返回键已改为 `Backspace`；全屏切换的最终口径未定，这里先用 `Esc` 临时承担）
@@ -597,10 +671,12 @@ Item {
                                  event.accepted = true; break
         case Qt.Key_I:           if (ui.viewer) ui.viewer.osdVisible = !ui.viewer.osdVisible;
                                  event.accepted = true; break
+        // 缩放（Chrome 式档位）：**裸 + / −**，不要求 Shift 或 Ctrl（用户 2026-11-02）
+        //   `=` 与 `+` 同键（美式键盘加号要 Shift）⇒ 两个 key 都收。
         case Qt.Key_Plus:
-        case Qt.Key_Equal:       if (ui.viewer) ui.viewer.zoomAtPoint(1.1, canvas.boxW / 2, canvas.height / 2)
+        case Qt.Key_Equal:       root.applyZoomPreset("in")
                                  event.accepted = true; break
-        case Qt.Key_Minus:       if (ui.viewer) ui.viewer.zoomAtPoint(1 / 1.1, canvas.boxW / 2, canvas.height / 2)
+        case Qt.Key_Minus:       root.applyZoomPreset("out")
                                  event.accepted = true; break
         }
     }

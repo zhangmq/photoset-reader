@@ -39,6 +39,14 @@ PopupPanel {
     signal itemTriggered(int index)
     // 二级菜单里选中一项：`row` = 主菜单行下标，`sub` = 子项下标
     signal subItemTriggered(int row, int sub)
+    //   缩放行（`{ zoomRow: true }`）：放大 / 缩小 / 点百分比回到 100%
+    //   ★ 百分比走**独立属性** `zoomPercent`，**不放进 `items`** —— 放进去的话
+    //     每次缩放都会让 items 数组换新 ⇒ Repeater 把整张菜单的 delegate 全重建
+    //     （实测：一次缩放重建 17 行）⇒ 菜单自己闪一下（"抖动"），二级面板也会被收起。
+    property real zoomPercent: 1.0
+    signal zoomInRequested()
+    signal zoomOutRequested()
+    signal zoomResetRequested()
 
     readonly property int rowPadH: Theme.spaceSm
     readonly property int sepPadV: Theme.spaceXs          // ★ 分隔线上下留白（用户 2026-10-31）
@@ -85,7 +93,7 @@ PopupPanel {
     //   可选中 = 不是分隔线、没被禁用
     function pickable(i) {
         const it = items[i]
-        return !!it && it.sep !== true && it.enabled !== false
+        return !!it && it.sep !== true && it.enabled !== false && it.zoomRow !== true
     }
     function firstSelectableIndex() {
         for (var i = 0; i < items.length; ++i)
@@ -191,13 +199,15 @@ PopupPanel {
                 readonly property bool selected: !!(modelData && modelData.selected)
                 readonly property bool hasSub: !!(modelData && modelData.submenu)
                 readonly property bool subActive: root.subRow === index && root.subOpen
+                readonly property bool zoomRow: !!(modelData && modelData.zoomRow)
                 readonly property int itemIndex: index
 
                 Layout.fillWidth: true
                 //   ★ 分隔线行 = 线 + 上下 `sepPadV` 的留白（不和菜单项贴在一起）
                 Layout.preferredHeight: isSep ? Theme.hairline + root.sepPadV * 2
                                               : Theme.controlMd
-                Layout.preferredWidth: root.rowPadH * 2
+                Layout.preferredWidth: zoomRow ? 264
+                                                : root.rowPadH * 2
                     + (root.leadW > 0 ? root.leadW + Theme.spaceSm : 0)
                     + label.implicitWidth
                     + (suffix.visible ? Theme.spaceSm + suffix.implicitWidth : 0)
@@ -205,9 +215,70 @@ PopupPanel {
                     + (hint.visible ? Theme.spaceMd + hint.implicitWidth : 0)
                 opacity: row.isSep ? 1.0 : (row.itemEnabled ? 1.0 : Theme.dimOpacity)
 
+                // ── 缩放行（Chrome 形式：`🔍 缩放        − 43% +`）──────────────
+                //   ★ 这一行**不是动作行**：整行没有 hover、也没有点击行为；
+                //     只有 − / 百分比 / + 三个控件可交互（用户 2026-11-02）。
+                Rectangle {
+                    anchors.fill: parent
+                    visible: row.zoomRow
+                    radius: Theme.radiusMd
+                    color: Theme.menuFill
+
+                    Text {                                    // 前导图标（与其它行的图标列对齐）
+                        anchors.left: parent.left
+                        anchors.leftMargin: root.rowPadH
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: root.leadW
+                        text: Theme.icSearch
+                        font.family: iconFont
+                        font.pixelSize: Theme.iconMd
+                        renderType: Text.NativeRendering
+                        color: Theme.textSecondary
+                    }
+                    Text {                                    // 标题（与其它行的文字列对齐）
+                        anchors.left: parent.left
+                        anchors.leftMargin: root.rowPadH + root.leadW + Theme.spaceSm
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("缩放")
+                        color: Theme.textPrimary
+                    }
+                    Row {
+                        anchors.right: parent.right
+                        anchors.rightMargin: root.rowPadH
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: Theme.spaceXs
+                        IconAction {                          // [−]（小号，菜单行里留出上下间距）
+                            size: "small"
+                            focusOnClick: false
+                            glyph: Theme.icMinus
+                            onTriggered: root.zoomOutRequested()
+                        }
+                        Text {                                // 百分比（固定宽度并居中，点击 = 回到 100%）
+                            width: 44
+                            horizontalAlignment: Text.AlignHCenter
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: Math.round((root.zoomPercent || 1) * 100) + "%"
+                            color: zPct.containsMouse ? Theme.brand : Theme.textPrimary
+                            MouseArea {
+                                id: zPct
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.zoomResetRequested()
+                            }
+                        }
+                        IconAction {                          // [+]
+                            size: "small"
+                            focusOnClick: false
+                            glyph: Theme.icPlus
+                            onTriggered: root.zoomInRequested()
+                        }
+                    }
+                }
+
                 Rectangle {                                   // hover 底（DSH: 行圆角 = radius-md）
                     anchors.fill: parent
-                    visible: !row.isSep
+                    visible: !row.isSep && !row.zoomRow
                     radius: Theme.radiusMd
                     color: (row.itemEnabled
                             && (rowMa.containsMouse || row.index === root.currentIndex || row.subActive))
@@ -284,8 +355,8 @@ PopupPanel {
                 MouseArea {
                     id: rowMa
                     anchors.fill: parent
-                    visible: !row.isSep
-                    enabled: row.itemEnabled               // ★ 禁用行不响应
+                    visible: !row.isSep && !row.zoomRow     // 缩放行整行不可点（只有控件可点）
+                    enabled: row.itemEnabled && !row.zoomRow // ★ 禁用行不响应
                     hoverEnabled: true
                     onEntered: {
                         root.currentIndex = -1             // 鼠标接管 → 清掉键盘高亮

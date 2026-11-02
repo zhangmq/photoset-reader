@@ -150,6 +150,10 @@ public:
     Q_INVOKABLE void applyFit();
     Q_INVOKABLE void panBy(qreal dx, qreal dy);
     Q_INVOKABLE void zoomAtPoint(qreal factor, qreal anchorX, qreal anchorY);
+    //   绝对倍率（1 = 100%，即 1 图像像素 = 1 设备像素）：居中显示，并让 fit 让位
+    Q_INVOKABLE void zoomToRatio(qreal ratio);
+    //   Chrome 式**档位**缩放：`dir > 0` 放大一档、`< 0` 缩小一档（档位见 .cpp）
+    Q_INVOKABLE void zoomStep(int dir);
 
     // ── OSD 信息行（**按需读取**，用户 2026-10-21 定案）─────────────────────
     //   ★ 不是属性、没有 NOTIFY、不进任何成员：EXIF / 尺寸 / 色彩空间是**信息性数据**

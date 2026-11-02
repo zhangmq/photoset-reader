@@ -10,6 +10,8 @@
 #include "viewermodel.h"
 
 #include <QDateTime>
+#include <QDBusConnection>
+#include <QDBusMessage>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -22,6 +24,10 @@
 #include <QUrl>
 
 namespace app {
+
+//   扫描结束提示的最短时长：低于它不弹（小目录瞬间扫完，弹 toast 只是噪音）
+//   验收可调小：`PHOTOSET_SCAN_TOAST_MS`（同自动保存那个 env 的口径）。
+constexpr qint64 kScanToastMinMs = 10000;
 
 UiModel::UiModel(QObject *parent)
     : QObject(parent)
@@ -76,6 +82,7 @@ QObject *UiModel::viewer() const { return m_src.vm; }
 UiModel::~UiModel()
 {
     cancelRescan();              // 退出时后台重扫作废
+    if (m_inhibitCookie && m_src.vm) { m_src.vm->setPlaying(false); updateScreenSaverInhibit(); }
     autosaveProgress();          // 退出前补一次（有变化且条件满足才写）
     releaseNow(m_src);
 }
@@ -175,6 +182,7 @@ void UiModel::buildViewer()
                      Sequence::ScanOptions{ qint64(m_settings.innerArchiveMaxMb()) });
     // 本类只给 viewer **预取长度**（它不读设置）
     s.vm = new fetch::ViewerModel(m_settings.prefetchWindow(), nullptr);
+    connect(s.vm, &fetch::ViewerModel::playingChanged, this, &UiModel::updateScreenSaverInhibit);
     installViewer(s);
     // 打开 ⇒ 看第 0 条（"进入查看 = jump"）：一进来就有画面
     //   （扫描还在跑时由 viewer 的 `loading` 表达）
@@ -531,10 +539,50 @@ int UiModel::discoveredCount() const
     return m_src.seq ? m_src.seq->discoveredCount() : 0;
 }
 
+//   幻灯片 = 长时间无人操作地看图 ⇒ 别让屏幕在播放中途休眠。
+//   走桌面标准的 ScreenSaver 接口（KDE/GNOME 都实现）；没有会话总线就静默跳过。
+void UiModel::updateScreenSaverInhibit()
+{
+    const bool want = m_src.vm && m_src.vm->playing();
+    if (!QDBusConnection::sessionBus().isConnected())
+        return;
+    if (want && m_inhibitCookie == 0) {
+        QDBusMessage msg = QDBusMessage::createMethodCall(
+            QStringLiteral("org.freedesktop.ScreenSaver"),
+            QStringLiteral("/org/freedesktop/ScreenSaver"),
+            QStringLiteral("org.freedesktop.ScreenSaver"),
+            QStringLiteral("Inhibit"));
+        msg << QStringLiteral("photoset-reader") << QStringLiteral("幻灯片播放中");
+        const QDBusMessage reply = QDBusConnection::sessionBus().call(msg, QDBus::Block, 500);
+        if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty())
+            m_inhibitCookie = reply.arguments().first().toUInt();
+    } else if (!want && m_inhibitCookie != 0) {
+        QDBusMessage msg = QDBusMessage::createMethodCall(
+            QStringLiteral("org.freedesktop.ScreenSaver"),
+            QStringLiteral("/org/freedesktop/ScreenSaver"),
+            QStringLiteral("org.freedesktop.ScreenSaver"),
+            QStringLiteral("UnInhibit"));
+        msg << m_inhibitCookie;
+        QDBusConnection::sessionBus().call(msg, QDBus::NoBlock);
+        m_inhibitCookie = 0;
+    }
+}
+
 void UiModel::refreshScanning()
 {
     const bool now = scanning();
     const int  n = discoveredCount();
+    //   扫描时长 ≥ 10 s 才弹完成提示（用户 2026-11-02）：小目录瞬间扫完，弹 toast 只是噪音。
+    if (now && !m_scanning) {
+        m_scanStartedMs = QDateTime::currentMSecsSinceEpoch();
+    } else if (!now && m_scanning && m_scanStartedMs > 0) {
+        const qint64 ms = QDateTime::currentMSecsSinceEpoch() - m_scanStartedMs;
+        m_scanStartedMs = 0;
+        const int override = qEnvironmentVariableIntValue("PHOTOSET_SCAN_TOAST_MS");
+        const qint64 threshold = override > 0 ? override : kScanToastMinMs;
+        if (ms >= threshold)
+            notify(QStringLiteral("扫描完成：%1 个文件").arg(m_src.seq ? m_src.seq->count() : 0));
+    }
     //   被用户停下的扫描 = **不完整**（ScanStoped；ScanStoped 也算 scanFinished）
     const bool incomplete = m_src.seq && m_src.seq->state() == Sequence::State::ScanStoped;
     const bool canRescan = canRescanNow();
