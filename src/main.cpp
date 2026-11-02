@@ -1,4 +1,5 @@
 #include <QGuiApplication>
+#include <QIcon>
 #include <QApplication>          // 文件对话框用 QFileDialog（QtWidgets）；QApplication ⊂ QGuiApplication
 #include <QStyleHints>
 #include <QQmlApplicationEngine>
@@ -173,6 +174,9 @@ int main(int argc, char *argv[])
     // QApplication（而非 QGuiApplication）：文件对话框走 `QFileDialog`（**只在 ViewModel 里用**，
     //   QML 不写平台相关代码）。QApplication 是 QGuiApplication 的子类，QML 侧完全一致。
     QApplication app(argc, argv);
+    //   窗口图标：X11 下任务栏 / Alt-Tab 用它（Wayland 走 .desktop 的 Icon=）。
+    //   资源由 CMake 从 `assets/icons/photoset-reader-256.png` 编进来（同一个 SVG 渲染）。
+    app.setWindowIcon(QIcon(QStringLiteral(":/icons/photoset-reader-256.png")));
 
     qInfo().noquote() << QStringLiteral("[ui] 平台主题 = %1（决定文件对话框是否走系统原生）")
                              .arg(QString::fromLocal8Bit(qgetenv("QT_QPA_PLATFORMTHEME")));

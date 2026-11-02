@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- photoset-reader 应用图标（2026-11-02，方案 C「一沓照片」/ 暖纸配色 / **无底框**）
+     造型：三张相片斜叠，最前那张是"一张图" —— 说"看图 + 有一批图"（连拍 / 图集）。
+     ★ 没有底板：画布 = **三张卡的包围盒**（正方形，图形占满画布宽度），透明背景
+       —— 这样在 dock / 任务栏里和系统图标一样大，不再"小一号"，
+       也不会在浅色桌面上顶出一个深色方块。
+     配色：卡 米白 #fffdf8→#f3ece0；画面 琥珀 #ffcf8a→#e08b3a；
+           后两张 #9c8f7a / #b3a692（浅暖灰：深色桌面看得见、浅色桌面也压得住，不糊成一块）。
+     几何：三张 452×452、圆角 34 的相片绕中心 (512,512) 旋转 −14° / −7° / +8°，
+           整组略微左下偏移（视觉重心居中）。 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="138.3 164.7 718.0 718.0">
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffcf8a"/><stop offset="1" stop-color="#e08b3a"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fffdf8"/><stop offset="1" stop-color="#f3ece0"/>
+    </linearGradient>
+  </defs>
+
+  <g transform="rotate(-14 512 512) translate(-70 0)">
+    <rect x="286" y="286" width="452" height="452" rx="34" fill="#9c8f7a"/>
+  </g>
+  <g transform="rotate(-7 512 512) translate(-35 0)">
+    <rect x="286" y="286" width="452" height="452" rx="34" fill="#b3a692"/>
+  </g>
+  <g transform="rotate(8 512 512) translate(55 -20)">
+    <rect x="286" y="286" width="452" height="452" rx="34" fill="url(#paper)"/>
+    <rect x="330" y="330" width="364" height="364" rx="18" fill="#efe6d6"/>
+    <circle cx="612" cy="424" r="44" fill="#ffcf8a"/>
+    <path d="M330 694 L470 500 L566 620 L626 556 L694 694 Z" fill="#d9822b"/>
+  </g>
+</svg>

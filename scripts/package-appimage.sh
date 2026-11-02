@@ -99,32 +99,16 @@ exec "$HERE/usr/bin/photoset-reader" "$@"
 EOF
 chmod +x "$APPDIR/AppRun"
 
-cat > "$APPDIR/photoset-reader.desktop" <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=photoset-reader
-Comment=Image viewer for manga and very large image sets
-Exec=photoset-reader %F
-Icon=photoset-reader
-Terminal=false
-Categories=Graphics;Viewer;
-MimeType=image/jpeg;image/png;image/webp;image/gif;image/bmp;image/tiff;image/svg+xml;application/zip;application/x-cbz;application/x-cbr;application/x-7z-compressed;
-EOF
-
-ICON="$APPDIR/usr/share/icons/hicolor/256x256/apps/photoset-reader.png"
-cat > "$ICON.svg" <<'EOF'
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <rect x="8" y="8" width="240" height="240" rx="44" fill="#18181b"/>
-  <rect x="70" y="58" width="98" height="138" rx="10" fill="#e8e8ec"/>
-  <rect x="92" y="74" width="100" height="138" rx="10" fill="#a0a0a8" stroke="#18181b" stroke-width="6"/>
-</svg>
-EOF
-# 有 ImageMagick / rsvg 就转成 PNG，否则用 SVG（多数桌面可显示）
-if command -v rsvg-convert >/dev/null; then rsvg-convert -w 256 -h 256 "$ICON.svg" -o "$ICON"
-elif command -v convert >/dev/null; then convert "$ICON.svg" "$ICON"
-fi
-cp "$ICON.svg" "$APPDIR/photoset-reader.svg"
-cp "$ICON" "$APPDIR/.DirIcon" 2>/dev/null || true
+# ── 桌面入口 + 图标：**从仓库 assets/ 拷**（唯一源，脚本里不再内联一份）──────────
+cp "$ROOT/assets/photoset-reader.desktop" "$APPDIR/photoset-reader.desktop"
+for size in 16 24 32 48 64 128 256 512; do
+    d="$APPDIR/usr/share/icons/hicolor/${size}x${size}/apps"
+    mkdir -p "$d"
+    cp "$ROOT/assets/icons/photoset-reader-${size}.png" "$d/photoset-reader.png"
+done
+cp "$ROOT/assets/icons/photoset-reader.svg" "$APPDIR/photoset-reader.svg"
+cp "$ROOT/assets/icons/photoset-reader-256.png" "$APPDIR/.DirIcon"
+cp "$ROOT/assets/icons/photoset-reader-256.png" "$APPDIR/photoset-reader.png"
 
 mkdir -p "$(dirname "$OUT")"
 cd "$ROOT/.tmp/appimage"

@@ -1,0 +1,20 @@
+# photoset-reader 的桌面入口（**唯一源**：打包脚本从这里拷，install 规则也从这里装）
+#   · `Exec=… %F`：接受"用这个程序打开"传进来的文件（用户 2026-11-02 定案，走位置参数）
+#   · `MimeType`：与 `src/natural.cpp` 的图片后缀 + 我们支持的归档类型对齐
+#   · 分类只有 Graphics;Viewer;（不做"图片编辑"那一类）
+#   · 名称/描述给两套：默认英文，`[zh_CN]` 中文（与界面语言一致）
+[Desktop Entry]
+Type=Application
+Name=photoset-reader
+Name[zh_CN]=photoset-reader
+GenericName=Image viewer
+GenericName[zh_CN]=图片查看器
+Comment=Image viewer for manga and very large image sets
+Comment[zh_CN]=面向漫画与超大连拍图集的图片查看器
+Keywords=image;photo;manga;comic;viewer;zoom;
+Keywords[zh_CN]=图片;照片;漫画;查看器;缩放;
+Exec=photoset-reader %F
+Icon=photoset-reader
+Terminal=false
+Categories=Graphics;Viewer;
+MimeType=image/jpeg;image/png;image/webp;image/gif;image/bmp;image/tiff;image/svg+xml;image/avif;image/jxl;image/x-qoi;image/x-portable-anymap;image/x-tga;image/x-icon;application/zip;application/x-cbz;application/vnd.comicbook+zip;application/x-cbr;application/vnd.comicbook-rar;application/x-7z-compressed;application/x-cb7;application/x-tar;application/x-cbt;

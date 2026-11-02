@@ -174,6 +174,12 @@ qt_add_executable(photoset-reader
 #   `main.cpp` 里 0 个 `run*SelfTest` / 0 个套件 dispatch；dev CLI 与截图机制自带工具函数。
 target_link_libraries(photoset-reader PRIVATE ibcore)
 
+# ══ 应用图标：编进资源（窗口图标 / X11 任务栏用；桌面入口与 hicolor 由安装规则铺）══
+qt_add_resources(photoset-reader "appicon"
+    PREFIX "/icons"
+    BASE "${CMAKE_SOURCE_DIR}/assets/icons"
+    FILES "${CMAKE_SOURCE_DIR}/assets/icons/photoset-reader-256.png")
+
 # ══ i18n：`.ts` → lrelease → `.qm` **编进资源**（`:/i18n/photoset-reader_<代码>.qm`）══
 #   · 源串一律**英文**（`qsTr()`/`tr()` 里写英文），其它语言靠译文——与 vsr-player 同一路线；
 #   · 本文件**只跑 lrelease**（不会覆盖译文）；`.ts` 的更新走
