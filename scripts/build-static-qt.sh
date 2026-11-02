@@ -19,7 +19,8 @@
 #   -no-icu        Qt 官方 Linux 构建强依赖 ICU，我们完全用不到（省 37.7 MB）
 #   -no-openssl    我们离线，不用网络（省 ~9.5 MB）
 #   -no-glib       不需要 GLib 事件循环
-#   -no-dbus       不用 QtDBus
+#   -Os + -fno-asynchronous-unwind-tables  体积取向（-O3 换 -Os 省得不多，但白省）
+#   -dbus-linked   **要** QtDBus：静态版的文件对话框走 XDG Desktop Portal（见 main.cpp）
 #   -no-feature-vulkan  我们的 GPU 路径走 OpenGL/QRhi，不用 Vulkan
 #   -static -gc-binaries -ltcg  官方"体积优化"三件套（见 Qt 文档 Building Optimized Qt）
 #   -DINPUT_libmd4c=qt          **必须**：用系统 libmd4c(1.x) 会让 Qt 的 static_assert 失败
@@ -30,7 +31,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SRC=${1:-$ROOT/.tmp/qt-src}
 PREFIX=${2:-$ROOT/.tmp/qt-static}
 QT_VERSION=6.12.0
-MODULES=(qtbase qtshadertools qtdeclarative)
+MODULES=(qtbase qtshadertools qtdeclarative qtwayland)
 JOBS=${JOBS:-$(nproc)}
 
 mkdir -p "$SRC"
@@ -49,14 +50,17 @@ cd "$SRC/qtbase-everywhere-src-${QT_VERSION}"
   -static -release \
   -prefix "$PREFIX" \
   -gc-binaries -ltcg \
-  -no-icu -no-openssl -no-glib -no-dbus -no-feature-vulkan \
+  -no-icu -no-openssl -no-glib -dbus-linked -no-feature-vulkan \
   -nomake examples -nomake tests -nomake benchmarks \
-  -- -DINPUT_libmd4c=qt
+  -- -DINPUT_libmd4c=qt \
+     -DCMAKE_C_FLAGS_RELEASE="-Os -DNDEBUG -fno-asynchronous-unwind-tables" \
+     -DCMAKE_CXX_FLAGS_RELEASE="-Os -DNDEBUG -fno-asynchronous-unwind-tables"
+cmake --build . --target clean >/dev/null 2>&1 || true   # 配置变过 ⇒ 别复用旧对象
 cmake --build . --parallel "$JOBS"
 cmake --install .
 
 # ── ③ 其余模块（用 Qt 自带的 qt-configure-module 接上同一个前缀）───────────
-for m in qtshadertools qtdeclarative; do
+for m in qtshadertools qtdeclarative qtwayland; do
   build="$SRC/$m-build"
   rm -rf "$build" && mkdir -p "$build" && cd "$build"
   "$PREFIX/bin/qt-configure-module" "$SRC/$m-everywhere-src-${QT_VERSION}"

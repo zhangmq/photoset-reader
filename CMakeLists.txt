@@ -254,10 +254,48 @@ ib_add_qml_resources(photoset-reader)
 #   否则「窗口起不来」或「JPEG 打不开」。动态构建时下面这段完全不生效。
 get_target_property(_qtcore_type Qt6::Core TYPE)
 if(_qtcore_type STREQUAL "STATIC_LIBRARY")
-    qt_import_plugins(photoset-reader
-        INCLUDE_BY_TYPE platforms Qt::QOffscreenIntegrationPlugin Qt::QXcbIntegrationPlugin
-        INCLUDE_BY_TYPE imageformats Qt::QJpegPlugin Qt::QGifPlugin Qt::QIcoPlugin)
-    qt_import_qml_plugins(photoset-reader)
+    #   ★ `NO_DEFAULT` 是关键：不加它，qt_import_plugins 会**把全部插件都导入**（INCLUDE 只是追加）。
+    #   平台插件 xcb + wayland 都留（纯 X11 会话 / Wayland 会话都能原生跑）。
+    #   不用 `qt_import_qml_plugins`：它会把 Controls 的**所有风格**（Fusion / Material / Universal /
+    #   Imagine / FluentWinUI3）和大量用不到的模块全链进来；这里只点名要用的几块。
+    target_compile_definitions(photoset-reader PRIVATE PHOTOSET_STATIC_QT=1)
+    qt_import_plugins(photoset-reader NO_DEFAULT
+        INCLUDE_BY_TYPE platforms
+            Qt::QOffscreenIntegrationPlugin
+            Qt::QXcbIntegrationPlugin
+            Qt::QWaylandIntegrationPlugin
+        #   xcb 自己的 GL 集成也是插件：不导入就报 "neither GLX nor EGL are enabled"
+        INCLUDE_BY_TYPE xcbglintegrations
+            Qt::QXcbGlxIntegrationPlugin
+            Qt::QXcbEglIntegrationPlugin
+        INCLUDE_BY_TYPE imageformats
+            Qt::QJpegPlugin Qt::QGifPlugin Qt::QIcoPlugin
+        #   Wayland 的 shell 集成 / 图形集成也是**插件**：不导入就只会报
+        #   "No shell integration named xdg-shell found"
+        INCLUDE_BY_TYPE wayland-shell-integration
+            Qt::QWaylandXdgShellIntegrationPlugin
+            Qt::QWaylandWlShellIntegrationPlugin
+        INCLUDE_BY_TYPE wayland-graphics-integration-client
+            Qt::QWaylandEglClientBufferPlugin
+        INCLUDE_BY_TYPE wayland-decoration-client
+            Qt::QWaylandBradientDecorationPlugin
+        #   静态版没有系统插件（plasma-integration）⇒ 用 Qt 自带的 xdg-desktop-portal 主题，
+        #   文件对话框才会是**系统对话框**（见 main.cpp 里的 PHOTOSET_STATIC_QT 分支）
+        INCLUDE_BY_TYPE platformthemes
+            Qt::QXdgDesktopPortalThemePlugin
+        INCLUDE
+            Qt::qtquick2plugin
+            Qt::qmlplugin
+            Qt::modelsplugin
+            Qt::workerscriptplugin
+            Qt::quickwindowplugin
+            Qt::qtquickcontrols2plugin
+            Qt::qtquicktemplates2plugin
+            Qt::qtquickcontrols2implplugin
+            Qt::qtquickcontrols2basicstyleplugin
+            Qt::qtquickcontrols2basicstyleimplplugin
+            Qt::qquicklayoutsplugin
+    )
 endif()
 
 

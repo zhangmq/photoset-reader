@@ -70,10 +70,18 @@ int main(int argc, char *argv[])
     //     自带对话框**（QFileSystemModel 逐项取图标/类型）：5000 个文件的目录要 ~1s 才铺满，
     //     之后还在零星增长；换成 `kde` 才是 KFileWidget。
     //   ⚠️ 必须在 QGuiApplication **构造之前**设置——Qt 在构造时读取它。
+#ifdef PHOTOSET_STATIC_QT
+    //   静态版：系统里的 Qt 插件（plasma-integration 的 `kde` 主题）**加载不了**，
+    //   所以用 Qt **自带**的 `xdgdesktopportal` 主题 —— 它经 XDG Desktop Portal 弹
+    //   **系统对话框**（KDE 下就是 KFileWidget）。这个插件已静态导入，见 CMakeLists。
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORMTHEME"))
+        qputenv("QT_QPA_PLATFORMTHEME", "xdgdesktopportal");
+#else
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORMTHEME")) {
         const bool kde = qgetenv("XDG_CURRENT_DESKTOP").contains("KDE");
         qputenv("QT_QPA_PLATFORMTHEME", kde ? "kde" : "xdgdesktopportal");
     }
+#endif
     // ★ Qt Quick Controls 的**风格钉死成 Basic**（可用 `QT_QUICK_CONTROLS_STYLE` 覆盖）。
     //   我们只用到 Controls 的 `Popup` / `ScrollBar`（其余按钮都是自绘的 `components/Button.qml`），
     //   而 KDE 桌面上 Qt 的默认风格是 Fusion ⇒ 静态版要白白多带一套风格模块。

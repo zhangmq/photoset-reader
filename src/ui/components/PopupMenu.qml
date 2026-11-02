@@ -298,9 +298,13 @@ PopupPanel {
                             root.subRow = row.index
                             return
                         }
+                        //   ⚠️ 先把菜单对象**取成局部变量**：close() 之后行可能被销毁，
+                        //      此时再解析 id（`root`）会报 "ReferenceError: root is not defined"。
+                        const menu = root
+                        const idx = row.index
                         if (!keep)
-                            root.close()
-                        root.itemTriggered(row.index)
+                            menu.close()
+                        menu.itemTriggered(idx)
                     }
                 }
             }
@@ -363,10 +367,14 @@ PopupPanel {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
-                        const r = root.subRow
+                        //   ⚠️ close() 会让 `subItems` 清空 ⇒ **本行被销毁**，之后解析 id
+                        //      （`root`）会报 "ReferenceError: root is not defined"。
+                        //      所以先把对象和下标取成局部变量，再关、再发信号。
+                        const menu = root
+                        const r = menu.subRow
                         const s = subRowItem.index
-                        root.close()               // 先关（调用方的动作可能会开对话框）
-                        root.subItemTriggered(r, s)
+                        menu.close()               // 先关（调用方的动作可能会开对话框）
+                        menu.subItemTriggered(r, s)
                     }
                 }
             }
