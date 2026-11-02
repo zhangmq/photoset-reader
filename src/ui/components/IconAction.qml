@@ -28,6 +28,11 @@ Rectangle {
     readonly property bool small: size === "small"
     signal triggered()
 
+    // 无障碍（AT-SPI / 读屏）：名称优先用 tooltip；纯图标按钮没有 tooltip 时退回字形
+    Accessible.role: Accessible.Button
+    Accessible.name: root.tooltip !== "" ? root.tooltip : root.glyph
+    Accessible.description: root.enabled ? "" : qsTr("Unavailable")
+
     // 键盘可达：Tab 能选中、点击即获焦
     activeFocusOnTab: true
 

@@ -427,6 +427,15 @@ Item {
         }
     }
 
+    //   ★ dpr 变了也要重推：视图态（zoom / pan）是**设备像素**口径，VM 存的 `m_dpr`
+    //     用来换算"指针锚点 / 拖拽位移"。窗口在同一尺寸下从 1x 屏移到 2x 屏时
+    //     尺寸不变、只有 dpr 变 —— 不重推的话锚点会差一倍（Qt 只负责渲染侧的 dpr，
+    //     我们这条"QML → VM 的视口交接"是应用自己的事）。
+    Connections {
+        target: root
+        function onDprChanged() { root.pushViewport() }
+    }
+
     //   ★ 开发自检（`--show-interval-popup`）：阅读屏可见时把"切换速度"菜单打开（截图用）
     property bool debugOpenIntervalPopup: false
     function openIntervalPopupIfAsked() {

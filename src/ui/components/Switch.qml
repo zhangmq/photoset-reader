@@ -20,6 +20,9 @@ Item {
 
     implicitWidth: Theme.switchW
     implicitHeight: Theme.switchH
+    Accessible.role: Accessible.CheckBox
+    Accessible.name: root.checked ? qsTr("On") : qsTr("Off")
+
     activeFocusOnTab: true
 
     Rectangle {   // 轨道

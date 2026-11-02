@@ -14,6 +14,10 @@ Item {
     property int from: 0
     property int to: 1000000
     property int step: 1
+    //   无障碍：把"值 + 单位"报给读屏（输入框本身没有可见标签，行标签在 SettingsRow 里）
+    Accessible.role: Accessible.EditableText
+    Accessible.name: root.value + (root.suffix !== "" ? " " + root.suffix : "")
+
     property string suffix: ""
     signal edited(int value)
 

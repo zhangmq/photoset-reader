@@ -26,6 +26,10 @@ Rectangle {
     // danger：描边与文字用 danger，hover 底用 dangerSoft（DSH `.deleteConfirm`）
     readonly property color fg: root.danger ? Theme.danger : Theme.textPrimary
 
+    // 无障碍：按钮名 = 文本
+    Accessible.role: Accessible.Button
+    Accessible.name: root.label !== "" ? root.label : root.glyph
+
     // 键盘可达：Tab 能选中、点击即获焦（弹窗关闭后焦点才能还给它）
     activeFocusOnTab: true
 
