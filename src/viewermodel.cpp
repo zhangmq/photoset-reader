@@ -560,9 +560,15 @@ void ViewerModel::setViewport(qreal logicalW, qreal logicalH, qreal dpr)
     const qreal oldDpr = m_dpr;
     if (!qFuzzyCompare(oldDpr, dpr) && !m_viewport.isEmpty()) {
         const qreal k = dpr / oldDpr;
+        const qreal z0 = m_zoom;
         m_zoom   = qBound(qreal(0.02), m_zoom * k, qreal(64.0));
         m_panX  *= k;
         m_panY  *= k;
+        //   验收用（PHOTOSET_LOG=debug）：跨 dpi 显示器时这一行能证明"视口交接收到了什么"
+        qCDebug(lcUi).noquote()
+            << QStringLiteral("[ui] viewport: %1x%2 dpr=%3 (was %4); zoom %5 -> %6")
+                   .arg(vp.width()).arg(vp.height()).arg(dpr).arg(oldDpr)
+                   .arg(z0).arg(m_zoom);
         emit zoomChanged();
         emit panChanged();
     }

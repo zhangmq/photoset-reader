@@ -35,7 +35,13 @@ Item {
 
     // 缩放状态（zoom/pan）在 `ui` 里是**设备像素**口径 ⇒ 视口要连 dpr 一起报上去。
     //   `fit` 不是属性：它只是"算一次 zoom"的命令（见 gpuscale.h / UiModel::applyFit）。
-    readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+    //   ★ dpr 取**窗口的** `devicePixelRatio`（QQuickWindow 的属性），不是 `Screen` 的：
+    //     窗口在**两块缩放不同的显示器之间**移动时，变的是**窗口的有效 dpr**
+    //     （Wayland 按窗口缩放；`Screen` 附加属性在跨屏场景下不一定跟着变 —— 实测就是
+    //     这里没更新，导致 VM 一直用旧 dpr：拖拽位移换算错、pan 越界，画面一跳）。
+    //     下面的 `Connections` 监听它的变化 + `screenChanged`，两者任一变化都重推视口。
+    readonly property real dpr: (Window.window && Window.window.devicePixelRatio > 0)
+                                ? Window.window.devicePixelRatio : 1
     function pushViewport() {
         if (ui.viewer && canvas.width > 0 && canvas.height > 0)
             ui.viewer.setViewport(canvas.boxW, canvas.height, root.dpr)
@@ -434,6 +440,13 @@ Item {
     Connections {
         target: root
         function onDprChanged() { root.pushViewport() }
+    }
+    //   ★ **窗口换屏 / 窗口 dpr 变**：这是"跨 DPI 显示器拖动"的真实信号源
+    //     （`root.dpr` 的绑定变化只是它的结果；两者都接，动作幂等）。
+    Connections {
+        target: root.Window.window
+        function onDevicePixelRatioChanged() { root.pushViewport() }
+        function onScreenChanged() { root.pushViewport() }
     }
 
     //   ★ 开发自检（`--show-interval-popup`）：阅读屏可见时把"切换速度"菜单打开（截图用）
