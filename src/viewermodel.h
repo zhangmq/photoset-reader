@@ -149,6 +149,8 @@ public:
     Q_INVOKABLE void setViewport(qreal logicalW, qreal logicalH, qreal dpr);
     Q_INVOKABLE void applyFit();
     Q_INVOKABLE void panBy(qreal dx, qreal dy);
+    //   把 pan 夹回当前 zoom/视口允许的范围（视口/dpr 变化后必须调，否则 VM 与渲染不一致）
+    void clampPan();
     Q_INVOKABLE void zoomAtPoint(qreal factor, qreal anchorX, qreal anchorY);
     //   绝对倍率（1 = 100%，即 1 图像像素 = 1 设备像素）：居中显示，并让 fit 让位
     Q_INVOKABLE void zoomToRatio(qreal ratio);

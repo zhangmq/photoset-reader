@@ -554,10 +554,26 @@ void ViewerModel::setViewport(qreal logicalW, qreal logicalH, qreal dpr)
     if (!(dpr > 0)) dpr = 1.0;
     const QSize vp(qMax(1, qRound(logicalW * dpr)), qMax(1, qRound(logicalH * dpr)));
     if (vp == m_viewport && qFuzzyCompare(dpr, m_dpr)) return;
+    //   ★ dpr 变了（窗口被拖到另一块屏）：`zoom` / `pan` 都是**设备像素**口径，
+    //     按 dpr 的比例一起缩放 ⇒ **逻辑倍率不变**（同一张图在 1x / 2x 屏上看起来一样大）。
+    //     不这么做的话，从 1x 屏拖到 2x 屏，图会缩成一半（"画面变了"）。
+    const qreal oldDpr = m_dpr;
+    if (!qFuzzyCompare(oldDpr, dpr) && !m_viewport.isEmpty()) {
+        const qreal k = dpr / oldDpr;
+        m_zoom   = qBound(qreal(0.02), m_zoom * k, qreal(64.0));
+        m_panX  *= k;
+        m_panY  *= k;
+        emit zoomChanged();
+        emit panChanged();
+    }
     m_viewport = vp;
     m_dpr = dpr;
-    // 视口变了（窗口/版面）：还没自由缩放、也没锁定 ⇒ 按当前 fit 重算
+    // 视口变了（窗口/版面/dpr）：还没自由缩放、也没锁定 ⇒ 按当前 fit 重算
     if (!m_freeZoom && !m_zoomLocked) applyFit();
+    //   ★ **自由缩放/锁定时也要把 pan 夹回新范围**：渲染侧（`gpuscale::makePlan`）会自己夹，
+    //     但 VM 里若留着越界的 pan，拖拽第一次就会把"差量"一次性补出来 = **画面跳变**
+    //     （用户 2026-11-03 报的"放大后切换窗口再拖，画面会跳"就是这个）。
+    clampPan();
 }
 
 void ViewerModel::applyFit()
@@ -569,6 +585,21 @@ void ViewerModel::applyFit()
     setZoom(z);
     setPanX(0.0);
     setPanY(0.0);
+}
+
+//   把 pan 夹回"当前 zoom × 视口"允许的范围内。
+//   `panBy` 里也夹，但那是**拖拽时**才夹；窗口/dpr 变化后不夹的话，VM 状态与渲染结果不一致
+//   （渲染侧 makePlan 会夹），下一次拖拽就会跳。
+//   ⚠️ 单位：`m_zoom` 与 `m_viewport` 都是**设备像素** ⇒ 这里的 slack 也是设备像素。
+void ViewerModel::clampPan()
+{
+    const QImage img = geometryImage();
+    if (img.isNull() || m_viewport.isEmpty()) return;
+    const QSize full(qRound(img.width() * m_zoom), qRound(img.height() * m_zoom));
+    const qreal slackX = qMax(0, full.width() - m_viewport.width());
+    const qreal slackY = qMax(0, full.height() - m_viewport.height());
+    setPanX(qBound(qreal(0), m_panX, slackX));
+    setPanY(qBound(qreal(0), m_panY, slackY));
 }
 
 void ViewerModel::panBy(qreal dx, qreal dy)
@@ -636,6 +667,7 @@ void ViewerModel::zoomToRatio(qreal ratio)
     setZoom(qBound(qreal(0.02), ratio, qreal(64.0)));
     setPanX(0);
     setPanY(0);
+    clampPan();
 }
 
 // ══ 每个动作（stepPage / jump / 换版面）═════════════════════════════════════
