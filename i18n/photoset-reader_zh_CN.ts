@@ -577,14 +577,6 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
     </message>
 </context>
 <context>
-    <name>IconAction</name>
-    <message>
-        <location filename="../src/ui/components/IconAction.qml" line="34"/>
-        <source>Unavailable</source>
-        <translation>不可用</translation>
-    </message>
-</context>
-<context>
     <name>Main</name>
     <message>
         <location filename="../src/ui/Main.qml" line="91"/>
@@ -927,19 +919,6 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
         <location filename="../src/ui/components/SettingsSystemPage.qml" line="60"/>
         <source>Nested archives above this size are not opened (they are rare; avoids paying a big price for them)</source>
         <translation>超过上限的内层压缩包不展开（嵌套包不常见，避免为此付出大代价）</translation>
-    </message>
-</context>
-<context>
-    <name>Switch</name>
-    <message>
-        <location filename="../src/ui/components/Switch.qml" line="24"/>
-        <source>On</source>
-        <translation>开</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/components/Switch.qml" line="24"/>
-        <source>Off</source>
-        <translation>关</translation>
     </message>
 </context>
 <context>

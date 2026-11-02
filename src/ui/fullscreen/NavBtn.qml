@@ -17,11 +17,6 @@ Item {
     property bool   highlighted: false
     readonly property alias pressed: ma.pressed   // 长按连续快进用（设计 §3.5）
     signal triggered()
-    // 无障碍：只给名字/角色，**不**加 `activeFocusOnTab`（全屏浮层会隐藏，Tab 到隐藏按钮是错的）
-    Accessible.role: Accessible.Button
-    Accessible.name: root.tooltip !== "" ? root.tooltip
-                    : (root.label !== "" ? root.label : root.glyph)
-
     // 禁用态：与其它控件一致用透明度（不再单独定义禁用色）
     opacity: root.enabled ? 1.0 : Theme.dimOpacity
     implicitHeight: Theme.controlMd
