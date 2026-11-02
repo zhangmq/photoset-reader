@@ -4,6 +4,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QFile>
+#include <QSaveFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -32,16 +33,69 @@ QString AppSettings::filePath() const
     return dir + QStringLiteral("/settings.json");
 }
 
+//   解析错误 → 稳定英文 token（不用 `errorString()`：那是 Qt 的本地化文案，日志要英文）
+static const char *jsonErrorName(QJsonParseError::ParseError e)
+{
+    switch (e) {
+    case QJsonParseError::NoError:            return "no_error";
+    case QJsonParseError::UnterminatedObject: return "unterminated_object";
+    case QJsonParseError::MissingNameSeparator: return "missing_name_separator";
+    case QJsonParseError::UnterminatedArray:  return "unterminated_array";
+    case QJsonParseError::MissingValueSeparator: return "missing_value_separator";
+    case QJsonParseError::IllegalValue:       return "illegal_value";
+    case QJsonParseError::TerminationByNumber: return "termination_by_number";
+    case QJsonParseError::IllegalNumber:      return "illegal_number";
+    case QJsonParseError::IllegalEscapeSequence: return "illegal_escape_sequence";
+    case QJsonParseError::IllegalUTF8String:  return "illegal_utf8_string";
+    case QJsonParseError::UnterminatedString: return "unterminated_string";
+    case QJsonParseError::MissingObject:      return "missing_object";
+    case QJsonParseError::DeepNesting:        return "deep_nesting";
+    case QJsonParseError::DocumentTooLarge:   return "document_too_large";
+    case QJsonParseError::GarbageAtEnd:       return "garbage_at_end";
+    }
+    return "unknown";
+}
+
 void AppSettings::load()
 {
-    QFile f(filePath());
+    const QString path = filePath();
+    QFile f(path);
     if (!f.exists())
         return;                                  // 首次运行：用默认值
     if (!f.open(QIODevice::ReadOnly)) {
-        qCWarning(lcApp).noquote() << QStringLiteral("[app] settings read failed: %1").arg(filePath());
+        qCWarning(lcApp).noquote() << QStringLiteral("[app] settings read failed: %1").arg(path);
         return;
     }
-    const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
+    const QByteArray raw = f.readAll();
+    f.close();
+
+    //   ★ 坏文件容错：JSON 解析失败 ⇒ 备份成 `.broken`（保留现场给用户/我们看），再用默认值。
+    //     不这样做的话，用户唯一的症状是"设置全没了"，而且下次保存会把坏文件直接覆盖掉。
+    QJsonParseError perr{};
+    const QJsonDocument doc = QJsonDocument::fromJson(raw, &perr);
+    if (perr.error != QJsonParseError::NoError || !doc.isObject()) {
+        const QString broken = path + QStringLiteral(".broken");
+        QFile::remove(broken);
+        const bool kept = QFile::rename(path, broken);
+        qCWarning(lcApp).noquote()
+            << QStringLiteral("[app] settings are not valid JSON (error=%1, offset=%2); "
+                              "backup kept: %3 (%4)")
+                   .arg(jsonErrorName(perr.error))
+                   .arg(perr.offset)
+                   .arg(broken)
+                   .arg(kept ? QStringLiteral("ok") : QStringLiteral("rename failed"));
+        return;                                  // 用默认值继续跑
+    }
+    const QJsonObject o = doc.object();
+
+    //   格式版本：缺 = v0（老文件，下面的 key 都按"缺就用默认"读）；比我们新 ⇒ 只警告
+    const int schema = o.value(QStringLiteral("schemaVersion")).toInt(0);
+    if (schema > kSchemaVersion) {
+        qCWarning(lcApp).noquote()
+            << QStringLiteral("[app] settings schema v%1 is newer than v%2; unknown keys are ignored")
+                   .arg(schema)
+                   .arg(kSchemaVersion);
+    }
     m_themeMode     = o.value(QStringLiteral("themeMode")).toInt(m_themeMode);
     m_intervalMs    = qMax(50, o.value(QStringLiteral("intervalMs")).toInt(m_intervalMs));
     m_fitMode       = o.value(QStringLiteral("defaultFitMode")).toInt(m_fitMode);
@@ -74,6 +128,7 @@ void AppSettings::save()
     QDir().mkpath(QFileInfo(path).absolutePath());
 
     QJsonObject o;
+    o.insert(QStringLiteral("schemaVersion"), kSchemaVersion);
     o.insert(QStringLiteral("themeMode"), m_themeMode);
     o.insert(QStringLiteral("intervalMs"), m_intervalMs);
     o.insert(QStringLiteral("defaultFitMode"), m_fitMode);
@@ -87,13 +142,17 @@ void AppSettings::save()
     o.insert(QStringLiteral("favoritesDir"), m_favoritesDir);
     o.insert(QStringLiteral("language"), m_language);
 
-    // 整文件全量写入（最后写的赢）
-    QFile f(path);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+    //   整文件全量写入（最后写的赢），但**原子**写：`QSaveFile` 先写临时文件再 rename
+    //   —— 进程被 kill / 断电时不会留下半截 JSON（那种文件下次启动只能当"坏文件"处理）。
+    QSaveFile f(path);
+    if (!f.open(QIODevice::WriteOnly)) {
         qCWarning(lcApp).noquote() << QStringLiteral("[app] settings write failed: %1").arg(path);
         return;
     }
-    f.write(QJsonDocument(o).toJson(QJsonDocument::Indented));
+    const QByteArray data = QJsonDocument(o).toJson(QJsonDocument::Indented);
+    if (f.write(data) != data.size() || !f.commit()) {
+        qCWarning(lcApp).noquote() << QStringLiteral("[app] settings write failed: %1").arg(path);
+    }
 }
 
 } // namespace app

@@ -478,7 +478,7 @@ void ViewerModel::togglePlaying()
 //   改间隔：**立即生效** —— 取消旧闹钟，按当时请求时刻用新间隔重算。
 void ViewerModel::setIntervalMs(int ms)
 {
-    const int want = qMax(50, ms);
+    const int want = qMax(app::kMinSlideshowIntervalMs, ms);
     if (m_intervalMs == want) return;
     m_intervalMs = want;
     emit intervalChanged();

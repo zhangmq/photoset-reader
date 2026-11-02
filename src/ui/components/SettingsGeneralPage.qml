@@ -62,7 +62,7 @@ Item {
                 spacing: Theme.spaceXs
                 NumberField {
                     value: ui.slideshowIntervalMs
-                    from: 50
+                    from: 10          // 与 app::kMinSlideshowIntervalMs 一致（下限的唯一来源）
                     to: 60000
                     step: 10
                     suffix: "ms"

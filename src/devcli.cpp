@@ -1,6 +1,10 @@
 #include "devcli.h"
-#include "logging.h"
 
+#include "logging.h"
+#include "uimodel.h"
+#include "viewermodel.h"
+
+#include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFileInfo>
@@ -154,6 +158,89 @@ void runDevCommands(const DevRequest &req, app::UiModel *ui)
         QTimer::singleShot(300, ui, [ui, text] { ui->notify(text); });
         qCInfo(lcApp).noquote() << QStringLiteral("[app] dev: toast: %1").arg(text);
     }
+}
+
+// ══ 幻灯片吞吐量测 ══════════════════════════════════════════════════════════
+//   为什么要有：**间隔是下限**（设计 13 §九·补·二）——真正决定翻页速度的是"取图/解码"。
+//   这个探针把"设定的间隔"和"实际达成的间隔"分开报，才能回答
+//   "50 ms 的下限是不是在限制用户"这种问题（而不是凭感觉调）。
+namespace {
+class SlideshowBench : public QObject
+{
+public:
+    SlideshowBench(app::UiModel *ui, int intervalMs, int seconds)
+        : QObject(ui), m_ui(ui), m_interval(intervalMs), m_seconds(seconds) {}
+
+    void start()
+    {
+        fetch::ViewerModel *vm = m_ui->viewerCore();
+        if (!vm) {
+            qCWarning(lcApp).noquote() << QStringLiteral("[app] bench: no viewer");
+            QCoreApplication::quit();
+            return;
+        }
+        m_vm = vm;
+        vm->setIntervalMs(m_interval);              // 会被下限夹住，记录**实际生效值**
+        m_effective = vm->intervalMs();
+        //   ★ 只数**本屏起点真的变了**的次数：`currentChanged` 也会被扫描进度
+        //     （`sequenceChanged()`）触发，数信号会把帧率算高好几倍（实测 104/s）。
+        connect(vm, &fetch::ViewerModel::currentChanged, this, [this, vm] {
+            const int cursor = vm->cursor();
+            if (cursor == m_lastCursor) return;
+            m_lastCursor = cursor;
+            const qint64 now = m_clock.elapsed();
+            if (m_lastMs >= 0) m_deltas.append(int(now - m_lastMs));
+            m_lastMs = now;
+            ++m_frames;
+        });
+        m_clock.start();
+        vm->setPlaying(true);
+        QTimer::singleShot(m_seconds * 1000, this, [this] { finish(); });
+    }
+
+private:
+    void finish()
+    {
+        if (m_vm) m_vm->setPlaying(false);
+        const qint64 elapsed = m_clock.elapsed();
+        QVector<int> d = m_deltas;
+        std::sort(d.begin(), d.end());
+        const auto pct = [&d](double p) {
+            return d.isEmpty() ? -1 : d.value(qBound(0, int(d.size() * p), d.size() - 1));
+        };
+        const double fps = elapsed > 0 ? m_frames * 1000.0 / elapsed : 0.0;
+        qCInfo(lcApp).noquote()
+            << QStringLiteral("[app] bench: req=%1ms effective=%2ms frames=%3 elapsed=%4ms "
+                              "fps=%5 avg=%6ms p50=%7ms p90=%8ms max=%9ms")
+                   .arg(m_interval)
+                   .arg(m_effective)
+                   .arg(m_frames)
+                   .arg(elapsed)
+                   .arg(QString::number(fps, 'f', 2))
+                   .arg(d.isEmpty() ? -1 : int(elapsed / qMax(1, m_frames)))
+                   .arg(pct(0.50))
+                   .arg(pct(0.90))
+                   .arg(d.isEmpty() ? -1 : d.last());
+        QCoreApplication::quit();
+    }
+
+    app::UiModel      *m_ui = nullptr;
+    fetch::ViewerModel *m_vm = nullptr;
+    const int          m_interval;
+    const int          m_seconds;
+    int                m_effective = 0;
+    int                m_frames = 0;
+    qint64             m_lastMs = -1;
+    int                m_lastCursor = -1;
+    QVector<int>       m_deltas;
+    QElapsedTimer      m_clock;
+};
+}  // namespace
+
+void runSlideshowBench(app::UiModel *ui, int intervalMs, int seconds)
+{
+    auto *bench = new SlideshowBench(ui, intervalMs, seconds);
+    QTimer::singleShot(800, bench, [bench] { bench->start(); });   // 等首屏扫完/上屏
 }
 
 } // namespace devcli

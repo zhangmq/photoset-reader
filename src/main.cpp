@@ -264,6 +264,12 @@ int main(int argc, char *argv[])
                                     QStringLiteral("Debug: open a specific dialog on startup"
                                                    "（scan-not-done / cancel-scan / unfavorite）"),
                                     QStringLiteral("name"));
+    QCommandLineOption benchVerOpt(QStringLiteral("bench-slideshow"),
+                                   QStringLiteral("Measure slideshow throughput at this interval (ms)"),
+                                   QStringLiteral("ms"));
+    QCommandLineOption benchSecOpt(QStringLiteral("bench-seconds"),
+                                   QStringLiteral("Measurement window for --bench-slideshow (default 5)"),
+                                   QStringLiteral("s"), QStringLiteral("5"));
     QCommandLineOption devNotifyOpt(QStringLiteral("dev-notify"),
                                     QStringLiteral("Debug: show a toast on startup"),
                                     QStringLiteral("text"));
@@ -278,6 +284,8 @@ int main(int argc, char *argv[])
     parser.addOption(osdOpt);
     parser.addOption(seekOpt);
     parser.addOption(devNotifyOpt);
+    parser.addOption(benchVerOpt);
+    parser.addOption(benchSecOpt);
     parser.addOption(devContextMenuOpt);
     parser.addOption(devSaveFavOpt);
     parser.addOption(devOpenProgressOpt);
@@ -526,6 +534,10 @@ int main(int argc, char *argv[])
             ui->setSoftwareBackend(true);
         }
     }
+
+    if (parser.isSet(benchVerOpt))
+        devcli::runSlideshowBench(ui, parser.value(benchVerOpt).toInt(),
+                                  qMax(1, parser.value(benchSecOpt).toInt()));
 
     const QString shot = parser.value(shotOpt);
     if (!shot.isEmpty())

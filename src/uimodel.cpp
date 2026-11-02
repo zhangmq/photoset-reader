@@ -441,7 +441,7 @@ int UiModel::slideshowIntervalMs() const { return m_settings.intervalMs(); }
 
 void UiModel::setSlideshowIntervalMs(int ms)
 {
-    const int v = qMax(50, ms);                 // 下限 50ms（与 AppSettings 同一条）
+    const int v = qMax(app::kMinSlideshowIntervalMs, ms);   // 下限的**唯一来源**（appsettings.h）
     if (m_settings.intervalMs() != v) m_settings.setIntervalMs(v);
     // ★ 这是**全局默认**：只落盘，不动当前 viewer（当前间隔在 `ui.viewer.intervalMs`）
     emit slideshowIntervalMsChanged();

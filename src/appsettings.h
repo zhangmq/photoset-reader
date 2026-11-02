@@ -11,6 +11,13 @@ namespace app {
 //   ⚠️ 取值显式写死（库列存的就是它）⇒ 不许重排、不许改既有取值。
 enum class Layout { Single = 0, Double = 1 };
 
+// ★ 幻灯片间隔的**下限**（唯一事实源）：`ViewerModel` / `AppSettings` / `UiModel` 三处
+//   原本各自写 `qMax(50, …)`；2026-11-03 实测（`--bench-slideshow`，vol01 3288×2200 JPEG）：
+//   间隔 50 ms ⇒ 实际 18.7 fps（p50 51 ms），把下限放到 10 ms 后 10 ms 档能跑到 **61 fps**
+//   （p50 16 ms，解码才是瓶颈）—— 说明 50 ms 是**人为上限**，不是能力上限。
+//   语义不变：间隔仍只是**下限**（到点没备好就等，不堆积、不跳页）。
+inline constexpr int kMinSlideshowIntervalMs = 10;
+
 // ══ 应用设置（配置文件）════════════════════════════════════════
 //   设计：docs/design/11-应用ViewModel设计.md §二 / 14 §9.3 / §10
 //
@@ -24,6 +31,12 @@ enum class Layout { Single = 0, Double = 1 };
 //     上**；其他组件需要哪个值，一律**调用时传参**（不许自己读设置）。
 struct AppSettings
 {
+    //   ★ 设置文件的**格式版本**（写进 JSON 的 `schemaVersion`）：
+    //     · 没有这个字段 = 老文件（v0），`load()` 按"缺键就用默认"的方式兼容；
+    //     · 比本常量**大** ⇒ 是更新版本写的（我们不认识的键会丢）⇒ 只警告、尽量用已知键；
+    //     · 文件本身坏了（JSON 解析失败）⇒ 备份成 `settings.json.broken` 再用默认值，
+    //       下一次保存会写出一份新的有效文件（用户 2026-11-03：正式产品要有容错）。
+    static constexpr int kSchemaVersion = 1;
     void load();
     void save();
 
@@ -60,7 +73,7 @@ struct AppSettings
     QString language() const { return m_language; }
 
     void setThemeMode(int v) { m_themeMode = v; save(); }
-    void setIntervalMs(int v) { m_intervalMs = qMax(50, v); save(); }
+    void setIntervalMs(int v) { m_intervalMs = qMax(kMinSlideshowIntervalMs, v); save(); }
     void setDefaultFitMode(int v) { m_fitMode = qBound(0, v, 3); save(); }
     void setDefaultLayout(int v) { m_layout = qBound(0, v, 1); save(); }
     void setDefaultLoop(int v) { m_loop = qBound(0, v, 2); save(); }

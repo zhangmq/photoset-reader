@@ -30,4 +30,10 @@ void runDevCommands(const DevRequest &req, app::UiModel *ui);
 int runLibarchiveProbe(const QString &path);
 int runArchiveProbe(const QString &path);
 
+// ── 幻灯片吞吐量测（`--bench-slideshow <ms> --bench-seconds <s>`）────────────────
+//   量的是"间隔到底被什么卡住"：把间隔设成 N ms、跑 S 秒，统计真正翻了多少屏、
+//   每屏间隔的 min/median/max。跑完打一行摘要并退出。
+//   ★ 只用于验收/调参：`--bench-*` 不给时完全不参与运行。
+void runSlideshowBench(app::UiModel *ui, int intervalMs, int seconds);
+
 } // namespace devcli
