@@ -12,12 +12,12 @@
 // ══ 元数据（EXIF + 色彩空间）自检（ib-test-meta）══════════════════════════════
 //   设计 17：`exifmeta` 是**纯函数**（来源 → 行 + 色彩空间判词），不碰解码、不进状态。
 //   这里只用 `.testdata` 的真实素材 + 一个自己造的 EXIF 块，验证：
-//     ① 漫画页（JPEG + sRGB ICC）：色彩空间 = `sRGB`，动态行里有 `软件`，
+//     ① 漫画页（JPEG + sRGB ICC）：色彩空间 = `sRGB`，动态行里有 `Software`，
 //        且**结构噪声**（Orientation / DPI / PixelXDimension）被过滤掉；
 //     ② 自己造的 EXIF 块（IFD0 的 Make / Model / DateTime）能被解析成中文键的行；
-//     ③ 无 ICC 的 JPEG（`edge/exif6.jpg`）：`sRGB（无 profile）`，且全是噪声 ⇒ 0 行；
+//     ③ 无 ICC 的 JPEG（`edge/exif6.jpg`）：`sRGB (no profile)`，且全是噪声 ⇒ 0 行；
 //     ④ PNG（`edge/p0.png`）：没有 EXIF ⇒ 0 行；
-//     ⑤ Display P3 的 PNG：判词 = `Display P3 → 已转 sRGB`（与解码点同一个解析器）。
+//     ⑤ Display P3 的 PNG：判词 = `Display P3 → converted to sRGB`（与解码点同一个解析器）。
 namespace {
 
 exifmeta::Info readPath(const QString &path)
@@ -122,8 +122,8 @@ static int runMetaSelfTest()
         const exifmeta::Info info = readPath(manga);
         check(info.colorSpace == QStringLiteral("sRGB"),
               QStringLiteral("漫画页色彩空间 = sRGB（实际：%1）").arg(info.colorSpace));
-        check(hasRow(info, QStringLiteral("软件"), QStringLiteral("Adobe Photoshop CS2 Windows")),
-              QStringLiteral("漫画页动态行含「软件」"));
+        check(hasRow(info, QStringLiteral("Software"), QStringLiteral("Adobe Photoshop CS2 Windows")),
+              QStringLiteral("漫画页动态行含「Software」"));
         check(!hasRow(info, QStringLiteral("Orientation"))
                   && !hasRow(info, QStringLiteral("XResolution"))
                   && !hasRow(info, QStringLiteral("PixelXDimension")),
@@ -136,19 +136,19 @@ static int runMetaSelfTest()
         const QByteArray jpeg = jpegWithExif(exifRot);
         check(!jpeg.isEmpty(), QStringLiteral("造出带 EXIF 的 JPEG（%1 字节）").arg(jpeg.size()));
         const exifmeta::Info info = readBytes(jpeg);
-        check(hasRow(info, QStringLiteral("相机厂商"), QStringLiteral("TestCam")),
-              QStringLiteral("Make → 「相机厂商」"));
-        check(hasRow(info, QStringLiteral("机型"), QStringLiteral("Model X")),
-              QStringLiteral("Model → 「机型」"));
-        check(hasRow(info, QStringLiteral("修改时间"), QStringLiteral("2026:10:21 01:00:00")),
-              QStringLiteral("DateTime → 「修改时间」"));
+        check(hasRow(info, QStringLiteral("Camera make"), QStringLiteral("TestCam")),
+              QStringLiteral("Make → 「Camera make」"));
+        check(hasRow(info, QStringLiteral("Camera model"), QStringLiteral("Model X")),
+              QStringLiteral("Model → 「Camera model」"));
+        check(hasRow(info, QStringLiteral("Modified at"), QStringLiteral("2026:10:21 01:00:00")),
+              QStringLiteral("DateTime → 「Modified at」"));
     }
 
     // ③ 无 ICC 的 JPEG：全是噪声 ⇒ 0 行
     {
         const exifmeta::Info info = readPath(exifRot);
-        check(info.colorSpace == QStringLiteral("sRGB（无 profile）"),
-              QStringLiteral("无 ICC ⇒ 「sRGB（无 profile）」（实际：%1）").arg(info.colorSpace));
+        check(info.colorSpace == QStringLiteral("sRGB (no profile)"),
+              QStringLiteral("无 ICC ⇒ 「sRGB (no profile)」（实际：%1）").arg(info.colorSpace));
         check(info.rows.isEmpty(), QStringLiteral("只有噪声标签 ⇒ 0 行（实际：%1）").arg(info.rows.size()));
     }
 
@@ -167,7 +167,7 @@ static int runMetaSelfTest()
         img.setColorSpace(QColorSpace(QColorSpace::DisplayP3));
         check(img.save(p3), QStringLiteral("生成 Display P3 的 PNG"));
         const exifmeta::Info info = readPath(p3);
-        check(info.colorSpace == QStringLiteral("Display P3 → 已转 sRGB"),
+        check(info.colorSpace == QStringLiteral("Display P3 → converted to sRGB"),
               QStringLiteral("P3 判词（实际：%1）").arg(info.colorSpace));
     }
 
@@ -175,10 +175,10 @@ static int runMetaSelfTest()
     const QString heic = QStringLiteral(".testdata/edge/exif.heic");
     if (QFileInfo::exists(heic)) {
         const exifmeta::Info byPath = readPath(heic);
-        check(hasRow(byPath, QStringLiteral("相机厂商"), QStringLiteral("TestCam")),
-              QStringLiteral("HEIC 走路径源：Make → 「相机厂商」（%1 行）").arg(byPath.rows.size()));
-        check(hasRow(byPath, QStringLiteral("机型"), QStringLiteral("X100V")),
-              QStringLiteral("HEIC：Model → 「机型」"));
+        check(hasRow(byPath, QStringLiteral("Camera make"), QStringLiteral("TestCam")),
+              QStringLiteral("HEIC 走路径源：Make → 「Camera make」（%1 行）").arg(byPath.rows.size()));
+        check(hasRow(byPath, QStringLiteral("Camera model"), QStringLiteral("X100V")),
+              QStringLiteral("HEIC：Model → 「Camera model」"));
         QFile f(heic);
         const QByteArray bytes = f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
         const exifmeta::Info byBytes = readBytes(bytes);

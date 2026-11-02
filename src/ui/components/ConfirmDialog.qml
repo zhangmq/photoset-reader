@@ -17,8 +17,8 @@ Popup {
 
     property string title: ""
     property string message: ""
-    property string acceptText: "确认"
-    property string rejectText: "取消"
+    property string acceptText: qsTr("OK")
+    property string rejectText: qsTr("Cancel")
     property bool   danger: false
     //   单按钮（纯信息框）：只有「确认」，没有「取消」（2026-10-31）
     property bool   showReject: true

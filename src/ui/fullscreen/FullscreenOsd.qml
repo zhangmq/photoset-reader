@@ -33,8 +33,19 @@ Item {
         return Math.min(Math.ceil(w) + 4, Theme.osdKeyMaxW)   // +4：给字形留余量（贴边会被 elide 掉一个字符）
     }
 
+    //   上一次读的时候"这一屏长什么样"：**起点 / 本屏位置数 / 版面**。
+    //   兜底轮询拿它做比较 —— 只看 `cursor` 不够：双幅↔单幅切换时起点可能不变
+    //   （同一页还是同一页），但一屏的位置数变了，OSD 必须重读（用户 2026-11-02 实测到）。
+    property string shownKey: ""
+
     function refresh() {
-        columns = (ui.viewer && root.osdVisible) ? ui.viewer.osdRows() : []
+        if (!ui.viewer || !root.osdVisible) {
+            columns = []
+            shownKey = ""
+            return
+        }
+        shownKey = root.screenKey()
+        columns = ui.viewer.osdRows()
         keyColumnWidth = measureKeyWidth(columns)
     }
     onOsdVisibleChanged: if (root.osdVisible) root.refresh()
@@ -47,7 +58,35 @@ Item {
         interval: 40
         onTriggered: root.refresh()
     }
-    function schedule() { if (root.osdVisible) refreshDebounce.restart() }
+    function schedule() {
+        if (root.osdVisible) refreshDebounce.restart()
+    }
+    //   "这一屏长什么样"的标识：起点 + 位置数 + 版面（三个都在换屏/换版面时变）
+    function screenKey() {
+        if (!ui.viewer) return ""
+        return ui.viewer.cursor + "/" + ui.viewer.keyCount + "/" + ui.viewer.doublePage
+    }
+
+    //   ★ 兜底轮询（**只在 OSD 显示期间跑**）：每 200ms 对一次"本屏起点"。
+    //     正常路径是下面的 Connections（换屏 / 图备好就刷新）；这一条只保证
+    //     **信号漏了也不会一直停在旧内容**——去抖重启会把"来不及静默 40ms"变成"永不刷新"，
+    //     而这里不参与去抖，只看游标本身（读一个 int，没有 I/O）。
+    Timer {
+        interval: 200
+        repeat: true
+        running: root.osdVisible
+        onTriggered: {
+            if (ui.viewer && root.screenKey() !== root.shownKey)
+                root.refresh()
+        }
+    }
+
+    Connections {
+        //   ★ 语言一变就重读：OSD 的行是 `osdRows()` 在 JS 里**算出来的**（不是绑定），
+        //     引擎重算 `qsTr` 绑定管不到它 ⇒ 不重读会一直停在旧语言（用户 2026-11-02 实测到）。
+        target: ui
+        function onLanguageChanged() { root.refresh() }
+    }
 
     Connections {
         target: ui.viewer
@@ -55,10 +94,12 @@ Item {
         function onCurrentChanged() { root.schedule() }
         function onImageAChanged() { root.schedule() }
         function onImageBChanged() { root.schedule() }
+        //   ★ 换版面：`cursor` 常常不变（同一页还是那一页），但一屏的位置数变了 ⇒ 也要重读。
+        //     这一条**不看画面有没有备好**——OSD 是"我在哪一屏"的信息，不该等到解码完才更新。
+        function onDoublePageChanged() { root.refresh() }
     }
 
-    implicitWidth: cols.implicitWidth
-    implicitHeight: cols.implicitHeight
+    implicitHeight: cols.height
     opacity: root.osdVisible ? 1.0 : 0.0
     visible: opacity > 0
     Behavior on opacity { NumberAnimation { duration: Theme.durMed; easing.type: Easing.OutCubic } }
@@ -73,17 +114,24 @@ Item {
         font: keyFontSource.font
     }
 
-    Row {
+    //   ★ 两列的摆放（用户 2026-11-02）：**按 OSD 自己的 bounding box 对齐** ——
+    //     左列贴左边、右列贴右边（双幅时两列分别落在左右两页的外沿）；
+    //     单幅只有一列 ⇒ 永远贴左。两列之间的间距由此**自动**产生，不再用固定 spacing。
+    Item {
         id: cols
         anchors.left: parent.left
         anchors.top: parent.top
-        spacing: Theme.spaceXl
+        width: parent.width
+        height: childrenRect.height
 
         Repeater {
             model: root.columns
             delegate: Column {
                 required property var modelData
+                required property int index
                 spacing: Theme.space2xs
+                //   左列 x = 0；右列 x = 盒宽 − 本列宽（**贴着右沿**，不靠猜列宽）
+                x: index === 0 ? 0 : cols.width - implicitWidth
 
                 Repeater {
                     model: modelData.rows

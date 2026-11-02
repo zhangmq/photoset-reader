@@ -194,7 +194,7 @@ Item {
                                 SearchField {
                                     id: filterField
                                     Layout.fillWidth: true
-                                    placeholder: "过滤同层容器…"
+                                    placeholder: qsTr("Filter siblings…")
                                 }
 
                                 ListView {

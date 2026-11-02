@@ -23,8 +23,8 @@ Item {
         width: parent.width
 
         SettingsRow {
-            label: "包含隐藏项"
-            description: "默认跳过隐藏目录"
+            label: qsTr("Include hidden items")
+            description: qsTr("Hidden folders are skipped by default")
             Switch {
                 checked: ui.scanHidden
                 onToggled: ui.scanHidden = !ui.scanHidden
@@ -32,32 +32,32 @@ Item {
         }
 
         SettingsRow {
-            label: "递归深度"
-            description: "扫描子目录的最大层数；设置过深会增加扫描耗时与内存占用"
+            label: qsTr("Recursion depth")
+            description: qsTr("Maximum subfolder depth to scan; deeper scans take longer and use more memory")
             NumberField {
                 value: ui.recurseDepth
                 from: 1
                 to: 64
-                suffix: "层"
+                suffix: qsTr("levels")
                 onEdited: function (v) { ui.recurseDepth = v }
             }
         }
 
         SettingsRow {
-            label: "预取窗口"
-            description: "提前解码的图片张数（翻页时自动滑动）"
+            label: qsTr("Prefetch window")
+            description: qsTr("Number of images decoded ahead (the window slides as you page)")
             NumberField {
                 value: ui.prefetchWindow
                 from: 3
                 to: 64
-                suffix: "张"
+                suffix: qsTr("images")
                 onEdited: function (v) { ui.prefetchWindow = v }
             }
         }
 
         SettingsRow {
-            label: "内层压缩包上限"
-            description: "超过上限的内层压缩包不展开（嵌套包不常见，避免为此付出大代价）"
+            label: qsTr("Nested archive limit")
+            description: qsTr("Nested archives above this size are not opened (they are rare; avoids paying a big price for them)")
             NumberField {
                 value: ui.innerArchiveMaxMb
                 from: 64

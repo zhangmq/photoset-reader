@@ -239,7 +239,7 @@ PopupPanel {
                         anchors.left: parent.left
                         anchors.leftMargin: root.rowPadH + root.leadW + Theme.spaceSm
                         anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("缩放")
+                        text: qsTr("Zoom")
                         color: Theme.textPrimary
                     }
                     Row {

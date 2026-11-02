@@ -41,12 +41,12 @@ Item {
         { icon: root.intervalMs === 5000 ? Theme.icCheck : "", text: "5 s",    selected: root.intervalMs === 5000 },
         { sep: true },
         { icon: root.intervalIsPreset ? "" : Theme.icCheck,
-          text: "自定义（" + root.intervalMs + " ms）", selected: !root.intervalIsPreset },
+          text: qsTr("Custom (%1 ms)").arg(root.intervalMs), selected: !root.intervalIsPreset },
         { sep: true },
         //   ★ 这两行**不带 +/− 图标**（用户 2026-10-19：文本前带图标容易看反方向）；
         //     `keepOpen` = 点了不关菜单，可以连点
-        { text: "加速", keepOpen: true },
-        { text: "减速", keepOpen: true }
+        { text: qsTr("Faster"), keepOpen: true },
+        { text: qsTr("Slower"), keepOpen: true }
     ]
     property int    fitMode: 1            // 0=原始 1=适应屏幕 2=适应宽度 3=适应高度
     property bool   doublePage: false     // 阅读版面：单幅 / 双幅
@@ -129,8 +129,8 @@ Item {
             NavBtn {   // 上一文件夹（**纯图标**；名字放 tooltip —— 用户 2026-10-11）
                 anchors.verticalCenter: parent.verticalCenter
                 glyph: Theme.icFolderPrev
-                tooltip: root.prevFolderName !== "" ? "上一个文件夹：" + root.prevFolderName
-                                                    : "上一个文件夹"
+                tooltip: root.prevFolderName !== "" ? qsTr("Previous folder: %1").arg(root.prevFolderName)
+                                                   : qsTr("Previous folder")
                 enabled: root.overlaysVisible && root.hasSource && root.prevFolderName !== ""
                 onTriggered: root.prevFolderRequested()
             }
@@ -138,7 +138,7 @@ Item {
                 id: prevBtn
                 anchors.verticalCenter: parent.verticalCenter
                 glyph: Theme.icPrev
-                tooltip: "上一张（←）；长按 = 连续后退"
+                tooltip: qsTr("Previous page (←); hold for continuous rewind")
                 enabled: root.overlaysVisible && root.hasSource
                 onTriggered: root.prevRequested()          // 单击 = 一张
                 onPressedChanged: {                        // ★ 长按**对称**：连续后退（用户 2026-10-12）
@@ -154,7 +154,7 @@ Item {
             NavBtn {
                 anchors.verticalCenter: parent.verticalCenter
                 glyph: root.playing ? Theme.icPause : Theme.icPlay
-                tooltip: root.playing ? "暂停幻灯片（Space）" : "播放幻灯片（Space）"
+                tooltip: root.playing ? qsTr("Pause slideshow (Space)") : qsTr("Play slideshow (Space)")
                 enabled: root.overlaysVisible && root.hasSource
                 onTriggered: root.playToggled()
             }
@@ -162,7 +162,7 @@ Item {
                 id: nextBtn
                 anchors.verticalCenter: parent.verticalCenter
                 glyph: Theme.icNext
-                tooltip: "下一张（→）；长按 = 连续快进"
+                tooltip: qsTr("Next page (→); hold for continuous fast-forward")
                 enabled: root.overlaysVisible && root.hasSource
                 onTriggered: root.nextRequested()          // 单击 = 一张
                 onPressedChanged: {                        // 长按 = 连续快进（设计 §3.5）
@@ -198,8 +198,8 @@ Item {
             NavBtn {   // 下一文件夹（**纯图标**；名字放 tooltip —— 用户 2026-10-11）
                 anchors.verticalCenter: parent.verticalCenter
                 glyph: Theme.icFolderNext
-                tooltip: root.nextFolderName !== "" ? "下一个文件夹：" + root.nextFolderName
-                                                    : "下一个文件夹"
+                tooltip: root.nextFolderName !== "" ? qsTr("Next folder: %1").arg(root.nextFolderName)
+                                                   : qsTr("Next folder")
                 enabled: root.overlaysVisible && root.hasSource && root.nextFolderName !== ""
                 onTriggered: root.nextFolderRequested()
             }
@@ -219,7 +219,7 @@ Item {
                      : root.fitMode === 1 ? Theme.icFitScreen
                      : root.fitMode === 2 ? Theme.icFitWidth
                                           : Theme.icFitHeight
-                tooltip: "画面缩放：" + ["原始大小", "适应屏幕", "适应宽度", "适应高度"][root.fitMode]
+                tooltip: qsTr("Zoom: %1").arg([qsTr("Original size"), qsTr("Fit screen"), qsTr("Fit width"), qsTr("Fit height")][root.fitMode])
                 enabled: root.overlaysVisible
                 onTriggered: fitMenu.visible ? fitMenu.close() : fitMenu.open()
             }
@@ -227,10 +227,10 @@ Item {
                 id: fitMenu
                 anchorTarget: fitBtn
                 items: [
-                    { text: "原始大小", icon: Theme.icFitActual, selected: root.fitMode === 0 },
-                    { text: "适应屏幕", icon: Theme.icFitScreen, selected: root.fitMode === 1 },
-                    { text: "适应宽度", icon: Theme.icFitWidth,  selected: root.fitMode === 2 },
-                    { text: "适应高度", icon: Theme.icFitHeight, selected: root.fitMode === 3 }
+                    { text: qsTr("Original size"), icon: Theme.icFitActual, selected: root.fitMode === 0 },
+                    { text: qsTr("Fit screen"), icon: Theme.icFitScreen, selected: root.fitMode === 1 },
+                    { text: qsTr("Fit width"), icon: Theme.icFitWidth,  selected: root.fitMode === 2 },
+                    { text: qsTr("Fit height"), icon: Theme.icFitHeight, selected: root.fitMode === 3 }
                 ]
                 onItemTriggered: function (i) { root.fitModeSelected(i) }
             }
@@ -239,7 +239,7 @@ Item {
                 id: layoutBtn
                 anchors.verticalCenter: parent.verticalCenter
                 glyph: root.doublePage ? Theme.icDoublePage : Theme.icSinglePage
-                tooltip: "阅读版面：" + (root.doublePage ? "双幅" : "单幅")
+                tooltip: qsTr("Layout: %1").arg(root.doublePage ? qsTr("Two pages") : qsTr("Single page"))
                 enabled: root.overlaysVisible
                 onTriggered: layoutMenu.visible ? layoutMenu.close() : layoutMenu.open()
             }
@@ -247,8 +247,8 @@ Item {
                 id: layoutMenu
                 anchorTarget: layoutBtn
                 items: [
-                    { text: "单幅", icon: Theme.icSinglePage, selected: !root.doublePage },
-                    { text: "双幅", icon: Theme.icDoublePage, selected: root.doublePage }
+                    { text: qsTr("Single page"), icon: Theme.icSinglePage, selected: !root.doublePage },
+                    { text: qsTr("Two pages"), icon: Theme.icDoublePage, selected: root.doublePage }
                 ]
                 onItemTriggered: function (i) { root.doublePageSelected(i === 1) }
             }
@@ -256,7 +256,7 @@ Item {
             NavBtn {   // 锁定缩放（UI；需求见设计 §3.8）
                 anchors.verticalCenter: parent.verticalCenter
                 glyph: root.zoomLocked ? Theme.icLock : Theme.icLockOpen
-                tooltip: root.zoomLocked ? "已锁定缩放（跨画面保留）" : "锁定缩放"
+                tooltip: root.zoomLocked ? qsTr("Zoom locked (kept across screens)") : qsTr("Lock zoom")
                 highlighted: root.zoomLocked
                 enabled: root.overlaysVisible && root.hasSource
                 onTriggered: root.zoomLockToggled()
@@ -266,7 +266,8 @@ Item {
                 id: intervalBtn
                 anchors.verticalCenter: parent.verticalCenter
                 glyph: Theme.icInterval
-                tooltip: "切换速度：" + root.intervalMs + " ms" + (root.intervalIsPreset ? "" : "（自定义）")
+                tooltip: root.intervalIsPreset ? qsTr("Speed: %1 ms").arg(root.intervalMs)
+                                               : qsTr("Speed: %1 ms (custom)").arg(root.intervalMs)
                 enabled: root.overlaysVisible
                 onTriggered: intervalMenu.visible ? intervalMenu.close() : intervalMenu.open()
             }
@@ -292,7 +293,7 @@ Item {
                 glyph: root.loopMode === 0 ? Theme.icLoopOff
                      : root.loopMode === 1 ? Theme.icLoop
                                            : Theme.icLoopFolder
-                tooltip: "循环：" + ["不循环", "全部循环", "文件夹循环"][root.loopMode]
+                tooltip: qsTr("Loop: %1").arg([qsTr("No loop"), qsTr("Loop all"), qsTr("Loop folder")][root.loopMode])
                 highlighted: root.loopMode !== 0
                 enabled: root.overlaysVisible
                 onTriggered: loopMenu.visible ? loopMenu.close() : loopMenu.open()
@@ -301,16 +302,16 @@ Item {
                 id: loopMenu
                 anchorTarget: loopBtn
                 items: [
-                    { text: "不循环",     icon: Theme.icLoopOff,    selected: root.loopMode === 0 },
-                    { text: "全部循环",   icon: Theme.icLoop,       selected: root.loopMode === 1 },
-                    { text: "文件夹循环", icon: Theme.icLoopFolder, selected: root.loopMode === 2 }
+                    { text: qsTr("No loop"),   icon: Theme.icLoopOff,    selected: root.loopMode === 0 },
+                    { text: qsTr("Loop all"),  icon: Theme.icLoop,       selected: root.loopMode === 1 },
+                    { text: qsTr("Loop folder"), icon: Theme.icLoopFolder, selected: root.loopMode === 2 }
                 ]
                 onItemTriggered: function (i) { root.loopModeSelected(i) }
             }
             NavBtn {   // 窗口全屏切换
                 anchors.verticalCenter: parent.verticalCenter
                 glyph: root.windowFullscreen ? Theme.icFullscreenExit : Theme.icFullscreen
-                tooltip: root.windowFullscreen ? "退出全屏窗口" : "全屏窗口"
+                tooltip: root.windowFullscreen ? qsTr("Exit full screen") : qsTr("Full screen")
                 highlighted: root.windowFullscreen
                 enabled: root.overlaysVisible
                 onTriggered: root.windowFullscreenToggled()
@@ -319,7 +320,7 @@ Item {
             NavBtn {   // OSD 信息行显隐
                 anchors.verticalCenter: parent.verticalCenter
                 glyph: Theme.icInfo
-                tooltip: root.osdVisible ? "隐藏 OSD 信息" : "显示 OSD 信息"
+                tooltip: root.osdVisible ? qsTr("Hide OSD info") : qsTr("Show OSD info")
                 highlighted: root.osdVisible
                 enabled: root.overlaysVisible && root.hasSource
                 onTriggered: root.osdToggled()

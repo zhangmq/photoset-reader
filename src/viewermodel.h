@@ -290,6 +290,12 @@ private:
     void markBad(int item, Bad why);  // 把坏因写进小表（两个写点的唯一入口）
 
     static constexpr int kMaxInFlight = 4;   // 并发上限（在飞计数上限；写死）
+    //   ★ 一屏最多的位置数（单幅 1 / 双幅 2）：槽位池容量 = 预取长度 + 它。
+    //     语义就是"**本屏 + L 条预取**"：双幅一屏两条 ⇒ 池子比单幅多一张图（可接受）。
+    //     ⚠️ 少算这一条就会出现"要 L+2 条、池只有 L+1" ⇒ 每次派活都要淘汰一条**备好的**，
+    //     被淘汰的下一轮又回来 ⇒ 解码无休止、`currentChanged` 刷到 ~100 次/秒
+    //     （实测：双幅下 OSD 的 40ms 去抖永远等不到静默期 ⇒ 信息不刷新）。
+    static constexpr int kMaxPerScreen = 2;
     static constexpr int kStartForward = 6;  // `f` 的起始值
 
     const int m_length;                      // 预取长度 L（构造参数）

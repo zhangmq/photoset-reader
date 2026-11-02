@@ -13,6 +13,10 @@
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDir>
+#include <QLocale>
+
+#include <clocale>
+#include <QTranslator>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -34,6 +38,23 @@ UiModel::UiModel(QObject *parent)
 {
     // ★★ 运行期设置的**唯一实例**在这里 load（时机等价：本类被建出来之后才有人读设置）。
     m_settings.load();
+    //   ★ 翻译要在**任何 QML 加载之前**装好（本类在 `engine.load()` 之前构造）：
+    //     否则首帧按源串（英文）渲染，切中文时整屏文字闪一下。
+    applyLanguage();
+    //   一次性迁移：默认收藏夹目录 2026-11-02 从 `<配置>/收藏` 改成 `<配置>/favorites`
+    //   （用户要求默认路径不用中文）。**只搬一次**：旧目录在、新目录不在 ⇒ 整个改名，
+    //   这样用户已有的进度文件不会"凭空消失"；搬不动就保持原样（下次启动还会再试）。
+    if (m_settings.favoritesDir().isEmpty()) {
+        const QString cfg = QFileInfo(m_settings.filePath()).absolutePath();
+        const QString legacy = cfg + QStringLiteral("/收藏");
+        const QString current = cfg + QStringLiteral("/favorites");
+        if (QFileInfo::exists(legacy) && !QFileInfo::exists(current)) {
+            if (QDir().rename(legacy, current))
+                qInfo().noquote() << QStringLiteral("[ui] 收藏夹目录迁移：%1 → %2").arg(legacy, current);
+            else
+                qWarning().noquote() << QStringLiteral("[ui] 收藏夹目录迁移失败：%1").arg(legacy);
+        }
+    }
 
     // 来源失败 / 不支持 / 扫描期提示：`Sequence::unsupportedReason()` 与 `noticeText()`
     //   由**扫描线程**产出（7z / RAR 的探针很贵，绝不能放 GUI 线程）⇒ 这里起一个便宜的
@@ -78,6 +99,75 @@ UiModel::UiModel(QObject *parent)
 }
 
 QObject *UiModel::viewer() const { return m_src.vm; }
+
+// ══ 界面语言（i18n）═════════════════════════════════════════════════════════
+//   · 只有**一份**翻译：换语言 = 摘掉旧的 + 装新的（`QTranslator` 生命周期归本类）；
+//   · 语言代码来自设置（空 = 跟随系统）；实际要装的 .qm 是 `:/i18n/photoset-reader_<代码>.qm`，
+//     先试完整代码（`zh_CN`）再试两字母前缀（`zh`）—— 与 vsr-player 同一套回退；
+//   · **没有 .qm 就不装**：源串是英文，英文界面本来就不需要翻译文件
+//     ⇒ 新增一种语言 = 往 `i18n/` 加一份 .ts，代码**零改动**。
+QString UiModel::language() const
+{
+    return m_settings.language();
+}
+
+QString UiModel::effectiveLanguage() const
+{
+    const QString code = m_settings.language();
+    return code.isEmpty() ? QLocale::system().name() : code;
+}
+
+void UiModel::setLanguage(const QString &code)
+{
+    if (m_settings.language() == code) return;
+    m_settings.setLanguage(code);
+    applyLanguage();
+    emit languageChanged();
+}
+
+//   ★ libexif 的**值**（`未压缩` / `未闪光` / `自动` …）不是我们翻译的，是它自带的
+//     gettext 目录 —— 而 gettext 看的是**进程 locale**（`LC_MESSAGES`），不是 `QTranslator`。
+//     Qt 启动时会按 `LANG` 设一次 locale，所以"启动时是什么语言，这些值就永远是什么语言"；
+//     用户在设置里换语言时必须**同步改 `LC_MESSAGES`**，否则 OSD 会出现
+//     "标签中文、值还是英文"（用户 2026-11-02 实测到）。
+static void applyMessageLocale(const QString &code)
+{
+    if (code.isEmpty()) {          // 跟随系统 ⇒ 回到环境变量
+        setlocale(LC_MESSAGES, "");
+        return;
+    }
+    const QByteArray base = code.toUtf8();
+    const QList<QByteArray> candidates = { base + ".UTF-8", base,
+                                           base + ".utf8", code.toLower().toUtf8() + ".UTF-8" };
+    for (const QByteArray &cand : candidates) {
+        if (setlocale(LC_MESSAGES, cand.constData()))
+            return;
+    }
+    setlocale(LC_MESSAGES, "C");   // 目标 locale 没装 ⇒ 值退回英文（标签仍按翻译走）
+}
+
+void UiModel::applyLanguage()
+{
+    if (m_translator) {
+        QCoreApplication::removeTranslator(m_translator);
+        delete m_translator;
+        m_translator = nullptr;
+    }
+    QString code = effectiveLanguage();
+    applyMessageLocale(m_settings.language().isEmpty() ? QString() : code);
+    for (const QString &cand : {code, code.left(2)}) {
+        if (cand.isEmpty()) continue;
+        auto *t = new QTranslator(this);
+        if (t->load(QStringLiteral(":/i18n/photoset-reader_") + cand)) {
+            QCoreApplication::installTranslator(t);
+            m_translator = t;
+            qInfo().noquote() << QStringLiteral("[i18n] 已装载翻译：%1").arg(cand);
+            return;
+        }
+        delete t;
+    }
+    qInfo().noquote() << QStringLiteral("[i18n] 没有 %1 的翻译文件 ⇒ 用源串（英文）").arg(code);
+}
 
 UiModel::~UiModel()
 {
@@ -284,7 +374,7 @@ void UiModel::chooseOpenFolder()
     const qint64 t0 = QDateTime::currentMSecsSinceEpoch();
     const QString start = dialogStartDir();
     const QString dir = QFileDialog::getExistingDirectory(
-        nullptr, QStringLiteral("打开文件夹"), start);
+        nullptr, tr("Open folder"), start);
     qInfo().noquote() << QStringLiteral("[dialog] 打开文件夹：%1ms（起始 %2）")
                              .arg(QDateTime::currentMSecsSinceEpoch() - t0).arg(start);
     if (dir.isEmpty()) return;
@@ -294,12 +384,11 @@ void UiModel::chooseOpenFolder()
 
 void UiModel::chooseOpenArchive()
 {
-    const QString filter = QStringLiteral(
-        "压缩包 (*.zip *.cbz *.rar *.cbr *.7z *.cb7 *.tar *.cbt *.gz *.bz2 *.xz *.zst);;所有文件 (*)");
+    const QString filter = tr("Archives (*.zip *.cbz *.rar *.cbr *.7z *.cb7 *.tar *.cbt *.gz *.bz2 *.xz *.zst);;All files (*)");
     const qint64 t0 = QDateTime::currentMSecsSinceEpoch();
     const QString start = dialogStartDir();
     const QString path = QFileDialog::getOpenFileName(
-        nullptr, QStringLiteral("打开压缩包"), start, filter);
+        nullptr, tr("Open archive"), start, filter);
     qInfo().noquote() << QStringLiteral("[dialog] 打开压缩包：%1ms（起始 %2）")
                              .arg(QDateTime::currentMSecsSinceEpoch() - t0).arg(start);
     if (path.isEmpty()) return;
@@ -321,11 +410,11 @@ void UiModel::chooseOpenImage()
         if (!decodable.contains(s.toLatin1())) continue;
         pats << QStringLiteral("*.") + s;
     }
-    const QString filter = QStringLiteral("图片 (%1);;所有文件 (*)").arg(pats.join(QLatin1Char(' ')));
+    const QString filter = tr("Images (%1);;All files (*)").arg(pats.join(QLatin1Char(' ')));
     const qint64 t0 = QDateTime::currentMSecsSinceEpoch();
     const QString start = dialogStartDir();
     const QString path = QFileDialog::getOpenFileName(
-        nullptr, QStringLiteral("打开图片"), start, filter);
+        nullptr, tr("Open image"), start, filter);
     qInfo().noquote() << QStringLiteral("[dialog] 打开图片：%1ms（起始 %2）")
                              .arg(QDateTime::currentMSecsSinceEpoch() - t0).arg(start);
     if (path.isEmpty()) return;
@@ -503,7 +592,7 @@ QString UiModel::favoritesDir() const
 {
     QString dir = m_settings.favoritesDir();
     if (dir.isEmpty())
-        dir = QFileInfo(m_settings.filePath()).absolutePath() + QStringLiteral("/收藏");
+        dir = QFileInfo(m_settings.filePath()).absolutePath() + QStringLiteral("/favorites");
     return QDir::cleanPath(dir);
 }
 
@@ -521,7 +610,7 @@ void UiModel::setFavoritesDir(const QString &dir)
 void UiModel::chooseFavoritesDir()
 {
     const QString dir = QFileDialog::getExistingDirectory(
-        nullptr, QStringLiteral("选择收藏夹目录"), favoritesDir());
+        nullptr, tr("Choose favorites folder"), favoritesDir());
     if (dir.isEmpty())
         return;
     setFavoritesDir(dir);
@@ -552,7 +641,7 @@ void UiModel::updateScreenSaverInhibit()
             QStringLiteral("/org/freedesktop/ScreenSaver"),
             QStringLiteral("org.freedesktop.ScreenSaver"),
             QStringLiteral("Inhibit"));
-        msg << QStringLiteral("photoset-reader") << QStringLiteral("幻灯片播放中");
+        msg << QStringLiteral("photoset-reader") << tr("Slideshow playing");
         const QDBusMessage reply = QDBusConnection::sessionBus().call(msg, QDBus::Block, 500);
         if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty())
             m_inhibitCookie = reply.arguments().first().toUInt();
@@ -581,7 +670,7 @@ void UiModel::refreshScanning()
         const int override = qEnvironmentVariableIntValue("PHOTOSET_SCAN_TOAST_MS");
         const qint64 threshold = override > 0 ? override : kScanToastMinMs;
         if (ms >= threshold)
-            notify(QStringLiteral("扫描完成：%1 个文件").arg(m_src.seq ? m_src.seq->count() : 0));
+            notify(tr("Scan finished: %1 files").arg(m_src.seq ? m_src.seq->count() : 0));
     }
     //   被用户停下的扫描 = **不完整**（ScanStoped；ScanStoped 也算 scanFinished）
     const bool incomplete = m_src.seq && m_src.seq->state() == Sequence::State::ScanStoped;
@@ -622,7 +711,7 @@ void UiModel::startRescan()
     if (m_path.isEmpty() || m_rescanSeq || !m_src.vm || !m_src.seq)
         return;
     if (!m_src.seq->scanFinished()) {      // 当前这条还在扫 ⇒ 先别再来一条
-        notify(QStringLiteral("正在扫描，等扫完再重新扫描"));
+        notify(tr("Scanning; try again when it finishes"));
         return;
     }
     if (!canRescanNow())
@@ -676,7 +765,7 @@ void UiModel::applyRescan()
         //   一条都没有（源不在了 / 打不开）⇒ **保留原来的**，不把画面变空
         const QString why = fresh->unsupportedReason();
         delete fresh;
-        notify(why.isEmpty() ? QStringLiteral("重新扫描没有扫到内容，保留原来的")
+        notify(why.isEmpty() ? tr("Rescan found nothing; keeping the previous result")
                              : why);
         refreshScanning();
         return;
@@ -741,18 +830,18 @@ void UiModel::refreshFavorited()
 bool UiModel::writeProgress(const QString &filePath, bool quiet)
 {
     if (!m_src.seq || !m_src.vm) {
-        if (!quiet) notify(QStringLiteral("没有打开的来源"));
+        if (!quiet) notify(tr("No source is open"));
         return false;
     }
     if (!m_src.seq->scanFinished()) {
         //   只有**扫描完**的才能收藏（用户 2026-10-31）—— 点的时候会先弹框告知，这里是兜底
-        if (!quiet) notify(QStringLiteral("扫描还没完，等扫完再保存"));
+        if (!quiet) notify(tr("Scan not finished; wait for it before saving"));
         return false;
     }
     const QFileInfo fi(m_path);
     const bool isDir = fi.isDir();
     if (!isDir && !ArchiveSource::isArchive(m_path)) {
-        if (!quiet) notify(QStringLiteral("只有文件夹和压缩包能保存进度"));
+        if (!quiet) notify(tr("Only folders and archives can save progress"));
         return false;
     }
 
@@ -779,7 +868,7 @@ bool UiModel::writeProgress(const QString &filePath, bool quiet)
 
     QString err;
     if (!progressfile::write(filePath, d, &err)) {
-        if (!quiet) notify(err.isEmpty() ? QStringLiteral("保存进度失败") : err);
+        if (!quiet) notify(err.isEmpty() ? tr("Failed to save progress") : err);
         else qWarning().noquote() << QStringLiteral("[progress] 自动保存失败：%1").arg(err);
         return false;
     }
@@ -793,8 +882,8 @@ bool UiModel::saveProgressToFavorites()
 {
     const QString file = currentFavoritesFile();
     if (file.isEmpty()) {
-        notify(m_path.isEmpty() ? QStringLiteral("没有打开的来源")
-                                : QStringLiteral("只有文件夹和压缩包能保存进度"));
+        notify(m_path.isEmpty() ? tr("No source is open")
+                                : tr("Only folders and archives can save progress"));
         return false;
     }
     if (!writeProgress(file))
@@ -802,14 +891,14 @@ bool UiModel::saveProgressToFavorites()
     refreshFavorited();
     if (m_favorites) m_favorites->reload();      // 列表里能立刻看到
     startTrackingProgress(file);                 // 之后按间隔 / 切来源自动保存
-    notify(QStringLiteral("已收藏"));
+    notify(tr("Added to favorites"));
     return true;
 }
 
 bool UiModel::saveProgressToFile()
 {
     if (!m_src.seq || !m_src.vm) {
-        notify(QStringLiteral("没有打开的来源"));
+        notify(tr("No source is open"));
         return false;
     }
     const QString start = m_lastProgressDir.isEmpty()
@@ -817,8 +906,8 @@ bool UiModel::saveProgressToFile()
                               : m_lastProgressDir + QLatin1Char('/')
                                     + progressfile::titleOf(m_path) + QLatin1String(".prsave");
     const QString picked = QFileDialog::getSaveFileName(
-        nullptr, QStringLiteral("保存进度到文件"), start,
-        QStringLiteral("进度文件 (*.prsave)"));
+        nullptr, tr("Save progress to file"), start,
+        tr("Progress files (*.prsave)"));
     if (picked.isEmpty())
         return false;
     QString file = picked;
@@ -828,16 +917,16 @@ bool UiModel::saveProgressToFile()
         return false;
     m_lastProgressDir = QFileInfo(file).absolutePath();
     startTrackingProgress(file);
-    notify(QStringLiteral("进度已保存"));
+    notify(tr("Progress saved"));
     return true;
 }
 
 void UiModel::openProgressFile()
 {
     const QString picked = QFileDialog::getOpenFileName(
-        nullptr, QStringLiteral("打开进度文件"),
+        nullptr, tr("Open progress file"),
         m_lastProgressDir.isEmpty() ? QDir::homePath() : m_lastProgressDir,
-        QStringLiteral("进度文件 (*.prsave)"));
+        tr("Progress files (*.prsave)"));
     if (picked.isEmpty())
         return;
     m_lastProgressDir = QFileInfo(picked).absolutePath();
@@ -850,11 +939,11 @@ bool UiModel::openProgress(const QString &filePath)
     progressfile::Data d;
     QString err;
     if (!progressfile::read(filePath, &d, &err)) {
-        notify(err.isEmpty() ? QStringLiteral("打不开进度文件") : err);
+        notify(err.isEmpty() ? tr("Cannot open progress file") : err);
         return false;
     }
     if (!QFileInfo::exists(d.meta.sourcePath)) {
-        notify(QStringLiteral("源不在了：%1").arg(d.meta.sourcePath));
+        notify(tr("Source is gone: %1").arg(d.meta.sourcePath));
         return false;
     }
 
@@ -891,7 +980,7 @@ bool UiModel::removeProgressFile(const QString &filePath)
     if (filePath.isEmpty() || !QFileInfo::exists(filePath))
         return false;
     if (!QFile::remove(filePath)) {
-        notify(QStringLiteral("删不掉：%1").arg(filePath));
+        notify(tr("Cannot delete: %1").arg(filePath));
         return false;
     }
     qInfo().noquote() << QStringLiteral("[progress] 已删除 %1").arg(filePath);
@@ -908,7 +997,7 @@ bool UiModel::removeFavorite()
     if (file.isEmpty() || !QFileInfo::exists(file))
         return false;
     if (!QFile::remove(file)) {
-        notify(QStringLiteral("删不掉：%1").arg(file));
+        notify(tr("Cannot delete: %1").arg(file));
         return false;
     }
     refreshFavorited();

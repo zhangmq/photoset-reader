@@ -1,6 +1,7 @@
 #include "exifmeta.h"
 
 #include <QColorSpace>
+#include <QCoreApplication>
 #include <QFile>
 #include <QMap>
 
@@ -218,39 +219,39 @@ QByteArray tiffIcc(const QByteArray &head)
 // ══ EXIF 标签 → 中文名 / 排序权重 / 噪声过滤 ═════════════════════════════════
 struct TagSpec {
     int     tag;
-    QString label;
+    const char *label;      // QT_TRANSLATE_NOOP 标记的英文源串（用时才翻译）
     int     prio;      // 越小越靠前；0 = 不参与优先（按文件原序）
 };
 
 const TagSpec kSpecs[] = {
-    { EXIF_TAG_MAKE,                 QStringLiteral("相机厂商"), 1 },
-    { EXIF_TAG_MODEL,                QStringLiteral("机型"),     2 },
-    { EXIF_TAG_LENS_MODEL,           QStringLiteral("镜头"),     3 },
-    { EXIF_TAG_DATE_TIME_ORIGINAL,    QStringLiteral("拍摄时间"), 4 },
-    { EXIF_TAG_EXPOSURE_TIME,        QStringLiteral("曝光"),     5 },
-    { EXIF_TAG_FNUMBER,              QStringLiteral("光圈"),     6 },
-    { EXIF_TAG_ISO_SPEED_RATINGS,    QStringLiteral("ISO"),      7 },
-    { EXIF_TAG_FOCAL_LENGTH,         QStringLiteral("焦距"),     8 },
-    { EXIF_TAG_FOCAL_LENGTH_IN_35MM_FILM, QStringLiteral("等效焦距"), 9 },
-    { EXIF_TAG_EXPOSURE_BIAS_VALUE,  QStringLiteral("曝光补偿"), 10 },
-    { EXIF_TAG_MAX_APERTURE_VALUE,   QStringLiteral("最大光圈"), 11 },
-    { EXIF_TAG_METERING_MODE,        QStringLiteral("测光"),     12 },
-    { EXIF_TAG_FLASH,                QStringLiteral("闪光灯"),   13 },
-    { EXIF_TAG_LIGHT_SOURCE,         QStringLiteral("光源"),     14 },
-    { EXIF_TAG_WHITE_BALANCE,        QStringLiteral("白平衡"),   15 },
-    { EXIF_TAG_EXPOSURE_PROGRAM,     QStringLiteral("曝光程序"), 16 },
-    { EXIF_TAG_SOFTWARE,             QStringLiteral("软件"),     20 },
-    { EXIF_TAG_ARTIST,               QStringLiteral("作者"),     21 },
-    { EXIF_TAG_COPYRIGHT,            QStringLiteral("版权"),     22 },
-    { EXIF_TAG_IMAGE_DESCRIPTION,    QStringLiteral("描述"),     23 },
-    { EXIF_TAG_DATE_TIME,            QStringLiteral("修改时间"), 17 },
-    { EXIF_TAG_LENS_MAKE,            QStringLiteral("镜头厂商"), 24 },
-    { EXIF_TAG_SUBJECT_DISTANCE,     QStringLiteral("拍摄距离"), 25 },
-    { EXIF_TAG_DIGITAL_ZOOM_RATIO,   QStringLiteral("数码变焦"), 26 },
-    { EXIF_TAG_SCENE_CAPTURE_TYPE,   QStringLiteral("场景"),     27 },
-    { EXIF_TAG_SATURATION,           QStringLiteral("饱和度"),   28 },
-    { EXIF_TAG_CONTRAST,             QStringLiteral("对比度"),   29 },
-    { EXIF_TAG_SHARPNESS,            QStringLiteral("锐度"),     30 },
+    { EXIF_TAG_MAKE,                 QT_TRANSLATE_NOOP("ExifMeta", "Camera make"), 1 },
+    { EXIF_TAG_MODEL,                QT_TRANSLATE_NOOP("ExifMeta", "Camera model"),     2 },
+    { EXIF_TAG_LENS_MODEL,           QT_TRANSLATE_NOOP("ExifMeta", "Lens"),     3 },
+    { EXIF_TAG_DATE_TIME_ORIGINAL,    QT_TRANSLATE_NOOP("ExifMeta", "Taken at"), 4 },
+    { EXIF_TAG_EXPOSURE_TIME,        QT_TRANSLATE_NOOP("ExifMeta", "Exposure"),     5 },
+    { EXIF_TAG_FNUMBER,              QT_TRANSLATE_NOOP("ExifMeta", "Aperture"),     6 },
+    { EXIF_TAG_ISO_SPEED_RATINGS,    QT_TRANSLATE_NOOP("ExifMeta", "ISO"),      7 },
+    { EXIF_TAG_FOCAL_LENGTH,         QT_TRANSLATE_NOOP("ExifMeta", "Focal length"),     8 },
+    { EXIF_TAG_FOCAL_LENGTH_IN_35MM_FILM, QT_TRANSLATE_NOOP("ExifMeta", "35 mm equivalent"), 9 },
+    { EXIF_TAG_EXPOSURE_BIAS_VALUE,  QT_TRANSLATE_NOOP("ExifMeta", "Exposure bias"), 10 },
+    { EXIF_TAG_MAX_APERTURE_VALUE,   QT_TRANSLATE_NOOP("ExifMeta", "Max aperture"), 11 },
+    { EXIF_TAG_METERING_MODE,        QT_TRANSLATE_NOOP("ExifMeta", "Metering"),     12 },
+    { EXIF_TAG_FLASH,                QT_TRANSLATE_NOOP("ExifMeta", "Flash"),   13 },
+    { EXIF_TAG_LIGHT_SOURCE,         QT_TRANSLATE_NOOP("ExifMeta", "Light source"),     14 },
+    { EXIF_TAG_WHITE_BALANCE,        QT_TRANSLATE_NOOP("ExifMeta", "White balance"),   15 },
+    { EXIF_TAG_EXPOSURE_PROGRAM,     QT_TRANSLATE_NOOP("ExifMeta", "Exposure program"), 16 },
+    { EXIF_TAG_SOFTWARE,             QT_TRANSLATE_NOOP("ExifMeta", "Software"),     20 },
+    { EXIF_TAG_ARTIST,               QT_TRANSLATE_NOOP("ExifMeta", "Artist"),     21 },
+    { EXIF_TAG_COPYRIGHT,            QT_TRANSLATE_NOOP("ExifMeta", "Copyright"),     22 },
+    { EXIF_TAG_IMAGE_DESCRIPTION,    QT_TRANSLATE_NOOP("ExifMeta", "Description"),     23 },
+    { EXIF_TAG_DATE_TIME,            QT_TRANSLATE_NOOP("ExifMeta", "Modified at"), 17 },
+    { EXIF_TAG_LENS_MAKE,            QT_TRANSLATE_NOOP("ExifMeta", "Lens make"), 24 },
+    { EXIF_TAG_SUBJECT_DISTANCE,     QT_TRANSLATE_NOOP("ExifMeta", "Subject distance"), 25 },
+    { EXIF_TAG_DIGITAL_ZOOM_RATIO,   QT_TRANSLATE_NOOP("ExifMeta", "Digital zoom"), 26 },
+    { EXIF_TAG_SCENE_CAPTURE_TYPE,   QT_TRANSLATE_NOOP("ExifMeta", "Scene"),     27 },
+    { EXIF_TAG_SATURATION,           QT_TRANSLATE_NOOP("ExifMeta", "Saturation"),   28 },
+    { EXIF_TAG_CONTRAST,             QT_TRANSLATE_NOOP("ExifMeta", "Contrast"),   29 },
+    { EXIF_TAG_SHARPNESS,            QT_TRANSLATE_NOOP("ExifMeta", "Sharpness"),     30 },
 };
 
 const TagSpec *specFor(int tag)
@@ -287,11 +288,11 @@ bool isNoise(int tag)
 QString gpsLabel(int tag)
 {
     switch (tag) {
-    case EXIF_TAG_GPS_LATITUDE:   return QStringLiteral("纬度");
-    case EXIF_TAG_GPS_LONGITUDE:  return QStringLiteral("经度");
-    case EXIF_TAG_GPS_ALTITUDE:   return QStringLiteral("海拔");
-    case EXIF_TAG_GPS_TIME_STAMP: return QStringLiteral("GPS 时间");
-    case EXIF_TAG_GPS_DATE_STAMP: return QStringLiteral("GPS 日期");
+    case EXIF_TAG_GPS_LATITUDE:   return QCoreApplication::translate("ExifMeta", "Latitude");
+    case EXIF_TAG_GPS_LONGITUDE:  return QCoreApplication::translate("ExifMeta", "Longitude");
+    case EXIF_TAG_GPS_ALTITUDE:   return QCoreApplication::translate("ExifMeta", "Altitude");
+    case EXIF_TAG_GPS_TIME_STAMP: return QCoreApplication::translate("ExifMeta", "GPS time");
+    case EXIF_TAG_GPS_DATE_STAMP: return QCoreApplication::translate("ExifMeta", "GPS date");
     default:                      return {};
     }
 }
@@ -323,7 +324,10 @@ QVector<Row> exifRowsFromBlock(const QByteArray &block)
             QString key = (ifd == EXIF_IFD_GPS) ? gpsLabel(int(e->tag)) : QString();
             int prio = 1000;
             if (key.isEmpty()) {
-                if (const TagSpec *s = specFor(int(e->tag))) { key = s->label; prio = s->prio; }
+                if (const TagSpec *s = specFor(int(e->tag))) {
+                    key = QCoreApplication::translate("ExifMeta", s->label);
+                    prio = s->prio;
+                }
                 else key = QString::fromUtf8(exif_tag_get_name_in_ifd(e->tag, ifd));
             }
             if (key.isEmpty()) continue;
@@ -342,14 +346,15 @@ QVector<Row> exifRowsFromBlock(const QByteArray &block)
 // ══ 色彩空间判词（与解码点 `toSrgb()` 同一个解析器）══════════════════════════
 QString colorSpaceText(const QByteArray &icc, bool hasIcc)
 {
-    if (!hasIcc || icc.isEmpty()) return QStringLiteral("sRGB（无 profile）");
+    if (!hasIcc || icc.isEmpty()) return QCoreApplication::translate("ExifMeta", "sRGB (no profile)");
     const QColorSpace cs = QColorSpace::fromIccProfile(icc);
     if (!cs.isValid())
-        return QStringLiteral("ICC 无法解析（按 sRGB 显示）");
+        return QCoreApplication::translate("ExifMeta",
+                      "ICC could not be parsed (showing as sRGB)");
     if (cs == QColorSpace::SRgb) return QStringLiteral("sRGB");
     QString desc = cs.description().trimmed();
     if (desc.isEmpty()) desc = QStringLiteral("ICC");
-    return desc + QStringLiteral(" → 已转 sRGB");
+    return desc + QCoreApplication::translate("ExifMeta", " → converted to sRGB");
 }
 
 // ── HEIF/AVIF：Exif 块与 ICC 都在 BMFF 的 box 表里，交给 libheif ──────────────

@@ -5,6 +5,7 @@
 #include "natural.h"
 #include "sevenzcheck.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QDirIterator>
 #include <QElapsedTimer>
@@ -891,31 +892,35 @@ QString Sequence::checkSupported(const QString &path, const std::function<bool()
     {
         const QFileInfo root(path);
         if (!root.exists() || !root.isReadable()) {
-            m_unsupported = QStringLiteral("根不可用：%1").arg(path);
+            m_unsupported = QCoreApplication::translate("Sequence", "Root unavailable: %1").arg(path);
             return m_unsupported;
         }
     }
     const QString suf = QFileInfo(path).suffix().toLower();
     if (suf == QLatin1String("gz") || suf == QLatin1String("bz2")
         || suf == QLatin1String("xz") || suf == QLatin1String("zst")) {
-        m_unsupported = QStringLiteral("流式压缩（.%1）不能随机读，请先解压成文件夹").arg(suf);
+        m_unsupported = QCoreApplication::translate("Sequence",
+                        "Stream-compressed (.%1) cannot be read randomly; extract it to a folder first").arg(suf);
     } else if (suf == QLatin1String("7z") || suf == QLatin1String("cb7")) {
         QString why;
         if (!sevenZipIsRandomAccessible(path, &why))
-            m_unsupported = QStringLiteral("7z 不支持随机读（%1），请先解压成文件夹").arg(why);
+            m_unsupported = QCoreApplication::translate("Sequence",
+                        "7z cannot be read randomly (%1); extract it to a folder first").arg(why);
     } else if (suf == QLatin1String("rar") || suf == QLatin1String("cbr")) {
         ArchiveSource probe;
         // ★ 枚举期间也要汇报进度（这两个探针在大包上很贵）
         if (probe.open(path, QString(), ArchiveSource::Entries::ImagesOnly, progress)
             && probe.isSolid())
-            m_unsupported = QStringLiteral("RAR 是 solid，不能随机读，请先解压成文件夹");
+            m_unsupported = QCoreApplication::translate("Sequence",
+                        "RAR is solid and cannot be read randomly; extract it to a folder first");
     }
     // ★ v5：容器**打不开**也算不支持（"该容器不出现 + 瞬时提示"，Phase 3 接 notification）。
     //   在这里（扫描线程最开头）判定 ⇒ 不跨线程改这个字符串。
     if (m_unsupported.isEmpty() && ArchiveSource::isArchive(path)) {
         ArchiveSource probe;
         if (!probe.open(path, QString(), ArchiveSource::Entries::All, progress))
-            m_unsupported = QStringLiteral("压缩包打不开：%1").arg(QFileInfo(path).fileName());
+            m_unsupported = QCoreApplication::translate("Sequence",
+                        "Cannot open archive: %1").arg(QFileInfo(path).fileName());
     }
     return m_unsupported;
 }
@@ -1114,7 +1119,8 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
                 const qint64 limit = innerArchiveLimitBytes();
                 if (a.sizeAt(idx) > limit) {
                     const QString why =
-                        QStringLiteral("内层压缩包 %1 超过上限（%2 MB > %3 MB），已跳过不展开")
+                        QCoreApplication::translate("Sequence",
+                            "Nested archive %1 is over the limit (%2 MB > %3 MB); skipped")
                             .arg(e.leaf)
                             .arg(a.sizeAt(idx) / 1048576.0, 0, 'f', 1)
                             .arg(limit / 1048576);

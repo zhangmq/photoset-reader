@@ -13,23 +13,51 @@ Item {
 
     implicitHeight: column.implicitHeight
 
+    //   ★ 语言下拉的当前值：跟随系统时显示"跟随系统（zh_CN）"，否则显示该语言自己的名字。
+    //     ⚠️ 必须定义在**根对象**上：定义在 Column 里的话 `page.languageLabel()` 找不到（实测报错）。
+    function languageLabel() {
+        if (ui.language === "") return qsTr("Follow system") + " (" + ui.effectiveLanguage + ")"
+        if (ui.language === "zh_CN") return "中文"
+        if (ui.language === "en") return "English"
+        return ui.language
+    }
+
     Column {
         id: column
         width: parent.width
 
         SettingsRow {
-            label: "主题"
+            label: qsTr("Theme")
             DropdownButton {
-                label: ["跟随系统", "浅色", "深色"][ui.themeMode]
-                menuItems: [ { text: "跟随系统", selected: ui.themeMode === 0 },
-                             { text: "浅色",     selected: ui.themeMode === 1 },
-                             { text: "深色",     selected: ui.themeMode === 2 } ]
+                label: [qsTr("Follow system"), qsTr("Light"), qsTr("Dark")][ui.themeMode]
+                menuItems: [ { text: qsTr("Follow system"), selected: ui.themeMode === 0 },
+                             { text: qsTr("Light"),         selected: ui.themeMode === 1 },
+                             { text: qsTr("Dark"),          selected: ui.themeMode === 2 } ]
                 onItemTriggered: function (i) { ui.themeMode = i }
             }
         }
 
+        //   ★ 语言（2026-11-02）：`ui.language` 是**语言代码**（空串 = 跟随系统）。
+        //     下拉里每项都用**它自己的语言**写（中文写"中文"、英文写"English"）——
+        //     看的人认得出自己的语言，比把语言名翻成当前界面语言更可靠。
         SettingsRow {
-            label: "默认幻灯片间隔"
+            label: qsTr("Language")
+            DropdownButton {
+                label: page.languageLabel()
+                menuItems: [
+                    { text: qsTr("Follow system") + " (" + ui.effectiveLanguage + ")",
+                      selected: ui.language === "" },
+                    { text: "中文",    selected: ui.language === "zh_CN" },
+                    { text: "English", selected: ui.language === "en" }
+                ]
+                onItemTriggered: function (i) {
+                    ui.language = ["", "zh_CN", "en"][i]
+                }
+            }
+        }
+
+        SettingsRow {
+            label: qsTr("Default slideshow interval")
             Row {
                 spacing: Theme.spaceXs
                 NumberField {
@@ -43,7 +71,7 @@ Item {
                 // 预设只做**快速输入**：点一下把 ms 数值填进去，保存的仍是单个 ms 值
                 // （与图像查看界面 `[切换速度▾]` 的预设一致；那里的"自定义/加速/减速"不搬过来）
                 DropdownButton {
-                    label: "预设"
+                    label: qsTr("Presets")
                     menuItems: [
                         { text: "500ms", selected: ui.slideshowIntervalMs === 500 },
                         { text: "1s",    selected: ui.slideshowIntervalMs === 1000 },
@@ -61,34 +89,34 @@ Item {
 
         // ── 以下三项是**新资源 / 重进查看屏时的默认值**（不是当前阅读态）──
         SettingsRow {
-            label: "默认画面缩放"
+            label: qsTr("Default zoom")
             DropdownButton {
-                label: ["原始大小", "适应屏幕", "适应宽度", "适应高度"][ui.fitMode]
-                menuItems: [ { text: "原始大小", selected: ui.fitMode === 0 },
-                             { text: "适应屏幕", selected: ui.fitMode === 1 },
-                             { text: "适应宽度", selected: ui.fitMode === 2 },
-                             { text: "适应高度", selected: ui.fitMode === 3 } ]
+                label: [qsTr("Original size"), qsTr("Fit screen"), qsTr("Fit width"), qsTr("Fit height")][ui.fitMode]
+                menuItems: [ { text: qsTr("Original size"), selected: ui.fitMode === 0 },
+                             { text: qsTr("Fit screen"),    selected: ui.fitMode === 1 },
+                             { text: qsTr("Fit width"),     selected: ui.fitMode === 2 },
+                             { text: qsTr("Fit height"),    selected: ui.fitMode === 3 } ]
                 onItemTriggered: function (i) { ui.fitMode = i }
             }
         }
 
         SettingsRow {
-            label: "默认阅读版面"
+            label: qsTr("Default layout")
             DropdownButton {
-                label: ["单幅", "双幅"][ui.defaultLayout]
-                menuItems: [ { text: "单幅", selected: ui.defaultLayout === 0 },
-                             { text: "双幅", selected: ui.defaultLayout === 1 } ]
+                label: [qsTr("Single page"), qsTr("Two pages")][ui.defaultLayout]
+                menuItems: [ { text: qsTr("Single page"), selected: ui.defaultLayout === 0 },
+                             { text: qsTr("Two pages"),   selected: ui.defaultLayout === 1 } ]
                 onItemTriggered: function (i) { ui.defaultLayout = i }
             }
         }
 
         SettingsRow {
-            label: "默认循环方式"
+            label: qsTr("Default loop mode")
             DropdownButton {
-                label: ["不循环", "全部循环", "文件夹内循环"][ui.defaultLoop]
-                menuItems: [ { text: "不循环",       selected: ui.defaultLoop === 0 },
-                             { text: "全部循环",     selected: ui.defaultLoop === 1 },
-                             { text: "文件夹内循环", selected: ui.defaultLoop === 2 } ]
+                label: [qsTr("No loop"), qsTr("Loop all"), qsTr("Loop folder")][ui.defaultLoop]
+                menuItems: [ { text: qsTr("No loop"),     selected: ui.defaultLoop === 0 },
+                             { text: qsTr("Loop all"),    selected: ui.defaultLoop === 1 },
+                             { text: qsTr("Loop folder"), selected: ui.defaultLoop === 2 } ]
                 onItemTriggered: function (i) { ui.defaultLoop = i }
             }
         }
@@ -96,10 +124,10 @@ Item {
         //   ★ 2026-10-31（设计 20）：收藏夹路径 —— 进度文件就存在这个目录里；
         //     可以指到任意目录（含外部盘）。改路径**不迁移**旧文件。
         SettingsRow {
-            label: "收藏夹路径"
+            label: qsTr("Favorites folder")
             description: ui.favoritesDir
             Button {
-                label: "更改…"
+                label: qsTr("Change…")
                 onClicked: ui.chooseFavoritesDir()
             }
         }

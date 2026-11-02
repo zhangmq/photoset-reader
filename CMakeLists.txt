@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml QuickControls2 Widgets ShaderTools DBus)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml QuickControls2 Widgets ShaderTools DBus LinguistTools)
 # QRhi / QShader（rhi/*.h 在 Qt 的私有包含路径下；QQuickRhiItem 文档也是这么要求的）
 find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
 # 7z 头解析要用 liblzma（判 solid 用；不参与解码路径）
@@ -173,6 +173,29 @@ qt_add_executable(photoset-reader
 # ★ 套件全部搬去 `tests/`（T0 第四批）后，应用**不再链 `testsupport`**（设计 14 §11）：
 #   `main.cpp` 里 0 个 `run*SelfTest` / 0 个套件 dispatch；dev CLI 与截图机制自带工具函数。
 target_link_libraries(photoset-reader PRIVATE ibcore)
+
+# ══ i18n：`.ts` → lrelease → `.qm` **编进资源**（`:/i18n/photoset-reader_<代码>.qm`）══
+#   · 源串一律**英文**（`qsTr()`/`tr()` 里写英文），其它语言靠译文——与 vsr-player 同一路线；
+#   · 本文件**只跑 lrelease**（不会覆盖译文）；`.ts` 的更新走
+#     `scripts/update-translations.sh`（lupdate + 完整性检查，输入清单在脚本里）；
+#   · `.qm` 进资源 ⇒ 动态版 / 静态版 / AppImage / 便携包**都不用再带一个 translations 目录**
+#     （vsr-player 是放磁盘 + 运行时找目录，我们只有一份可执行，编进去更省事）。
+#   · 新增语言 = 往 `i18n/` 放一份 `<程序名>_<语言>.ts`（GLOB 自动接上），代码零改动。
+file(GLOB IB_TS_FILES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/i18n/*.ts")
+if(IB_TS_FILES)
+    qt_add_lrelease(photoset-reader
+        TS_FILES ${IB_TS_FILES}
+        QM_FILES_OUTPUT_VARIABLE IB_QM_FILES)
+    foreach(qm IN LISTS IB_QM_FILES)
+        get_filename_component(qm_name "${qm}" NAME)
+        set_source_files_properties("${qm}" PROPERTIES QT_RESOURCE_ALIAS "${qm_name}")
+    endforeach()
+    qt_add_resources(photoset-reader "i18n"
+        PREFIX "/i18n"
+        FILES ${IB_QM_FILES})
+else()
+    message(STATUS "i18n：i18n/ 下没有 .ts ⇒ 只有英文（源串）")
+endif()
 
 # ══ QML 模块 + 图标字体资源：挂在**每个要加载 `qrc:/qt/qml/AppUi` 的可执行**上 ══
 #   设计 14 §11：每个测试目标各自独立 ⇒ 谁需要 QML 谁带一份（静态库里的 QML 模块在

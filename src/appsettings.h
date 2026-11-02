@@ -48,13 +48,16 @@ struct AppSettings
     //   ★ T2d-1d-②：语义 = **两个方向的条数相加**（队列长度恒为该值），默认 **8**。
     //     名字沿用旧名（改名按术语铁律单列报批）。
     int  prefetchWindow() const { return m_prefetchWindow; }
-    int  prefetchBatch() const { return m_prefetchBatch; }      // 默认 4（一次一批的批大小 = 并发解码数）
-                                                                //   ★ 暂**不暴露到界面**（用户 2026-10-12）
     // ★ v7：**内层压缩包上限**（MB）—— 超过上限的内层压缩包不展开（嵌套包不常见，
     //   避免为此付出大代价）。判定在**解压前**（从归档条目元数据取成员大小）。
     int  innerArchiveMaxMb() const { return m_innerArchiveMaxMb; }   // 默认 512，范围 64–8192
     //   ★ 2026-10-31：收藏夹路径（空 = 默认 `<配置目录>/收藏`；用户可改成任意目录，含外部盘）
     QString favoritesDir() const { return m_favoritesDir; }
+
+    // 界面语言：**空串 = 跟随系统**；否则是语言代码（`zh_CN` / `en` …）。
+    //   ★ 与 vsr-player 同口径（那边叫 `lang`，空 = 系统 locale）：**新增语言 = 加一份 .ts**，
+    //     代码里不需要任何"语言清单"（`QTranslator` 按代码去 `:/i18n/` 找，找不到就回退源串=英文）。
+    QString language() const { return m_language; }
 
     void setThemeMode(int v) { m_themeMode = v; save(); }
     void setIntervalMs(int v) { m_intervalMs = qMax(50, v); save(); }
@@ -65,9 +68,9 @@ struct AppSettings
     void setScanHidden(bool v) { m_scanHidden = v; save(); }
     void setRecurseDepth(int v) { m_recurseDepth = qBound(1, v, 64); save(); }
     void setPrefetchWindow(int v) { m_prefetchWindow = qBound(3, v, 64); save(); }
-    void setPrefetchBatch(int v) { m_prefetchBatch = qBound(1, v, 32); save(); }
     void setInnerArchiveMaxMb(int v) { m_innerArchiveMaxMb = qBound(64, v, 8192); save(); }
     void setFavoritesDir(const QString &v) { m_favoritesDir = v; save(); }
+    void setLanguage(const QString &v) { m_language = v; save(); }
 
     QString filePath() const;
 
@@ -81,9 +84,9 @@ private:
     bool m_scanHidden = false;
     int  m_recurseDepth = 5;
     int  m_prefetchWindow = 8;
-    int  m_prefetchBatch = 4;
     int  m_innerArchiveMaxMb = 512;     // ★ v7：内层压缩包上限（MB），范围 64–8192
     QString m_favoritesDir;             // 收藏夹路径（空 = 默认 `<配置目录>/收藏`）
+    QString m_language;                 // 界面语言代码（空 = 跟随系统）
 };
 
 } // namespace app

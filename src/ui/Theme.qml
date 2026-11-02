@@ -249,7 +249,6 @@ QtObject {
     // 设置对话框
     readonly property int settingsCtlW: 280      // 设置项右侧控件列预留宽（断开"标签宽↔控件宽"循环绑定）
     readonly property int settingsKeyW: 200      // 快捷键表键列宽
-    readonly property int settingsScopeW: 110    // 快捷键表"适用范围"列宽
     readonly property int numberW:      120      // 数字输入框宽
     readonly property int settingsW:    800      // 设置框宽 ← DSH settings-general `.panel{width:800px}`
     readonly property int settingsH:    800      // 设置框高上限 ← 同处 `height:min(800px, 100vh - 48px)`

@@ -69,7 +69,7 @@ Popup {
                 anchors.left: parent.left
                 anchors.leftMargin: Theme.spaceLg
                 anchors.verticalCenter: parent.verticalCenter
-                text: "设置"
+                text: qsTr("Settings")
                 color: Theme.textPrimary
             }
             IconAction {
@@ -77,7 +77,7 @@ Popup {
                 anchors.rightMargin: Theme.spaceMd
                 anchors.verticalCenter: parent.verticalCenter
                 glyph: Theme.icClose
-                tooltip: "关闭"
+                tooltip: qsTr("Close")
                 onTriggered: { root.close(); root.finished() }
             }
         }
@@ -98,7 +98,7 @@ Popup {
                 activeFocusOnTab: true
 
                 Repeater {
-                    model: [ "常规", "图像", "系统", "快捷键" ]
+                    model: [ qsTr("General"), qsTr("Image"), qsTr("System"), qsTr("Shortcuts") ]
                     delegate: Rectangle {
                         id: navItem
                         required property int index

@@ -88,12 +88,12 @@ ApplicationWindow {
             }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: qsTr("把文件夹、压缩包或图片拖到这里")
+                text: qsTr("Drop a folder, archive or image here")
                 color: Theme.textPrimary
             }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: qsTr("也可以右键 → 打开…")
+                text: qsTr("You can also right-click → Open…")
                 color: Theme.textCaption
                 font.pointSize: Theme.fontSm
             }

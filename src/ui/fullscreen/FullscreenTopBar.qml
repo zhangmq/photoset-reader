@@ -92,7 +92,7 @@ Item {
                 }
                 HintBubble {
                     anchors.fill: parent
-                    text: "正在扫描：已发现 " + root.discoveredCount + " 张（点击取消）"
+                    text: qsTr("Scanning: %1 files found (click to cancel)").arg(root.discoveredCount)
                     hovered: spinMa.containsMouse && root.overlaysVisible
                 }
             }
@@ -127,7 +127,7 @@ Item {
             anchors.rightMargin: Theme.spaceLg
             anchors.verticalCenter: parent.verticalCenter
             glyph: root.favorited ? Theme.icStar : Theme.icStarO
-            tooltip: root.favorited ? "已收藏（点击取消收藏）" : "收藏（保存进度）"
+            tooltip: root.favorited ? qsTr("Favorited (click to remove)") : qsTr("Add to favorites (saves progress)")
             //   ★ 不做"扫描中置灰"（用户 2026-10-31）：点了弹框告知，见上层
             enabled: root.overlaysVisible && root.hasSource
             onTriggered: root.favoriteToggled()

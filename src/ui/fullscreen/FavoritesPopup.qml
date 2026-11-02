@@ -37,7 +37,7 @@ Item {
             SearchField {
                 id: filterInput
                 width: parent.width
-                placeholder: "过滤名称"
+                placeholder: qsTr("Filter by name")
                 onTextChanged: root.model.setFilter(text)
             }
 
@@ -123,7 +123,7 @@ Item {
                             anchors.right: removeBtn.left
                             anchors.rightMargin: Theme.spaceSm
                             anchors.verticalCenter: parent.verticalCenter
-                            text: row.errorText !== "" ? "无法读取"
+                            text: row.errorText !== "" ? qsTr("Unreadable")
                                                        : (row.done + " / " + row.total)
                             color: row.errorText !== "" ? Theme.danger : Theme.textCaption
                         }
@@ -134,7 +134,7 @@ Item {
                             anchors.rightMargin: Theme.spaceXs
                             anchors.verticalCenter: parent.verticalCenter
                             glyph: Theme.icClose
-                            tooltip: "移除"
+                            tooltip: qsTr("Remove")
                             danger: true
                             onTriggered: {
                                 root.pendingRemove = row.file
@@ -159,8 +159,8 @@ Item {
                     wrapMode: Text.WordWrap
                     visible: list.count === 0
                     text: filterInput.text !== ""
-                              ? "没有匹配的进度文件"
-                              : "还没有进度文件。\n用右键菜单的「保存进度到收藏夹」把当前来源记在这里。"
+                              ? qsTr("No matching progress files")
+                              : qsTr("No progress files yet.\nUse “Save progress to favorites” in the right-click menu to remember the current source here.")
                     color: Theme.textSecondary
                 }
             }
@@ -179,9 +179,10 @@ Item {
 
     ConfirmDialog {
         id: removeDialog
-        title: "移除进度记录"
-        message: "删除「" + root.pendingTitle + "」的这条进度记录？不会删除源文件。"
-        acceptText: "移除"
+        title: qsTr("Remove progress record")
+        message: qsTr("Delete the progress record for “%1”? The source files are not deleted.")
+                     .arg(root.pendingTitle)
+        acceptText: qsTr("Remove")
         danger: true
         onAccepted: {
             ui.removeProgressFile(root.pendingRemove)

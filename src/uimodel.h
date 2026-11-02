@@ -40,6 +40,7 @@ namespace fetch { class ViewerModel; }
 class ProgressListModel;
 class Sequence;
 class QTimer;
+class QTranslator;
 
 namespace app {
 
@@ -101,6 +102,11 @@ public:
     //   图像（缩放）——唯一选项 = 算法（nearest | smooth | bicubic | lanczos2 | lanczos3）
     Q_PROPERTY(QString scaleAlgorithm READ scaleAlgorithm WRITE setScaleAlgorithm
                                        NOTIFY scaleAlgorithmChanged)
+    //   界面语言：**空串 = 跟随系统**；否则语言代码（`zh_CN` / `en` …）。
+    //   ★ 值就是存进设置的那一个；换语言 = 换 `QTranslator`（`/i18n/<代码>.qm`，没有就回退源串）。
+    Q_PROPERTY(QString language READ language WRITE setLanguage NOTIFY languageChanged)
+    //   实际生效的语言（`language` 为空时取系统 locale）—— 设置页显示"跟随系统（简体中文）"用。
+    Q_PROPERTY(QString effectiveLanguage READ effectiveLanguage NOTIFY languageChanged)
     //   场景图后端是不是软件渲染（只读，main.cpp 在 sceneGraphInitialized 时写一次）。
     Q_PROPERTY(bool softwareBackend READ softwareBackend NOTIFY softwareBackendChanged)
 
@@ -196,6 +202,9 @@ public:
     QString scaleAlgorithm() const;
     void setScaleAlgorithm(const QString &v);
     bool softwareBackend() const { return m_softwareBackend; }
+    QString language() const;            // 空 = 跟随系统
+    void setLanguage(const QString &code);
+    QString effectiveLanguage() const;   // 实际生效的语言代码（系统 locale 也解析过了）
     void setSoftwareBackend(bool on);   // 只给 main.cpp 用（探测到 graphicsApi 之后写一次）
 
 Q_SIGNALS:
@@ -218,6 +227,7 @@ Q_SIGNALS:
     void innerArchiveMaxMbChanged();
     void scaleAlgorithmChanged();
     void softwareBackendChanged();
+    void languageChanged();
     void slideshowIntervalMsChanged();
 
 private:
@@ -270,6 +280,9 @@ private:
 
     // ★★ 运行期设置的**唯一实例**（没有单例、没有第二个副本）
     AppSettings m_settings;
+    //   界面翻译：**只有一份**（换语言时摘掉旧的、装新的）。空 = 没有 .qm（源串即英文）。
+    QTranslator *m_translator = nullptr;
+    void applyLanguage();               // 按 m_settings.language() 装/摘翻译
     bool m_softwareBackend = false;     // 场景图后端 = software（main.cpp 探测后写一次）
 
     Source  m_src;

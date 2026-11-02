@@ -3,6 +3,7 @@
 #include "exifmeta.h"
 #include "gpuscale.h"
 
+#include <QCoreApplication>
 #include <QDebug>
 #include <QVariantMap>
 #include <QMetaObject>
@@ -362,7 +363,7 @@ void ViewerModel::onBeat()
         return;
     }
     const int next = nextScreen(screenStart(m_pos), +1);
-    if (next < 0) return stopPlaying(QStringLiteral("到头 · 幻灯片已停"));   // 与手动下一张一致
+    if (next < 0) return stopPlaying(tr("End reached · slideshow stopped"));   // 与手动下一张一致
     requestScreen(next, +1);
 }
 
@@ -405,7 +406,7 @@ void ViewerModel::runWanted(Want w, int arg, bool folded)
     case Want::Step: {
         const int next = nextScreen(screenStart(m_pos), arg);
         if (next < 0) {                 // 到头：折起来的那一次给个瞬时提示
-            if (folded) emit notice(QStringLiteral("到头"));
+            if (folded) emit notice(tr("End of list"));
             return;
         }
         return requestScreen(next, arg);
@@ -456,7 +457,7 @@ void ViewerModel::setPlaying(bool on)
     if (!m_seq || m_seq->count() <= 0) return;
     //   已经在最后一屏（不循环 / 区间到头）⇒ **不回到开头**，只给"到头"的瞬时提示
     if (nextScreen(screenStart(m_pos), +1) < 0) {
-        emit notice(QStringLiteral("到头"));
+        emit notice(tr("End of list"));
         return;
     }
     m_playing = true;
@@ -789,7 +790,8 @@ int ViewerModel::slotOf(int item) const
     return -1;
 }
 
-//   找一个槽给这一条：先找空槽；池满（上限 = L + 1）⇒ 丢掉"离当前位置最远、且已备好"的那个槽；
+//   找一个槽给这一条：先找空槽；池满（上限 = L + 一屏最多位置数）⇒ 丢掉
+//   "离当前位置最远、且已备好"的那个槽；
 //   找不到（没有可淘汰的备好槽）⇒ -1。
 //   ★ 池里只有"在飞 / 备好"两种槽 ⇒ 不会再有"不可淘汰的坏槽"把池堵死（坏因不在池里）。
 //   ★ **本屏的哪些条不离手**（双幅 2 条都算）。
@@ -801,7 +803,7 @@ int ViewerModel::takeSlot(int item)
             return s;
         }
     }
-    if (m_slots.size() < m_length + 1) {
+    if (m_slots.size() < m_length + kMaxPerScreen) {
         Slot s;
         s.item = item;
         m_slots << s;
@@ -932,8 +934,8 @@ void ViewerModel::screen(int start, const QVector<int> &items)
 //   · 元数据不截头字节：磁盘文件把**路径**交给解析器（它自己 seek），
 //     包内成员给整份字节（本来就在内存）—— 详见 exifmeta.h。
 namespace {
-const QString kSecFile  = QStringLiteral("文件");
-const QString kSecImage = QStringLiteral("图像");
+const QString kSecFile  = QCoreApplication::translate("fetch::ViewerModel", "File");
+const QString kSecImage = QCoreApplication::translate("fetch::ViewerModel", "Image");
 const QString kSecExif  = QStringLiteral("EXIF");
 
 QString humanBytes(qint64 n)
@@ -977,36 +979,36 @@ QVariantList ViewerModel::osdColumn(int idx)
     };
 
     // ── 文件（序列 + 上层给的上下文，不需要读盘）──
-    add(QStringLiteral("序号"), QStringLiteral("%1 / %2").arg(idx + 1).arg(totalPages()), kSecFile);
-    add(QStringLiteral("文件"), it.displayName, kSecFile);
+    add(tr("Index"), QStringLiteral("%1 / %2").arg(idx + 1).arg(totalPages()), kSecFile);
+    add(tr("File"), it.displayName, kSecFile);
     const QString tail = relativePathOf(idx);
-    if (tail != it.displayName) add(QStringLiteral("路径"), tail, kSecFile);   // 根目录下与文件名相同 ⇒ 不重复
-    add(QStringLiteral("文件夹"), it.folderLabel, kSecFile);
+    if (tail != it.displayName) add(tr("Path"), tail, kSecFile);   // 根目录下与文件名相同 ⇒ 不重复
+    add(tr("Folder"), it.folderLabel, kSecFile);
     //   ★ 2026-10-31：图集没了 ⇒ 这一行（图集标题）一并删掉
 
     // ── 图像（一次探测，不解码）──
     const imageread::Probe pb = imageread::probe(it.loc);
     if (pb.size.isValid()) {
         const QString dims = QStringLiteral("%1×%2").arg(pb.size.width()).arg(pb.size.height());
-        add(QStringLiteral("分辨率"), pb.rotated ? dims + QStringLiteral("（已按 EXIF 旋转）") : dims,
+        add(tr("Resolution"), pb.rotated ? dims + tr(" (rotated by EXIF)") : dims,
             kSecImage);
     }
     QString kind = pb.format.toUpper();
-    if (kind.isEmpty()) kind = QStringLiteral("未知");
+    if (kind.isEmpty()) kind = tr("Unknown");
     if (pb.pages > 1) kind += QStringLiteral(" %1/%2").arg(it.loc.page + 1).arg(pb.pages);
-    add(QStringLiteral("类型"), kind, kSecImage);
-    add(QStringLiteral("尺寸"), humanBytes(pb.bytes), kSecImage);
+    add(tr("Type"), kind, kSecImage);
+    add(tr("Size"), humanBytes(pb.bytes), kSecImage);
 
     // ── EXIF + 色彩空间（磁盘给路径、成员给整份字节；HEIC/AVIF 走 libheif）──
     exifmeta::Source src;
     if (it.loc.members.isEmpty()) src.path = it.loc.diskPath;
     else                          src.bytes = pb.memberBytes;
     const exifmeta::Info info = exifmeta::read(src, pb.format);
-    add(QStringLiteral("色彩空间"), info.colorSpace, kSecImage);
+    add(tr("Color space"), info.colorSpace, kSecImage);
     for (const auto &row : info.rows) add(row.first, row.second, kSecExif);
     if (info.total > info.rows.size())
-        add(QStringLiteral("其他"),
-            QStringLiteral("… 其余 %1 条").arg(info.total - info.rows.size()), kSecExif);
+        add(tr("Other"),
+            tr("… %1 more").arg(info.total - info.rows.size()), kSecExif);
     return rows;
 }
 

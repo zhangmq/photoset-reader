@@ -335,7 +335,6 @@ int main(int argc, char *argv[])
 
     QQmlApplicationEngine engine;
 
-
     // ★ 设置的 `load()` 移到 `UiModel` 构造里（设计 14 §9.3：运行期设置挂在它身上）——
     //   旧代码在这里 load 的**时机语义不变**：从这里到 `UiModel` 建出来之间，没有任何人读设置。
     // 命令行 `-d <目录>` 属"直接打开"：走文件系统，不建图集库记录（设计 11 §四）
@@ -378,6 +377,13 @@ int main(int argc, char *argv[])
     //   ★ **全局只有一个 VM** = `app::UiModel`（QML 里的 `ui`）——viewer（`ui.viewer.*`）由它持有；
     //     它自己就是 QML 侧的类型信息不需要额外注册（只有一个界面之后没有枚举要给 QML 读）。
     auto *ui = new app::UiModel(&app);
+    //   ★ 换语言：`UiModel` 负责装/摘 `QTranslator`，**界面重算在本行** ——
+    //     Qt 6 里 `installTranslator` **不会**让 QML 的 `qsTr()` 绑定自动重算（实测：
+    //     对话框文字保持旧语言），必须显式 `QQmlEngine::retranslate()`。
+    //     顺序有要求：`languageChanged` 是在新翻译装好**之后**才发的。
+    QObject::connect(ui, &app::UiModel::languageChanged, &engine,
+                     [&engine]() { engine.retranslate(); });
+
     engine.rootContext()->setContextProperty(QStringLiteral("ui"), ui);
     // focus-visible：全局记录输入来源
     qApp->installEventFilter(new InputSourceWatcher(ui, qApp));

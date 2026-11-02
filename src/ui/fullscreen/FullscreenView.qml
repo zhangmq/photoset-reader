@@ -284,7 +284,7 @@ Item {
 
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: qsTr("载入中…")
+                text: qsTr("Loading…")
                 color: Theme.textSecondary
                 font.pointSize: Theme.fontSm
             }
@@ -299,13 +299,13 @@ Item {
         visible: ui.viewer !== null && ui.viewer.totalPages === 0
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: ui.scanning ? qsTr("正在扫描…") : qsTr("这里没有可显示的图片")
+            text: ui.scanning ? qsTr("Scanning…") : qsTr("Nothing to show here")
             color: Theme.textPrimary
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: ui.scanning ? qsTr("已发现 %1 个文件").arg(ui.discoveredCount)
-                              : qsTr("换个目录，或右键 → 打开…")
+            text: ui.scanning ? qsTr("%1 files found").arg(ui.discoveredCount)
+                              : qsTr("Try another folder, or right-click → Open…")
             color: Theme.textCaption
             font.pointSize: Theme.fontSm
         }
@@ -397,9 +397,13 @@ Item {
 
     // ── OSD 信息面板：**只被 OSD 开关控制，不随控件条显隐**（用户 2026-10-11）──
     FullscreenOsd {
+        //   铺满可用宽（左右留边）：**OSD 的 bounding box 就是"两列外沿"的基准**
+        //   —— 左列贴左、右列贴右（见 FullscreenOsd.qml）
         anchors.left: parent.left
+        anchors.right: parent.right
         anchors.top: parent.top
         anchors.leftMargin: Theme.spaceLg
+        anchors.rightMargin: Theme.spaceLg
         anchors.topMargin: Theme.barH + Theme.spaceSm
         osdVisible: ui.viewer ? ui.viewer.osdVisible : false
         //   行由 viewer 按需读（`osdRows()`）：文件 / 图像 / EXIF 三组，
@@ -438,25 +442,25 @@ Item {
         const algoName = { nearest: "Nearest", smooth: "Smooth (Qt)", bicubic: "Bicubic",
                            lanczos2: "Lanczos 2", lanczos3: "Lanczos 3" }[algo] || ""
         return [
-            { text: "打开收藏夹", icon: Theme.icStarO, action: "open:favorites" },
-            { text: "打开进度文件", action: "open:saved" },
-            { text: "打开文件夹", action: "open:folder" },
-            { text: "打开压缩包", action: "open:archive" },
-            { text: "打开文件", action: "open:file" },
+            { text: qsTr("Open favorites"), icon: Theme.icStarO, action: "open:favorites" },
+            { text: qsTr("Open progress file"), action: "open:saved" },
+            { text: qsTr("Open folder"), action: "open:folder" },
+            { text: qsTr("Open archive"), action: "open:archive" },
+            { text: qsTr("Open file"), action: "open:file" },
             { sep: true },
             //   来源级动作：**重新扫描当前来源**（扫完会按最新磁盘内容重建 rows；
             //   已关联进度文件的，之后自动保存会把新 rows 写回去）
-            { text: "重新扫描", action: "rescan", enabled: ui.canRescan },
+            { text: qsTr("Rescan"), action: "rescan", enabled: ui.canRescan },
             { sep: true },
-            { text: "保存进度到收藏夹", action: "save:progress", enabled: ui.viewer !== null },
-            { text: "保存进度到文件", action: "save:progress-as", enabled: ui.viewer !== null },
+            { text: qsTr("Save progress to favorites"), action: "save:progress", enabled: ui.viewer !== null },
+            { text: qsTr("Save progress to file"), action: "save:progress-as", enabled: ui.viewer !== null },
             { sep: true },
             //   Chrome 式的缩放（用户 2026-11-02）：**一行控件** `缩放  [−] 100% [+]`，
             //   点百分比回到 100%；快捷键仍是 Ctrl+= / Ctrl+-。
             { zoomRow: true },
             //   ★ 这一组将来叫「图像处理」（用户 2026-10-31）；现在组里只有缩放算法一项。
             //     二级菜单（悬停展开）—— 5 档全列在主菜单里太长（用户）。
-            { text: "缩放算法", kind: "scale", hint: algoName, currentValue: algo,
+            { text: qsTr("Scale algorithm"), kind: "scale", hint: algoName, currentValue: algo,
               submenu: [
                   { label: "Nearest",     value: "nearest" },
                   { label: "Smooth (Qt)", value: "smooth" },
@@ -465,9 +469,9 @@ Item {
                   { label: "Lanczos 3",   value: "lanczos3" }
               ] },
             { sep: true },
-            { text: "设置", icon: Theme.icSettings, action: "settings" },
+            { text: qsTr("Settings"), icon: Theme.icSettings, action: "settings" },
             { sep: true },
-            { text: "退出", icon: Theme.icPower, hint: "Ctrl+Q", action: "quit" }
+            { text: qsTr("Quit"), icon: Theme.icPower, hint: "Ctrl+Q", action: "quit" }
         ]
     }
 
@@ -567,32 +571,32 @@ Item {
 
     ConfirmDialog {
         id: scanNotDoneDialog
-        title: "扫描还没完"
-        message: "等扫描完成后再收藏。"
-        acceptText: "知道了"
+        title: qsTr("Scan not finished")
+        message: qsTr("Wait for the scan to finish before adding to favorites.")
+        acceptText: qsTr("Got it")
         showReject: false
     }
     ConfirmDialog {
         id: incompleteSaveDialog
-        title: "扫描不完整"
-        message: "扫描不完整，确认保存进度吗？未扫描发现的文件不会被重新发现，建议完整扫描后收藏/保存。"
-        acceptText: "保存"
-        rejectText: "取消"
+        title: qsTr("Scan incomplete")
+        message: qsTr("Scanning incomplete. Save progress anyway? Files that were not scanned will not be found again; finish the scan before saving.")
+        acceptText: qsTr("Save")
+        rejectText: qsTr("Cancel")
         onAccepted: root.runPendingSave()
     }
     ConfirmDialog {
         id: cancelScanDialog
-        title: "取消扫描"
-        message: "要停止这次扫描吗？已经扫到的内容仍然可以查看。"
-        acceptText: "取消扫描"
-        rejectText: "继续扫描"
+        title: qsTr("Cancel scan")
+        message: qsTr("Stop this scan? What has been scanned so far is still browsable.")
+        acceptText: qsTr("Cancel scan")
+        rejectText: qsTr("Continue scanning")
         onAccepted: ui.cancelScan()
     }
     ConfirmDialog {
         id: unfavoriteDialog
-        title: "取消收藏"
-        message: "删除这条进度记录？不会删除源文件。"
-        acceptText: "取消收藏"
+        title: qsTr("Remove favorite")
+        message: qsTr("Delete this progress record? The source files are not deleted.")
+        acceptText: qsTr("Remove favorite")
         danger: true
         onAccepted: ui.removeFavorite()
     }
