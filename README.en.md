@@ -31,12 +31,34 @@ ctest --test-dir build --output-on-failure
 ./build/photoset-reader -d <folder|archive|image>
 ```
 
+## Documentation
+
+The user guide lives in the **wiki**: <https://github.com/zhangmq/photoset-reader/wiki> (Chinese).
+
 ## Install
 
-- **AppImage** (single file): `dist/photoset-reader-<version>-x86_64.AppImage`
-- **Portable tarball** (bundles Qt and the third-party libs): `dist/photoset-reader-<version>-linux.tar.zst`
-- **From source**: `cmake --build build && sudo cmake --install build --prefix /usr/local`
-  (installs the binary, desktop entry, icon set and license files)
+> ⚠️ **No prebuilt packages yet** (`0.1.0` is a development build). AppImage and the portable
+> tarball will ship with the first release; for now build from source.
+
+```bash
+git clone https://github.com/zhangmq/photoset-reader.git
+cd photoset-reader
+./scripts/install.sh                      # installs into ~/.local (no root), sets up desktop integration
+./scripts/install.sh --prefix /usr/local  # system-wide (needs sudo)
+```
+
+The script checks dependencies (prints the install command when something is missing, see
+`scripts/install-deps.sh`), builds Release, runs the tests, then `cmake --install`
+(binary, `.desktop`, icon set, license files).
+
+Manual equivalent:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j"$(nproc)"
+ctest --test-dir build --output-on-failure
+cmake --install build --prefix "$HOME/.local"
+```
 
 ## Release
 

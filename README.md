@@ -30,21 +30,41 @@ ctest --test-dir build --output-on-failure
 ./build/photoset-reader -d <目录|压缩包|图片>
 ```
 
+## 文档
+
+详细使用说明在 **Wiki**：<https://github.com/zhangmq/photoset-reader/wiki>
+
+- [安装](https://github.com/zhangmq/photoset-reader/wiki/安装) · [使用](https://github.com/zhangmq/photoset-reader/wiki/使用) · [快捷键](https://github.com/zhangmq/photoset-reader/wiki/快捷键)
+- [进度与收藏夹](https://github.com/zhangmq/photoset-reader/wiki/进度与收藏夹) · [格式支持](https://github.com/zhangmq/photoset-reader/wiki/格式支持) · [设置说明](https://github.com/zhangmq/photoset-reader/wiki/设置说明)
+- [常见问题](https://github.com/zhangmq/photoset-reader/wiki/常见问题) · [开发与构建](https://github.com/zhangmq/photoset-reader/wiki/开发与构建)
+
 ## 安装
 
-| 形态 | 产物 | 说明 |
-|---|---|---|
-| **完整依赖版** | `dist/photoset-reader-<版本>-linux.tar.zst`（`scripts/package-linux.sh`） | 自带 Qt 与全部第三方库，解压即用（约 190 MB） |
-| **AppImage** | `dist/photoset-reader-<版本>-x86_64.AppImage`（`scripts/package-appimage.sh`） | 单文件，双击即用（约 25 MB） |
-| **系统依赖版** | 用下面的 `cmake --install` 自己装 | 最小（约 9 MB），依赖发行版自带的 Qt6 与解码库；依赖清单见 `scripts/install-deps.sh --check` |
+> ⚠️ **预编译包尚未发布**（当前 `0.1.0` 是开发版）：AppImage 与"完整依赖版"要等正式发版。
+> **现在只能用源码构建安装。**
 
-从源码安装（`cmake --install` 装可执行、桌面入口、全套图标、许可）：
+```bash
+git clone https://github.com/zhangmq/photoset-reader.git
+cd photoset-reader
+./scripts/install.sh                      # 默认装到 ~/.local（不需要 root），顺手装桌面集成
+./scripts/install.sh --prefix /usr/local  # 系统级（需要 sudo）
+```
+
+脚本会：检查依赖（缺了就打印安装命令，见 `scripts/install-deps.sh`）→ Release 构建 → 跑测试 →
+`cmake --install`（可执行 / `.desktop` / 全套图标 / 许可）→ 装到用户目录时顺手做桌面集成。
+其它参数：`--deps-only`、`--install-deps`、`--no-tests`、`--no-desktop`、`-j N`。
+
+手工等价步骤：
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j"$(nproc)"
-sudo cmake --install build --prefix /usr/local
+ctest --test-dir build --output-on-failure
+cmake --install build --prefix "$HOME/.local"
 ```
+
+依赖：CMake ≥ 3.21、C++20、Qt 6（Widgets / Quick / QuickControls2 / ShaderTools / DBus / LinguistTools）、
+libarchive、libexif、libheif、liblzma、zlib、libunrar。
 
 ## 发布
 
