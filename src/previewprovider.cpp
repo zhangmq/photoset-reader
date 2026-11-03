@@ -9,6 +9,16 @@ QImage PreviewProvider::requestImage(const QString &id, QSize *size, const QSize
 {
     Q_UNUSED(requestedSize);              // 目标尺寸由 GUI 线程算好放在表里（按条目的宽高比）
 
+    //   ① 批量并行解码已经放好 ⇒ 直接返回（这条是"整条一次性上屏"的关键）
+    {
+        QMutexLocker lk(&m_store->mutex);
+        const auto it = m_store->images.constFind(id);
+        if (it != m_store->images.constEnd()) {
+            if (size) *size = it.value().size();
+            return it.value();
+        }
+    }
+
     PreviewStore::Entry entry;
     {
         QMutexLocker lk(&m_store->mutex);
@@ -29,9 +39,9 @@ QImage PreviewProvider::requestImage(const QString &id, QSize *size, const QSize
     if (img.isNull()) return {};
 
     {
-        QMutexLocker lk(&m_cacheMutex);
-        if (m_cache.size() > 64) m_cache.clear();           // 粗暴但足够：最多 12 张一代
-        m_cache.insert(id, img);
+        QMutexLocker lk(&m_store->mutex);
+        m_store->images.insert(id, img);                    // 回填，下次直接命中
+        if (m_store->images.size() > 512) m_store->images.clear();
     }
     if (size) *size = img.size();
     return img;

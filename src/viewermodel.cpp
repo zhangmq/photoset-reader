@@ -11,6 +11,8 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <QtConcurrent>
+#include <QFutureWatcher>
 #include <chrono>
 
 namespace fetch {
@@ -957,7 +959,9 @@ QVariantMap ViewerModel::previewStrip(int center, int heightPx, int maxWidthPx, 
     const int w = widthOf(center);
     const double wanted = maxWidthPx / 2.0 - (leftSum + w / 2.0);
     const double stripX = qMin(0.0, qMax(double(maxWidthPx - rowW), wanted));
-    const double fx = qMax(0.0, qMin(double(maxWidthPx - w), stripX + leftSum));
+    //   ★ 定位框**不夹取**（用户 2026-11-04 取消该规则）：边缘处的图可能被窗口裁掉一截，
+    //     框必须跟着那张图的真实位置走（超出部分由容器的 clip 自然裁掉），否则会对不齐。
+    const double fx = stripX + leftSum;
     result.insert(QStringLiteral("stripX"), int(qRound(stripX)));   // 整条该在哪（Row 的唯一来源）
     result.insert(QStringLiteral("focusX"), int(qRound(fx)));
     result.insert(QStringLiteral("focusW"), w);
@@ -989,7 +993,93 @@ QVariantMap ViewerModel::previewStrip(int center, int heightPx, int maxWidthPx, 
         if (m_previewStore->entries.size() > 512) m_previewStore->entries.clear();
     }
     result.insert(QStringLiteral("items"), items);
+
+    //   ★ 批量并行解码（用户 2026-11-04）：**只解缺的**（已经缓存过的直接复用）
+    //     ⇒ 指针滑动时通常只多 1–2 张新图，解码量与延迟都很小；停在哪一页都能**立刻**出图，
+    //     不需要"停下等一会儿再解"那种 debounce（那样会明显拖慢响应）。
+    QVector<PreviewJob> jobs;
+    jobs.reserve(idx.size());
+    int cached = 0;
+    {
+        QMutexLocker lk(&m_previewStore->mutex);
+        for (int i : idx) {
+            const int iw = widthOf(i);
+            const QString key = QStringLiteral("%1-%2").arg(heightPx).arg(i);
+            if (m_previewStore->images.contains(key)) { ++cached; continue; }
+            PreviewJob j;
+            j.key    = key;
+            j.loc    = m_seq->at(i).loc;
+            j.target = QSize(iw * 2, heightPx * 2);
+            jobs.append(j);
+        }
+    }
+    ++m_previewBatch;
+    result.insert(QStringLiteral("batch"), m_previewBatch);
+    m_previewPendingJobs  = jobs;
+    m_previewPendingBatch = m_previewBatch;
+
+    //   这一批"要哪些 key"记下来 —— 界面用它查"现在是否都就绪"（不靠完成事件推进状态）
+    {
+        QStringList keys;
+        keys.reserve(idx.size());
+        for (int i : idx) keys << QStringLiteral("%1-%2").arg(heightPx).arg(i);
+        m_previewBatchKeys.insert(m_previewBatch, keys);
+        while (m_previewBatchKeys.size() > 8) {        // 只留最近几批（够查就绪即可）
+            int oldest = m_previewBatch;
+            for (auto it = m_previewBatchKeys.constBegin(); it != m_previewBatchKeys.constEnd(); ++it)
+                oldest = qMin(oldest, it.key());
+            m_previewBatchKeys.remove(oldest);
+        }
+    }
+
+    if (!jobs.isEmpty() && !m_previewRunning)
+        startPreviewBatch(jobs);            // 空闲 ⇒ 立刻开始（不等待、不 debounce）
+    Q_UNUSED(cached);
     return result;
+}
+
+//   批量并行解码：一批里的缩略图在**线程池**里并行解出来；**同一时刻只跑一批**
+void ViewerModel::startPreviewBatch(const QVector<PreviewJob> &jobs)
+{
+    if (jobs.isEmpty() || !m_previewStore) return;
+    m_previewRunning = true;
+
+    const auto store = m_previewStore;
+    if (!m_previewWatcher) {
+        m_previewWatcher = new QFutureWatcher<int>(this);
+        //   ★ 一批结束时**采样当前位置**（用户 2026-11-04）：
+        //     刚跑完的不是最新请求 ⇒ 立刻为最新那页起下一批（中间滑过的位置不排队、不额外起批次）；
+        //     是最新 ⇒ 标记就绪，QML 换上新内容。
+        QObject::connect(m_previewWatcher, &QFutureWatcherBase::finished, this, [this] {
+            m_previewRunning = false;
+            ++m_previewCacheVersion;                 // 缓存变了 ⇒ 界面按当前位置重查
+            emit previewCacheChanged();
+            //   ★ 跑完的这批不是最新请求 ⇒ **为最新位置接着起下一批**（采样，不排队）
+            if (m_previewPendingBatch != m_previewBatch && !m_previewPendingJobs.isEmpty())
+                startPreviewBatch(m_previewPendingJobs);
+        });
+    }
+    m_previewWatcher->setFuture(QtConcurrent::mapped(jobs, [store](const PreviewJob &j) {
+        const QImage img = imageread::imageScaled(j.loc, j.target);
+        if (!img.isNull()) {
+            QMutexLocker lk(&store->mutex);                 // 锁只护内存读写，锁里不解码
+            store->images.insert(j.key, img);
+            if (store->images.size() > 512) store->images.clear();
+        }
+        return 0;
+    }));
+}
+
+//   "这一批现在是否都就绪" —— **查询**（按 key 查缓存），不是状态推进
+bool ViewerModel::previewBatchReady(int batch) const
+{
+    if (!m_previewStore) return false;
+    const auto it = m_previewBatchKeys.constFind(batch);
+    if (it == m_previewBatchKeys.constEnd() || it.value().isEmpty()) return false;
+    QMutexLocker lk(&m_previewStore->mutex);
+    for (const QString &k : it.value())
+        if (!m_previewStore->images.contains(k)) return false;
+    return true;
 }
 
 int ViewerModel::previewItemWidth(int index, int heightPx) const

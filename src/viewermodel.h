@@ -48,8 +48,12 @@
 //     · 析构 = **记号 + 标记失效**（见 .cpp 的 `Poster`）。
 
 #include <QHash>
+#include <atomic>
 #include <QImage>
 #include <QObject>
+
+template <typename T> class QFutureWatcher;
+#include <QImage>
 #include <QVector>
 
 #include <functional>
@@ -169,6 +173,14 @@ public:
     Q_INVOKABLE QVariantMap previewStrip(int center, int heightPx, int maxWidthPx, int gapPx);
     //   预览条里"第 index 条"的**显示宽度**（数据来自序列本身，不看预览条里有没有它）
     Q_INVOKABLE int previewItemWidth(int index, int heightPx) const;
+
+    //   ★ 预览缩略图的批量解码（用户 2026-11-04）：
+    //     · `previewStrip()` 为当前这一批起并行解码，**解完只更新缓存**，不去"直接给界面赋值"；
+    //     · `previewCacheVersion` 只在缓存变化时 +1（界面据此**按当前位置查**是否就绪）；
+    //     · `previewBatchReady(batch)` = 这一批要的图现在**是否都在缓存里**（查询，不是状态推进）。
+    Q_PROPERTY(int previewCacheVersion READ previewCacheVersion NOTIFY previewCacheChanged)
+    int previewCacheVersion() const { return m_previewCacheVersion; }
+    Q_INVOKABLE bool previewBatchReady(int batch) const;
     //   预览用的共享表（由 `UiModel` 持有、provider 读取）
     void setPreviewStore(const std::shared_ptr<PreviewStore> &store) { m_previewStore = store; }
     //   把 pan 夹回当前 zoom/视口允许的范围（视口/dpr 变化后必须调，否则 VM 与渲染不一致）
@@ -214,6 +226,7 @@ Q_SIGNALS:
     void zoomChanged();
     //   ★ 解码失败且原因是密码：`item` = 条目下标，`level` = 层号（0 = 最外层容器）
     void passwordRequired(int item, int level);
+    void previewCacheChanged();
     void panChanged();
     void zoomLockedChanged();
     void osdVisibleChanged();
@@ -340,7 +353,18 @@ private:
     QVector<Slot> m_slots;                   // 一张槽位表（池上限 = L + 1）
     //   坏因小表：条目 → 坏因。**不占** `L + 1` 的额度；**同一次查看内一直保留**
     //   （这就是"坏不重试"的依据）；换来源（`setSequence`）时清空。
+    struct PreviewJob { QString key; imageread::Location loc; QSize target; };
     std::shared_ptr<PreviewStore> m_previewStore;   // 预览位置表（provider 线程读）
+    int m_previewBatch = 0;           // 最近一批的批号
+    int m_previewCacheVersion = 0;    // 缓存变化计数（界面据此重查）
+    QHash<int, QStringList> m_previewBatchKeys;   // 批号 → 这一批要的 key（查就绪用）
+    //   ★ 批次调度（用户 2026-11-04）：**同一时刻只跑一批**；跑完时再看"当前要的是哪一页"，
+    //     不是最新就接着为最新那页起下一批 —— 中间滑过的位置不排队、也不额外起批次。
+    bool     m_previewRunning = false;
+    QVector<PreviewJob> m_previewPendingJobs;   // 最近一次请求"还缺的那几张"
+    int      m_previewPendingBatch = 0;         // 对应的批号
+    QFutureWatcher<int> *m_previewWatcher = nullptr;
+    void startPreviewBatch(const QVector<PreviewJob> &jobs);
     QHash<int, Bad> m_bad;
     QHash<int, int> m_badLevel;       // item → 密码层号（只对 Bad::NeedsPassword 有意义）
     int             m_promptedItem = -1;   // 已经为哪一条问过密码（不重复问）

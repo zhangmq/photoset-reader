@@ -20,7 +20,9 @@ struct PreviewStore {
         QSize               target;      // 解码目标（已按 2x 放大，供高 DPI）
     };
     QMutex               mutex;
-    QHash<QString, Entry> entries;       // key = "<generation>-<index>"
+    QHash<QString, Entry> entries;       // key = "<解码高度>-<index>" → 位置 + 解码目标
+    //   批量并行解码的结果（GUI/工作线程写、provider 线程读；锁只护读写，锁里不解码）
+    QHash<QString, QImage> images;
 };
 
 class PreviewProvider : public QQuickImageProvider

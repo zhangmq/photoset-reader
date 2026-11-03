@@ -391,6 +391,9 @@ Item {
         osdVisible: ui.viewer ? ui.viewer.osdVisible : false
         overlaysVisible: root.showUi
         previewEnabled: ui.previewStrip
+        previewReadyProbe: function (batch) {
+            return ui.viewer ? ui.viewer.previewBatchReady(batch) : false
+        }
         onPrevRequested: { if (ui.viewer) ui.viewer.stepPage(-1) }
         onNextRequested: { if (ui.viewer) ui.viewer.stepPage(1) }
         //   ★ 没有 viewer 时改**全局默认**（打开下一个来源时生效）；有 viewer 时只改当前阅读态
@@ -425,6 +428,7 @@ Item {
             const imgH = Theme.timelinePreviewH - Theme.spaceSm * 2
             bottomBar.previewData = (ui.previewStrip && ui.viewer)
                     ? ui.viewer.previewStrip(index, imgH, bottomBar.width, Theme.spaceSm) : ({})
+            bottomBar.syncPreviewShown()      // 缓存已命中（batch 已就绪）⇒ 立即换上
         }
     }
 
@@ -441,6 +445,13 @@ Item {
         osdVisible: ui.viewer ? ui.viewer.osdVisible : false
         //   行由 viewer 按需读（`osdRows()`）：文件 / 图像 / EXIF 三组，
         //   EXIF 是**动态的**（不同图片标签不同）⇒ 面板不再有固定字段
+    }
+
+    //   预览缩略图缓存变化 ⇒ 按**当前请求**重查一次就绪状态（不靠完成事件推进）
+    Connections {
+        target: ui.viewer
+        ignoreUnknownSignals: true
+        function onPreviewCacheChanged() { bottomBar.syncPreviewShown() }
     }
 
     // ── 窗口全屏：状态在 ViewModel，窗口跟随（照 vsr-player 的双向同步）──

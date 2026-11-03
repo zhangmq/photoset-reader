@@ -74,7 +74,8 @@ Rectangle {
 
                 Image {
                     anchors.fill: parent
-                    source: modelData.url
+                    //   一批全部解完才一起赋值 ⇒ 不再"一张一张出"
+                    source: root.batchReady ? modelData.url : ""
                     //   ★ 立刻占位、异步出图：条先出来，缩略图逐张填（用户 2026-11-03）
                     asynchronous: true
                     cache: true
@@ -90,6 +91,9 @@ Rectangle {
     //   position = f(index, 该条 items 的宽度)   —— 整条该在哪 + 该条之前的累计宽
     //   width    = f(该条自己的宽高比)           —— 不看预览条里有没有它
     //   本组件**不再自己算**，只负责画与过渡动画（用户 2026-11-03）
+    //   这一批的图**是否都已就绪**（由上层按当前位置查询得出）：就绪才给 Image 源
+    //   ⇒ **整条一次性上屏**；未就绪时保持上一份内容（上层控制），不会出现"两次连续赋值"
+    property bool batchReady: false
     property real focusX: 0
     property real focusW: 0
     //   预览条里"指针正指着的那一张"（-1 = 没有）。**frame 跟着它走**，
@@ -113,7 +117,7 @@ Rectangle {
     readonly property real frameXNow: {
         if (!hoverItem) return focusX
         var x = stripX + hoverItem.x
-        return Math.max(0, Math.min(width - hoverItem.w, x))
+        return x          // 不夹取：边缘图被裁时，框仍按图片真实位置画（容器 clip 负责裁）
     }
     readonly property real frameWNow: hoverItem ? hoverItem.w : focusW
 

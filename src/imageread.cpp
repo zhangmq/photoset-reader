@@ -97,9 +97,9 @@ QByteArray readBytesAt(const QString &diskPath, const QStringList &containerChai
     const auto pwAt = [&passwords](int level) {
         return (level >= 0 && level < passwords.size()) ? passwords.at(level) : QString();
     };
-    QMutexLocker lk(&g_innerMutex);
-
-    // ① 目标就在**盘上那个容器**里（没有内层包要物化）
+    // ① 目标就在**盘上那个容器**里（没有内层包要物化）—— **不需要全局锁**：
+    //   句柄缓存是 thread_local，每个解码线程各自一份 ⇒ 批量并行解码才能真正并行
+    //   （用户 2026-11-04 实测：包内 13 张缩略图串行要 1–2s）
     if (containerChain.isEmpty()) {
         ArchiveSource *outer = openCachedArchive(diskPath, pwAt(0));
         if (!outer) {
@@ -114,6 +114,8 @@ QByteArray readBytesAt(const QString &diskPath, const QStringList &containerChai
         return bytes;
     }
 
+    // ② 区间内 ⇒ 复用已物化的内层包（**共享单槽**，从这里开始才需要全局锁）
+    QMutexLocker lk(&g_innerMutex);
     // ② 区间内 ⇒ 复用已物化的内层包（翻页 / 缩略图 / 预取反复读都靠这条）
     if (g_inner.src.isOpen() && g_inner.diskPath == diskPath && g_inner.chain == containerChain
         && g_inner.passwords == passwords) {

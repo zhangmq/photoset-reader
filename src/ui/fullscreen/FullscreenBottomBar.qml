@@ -67,7 +67,16 @@ Item {
     //     · 显隐：**只看指针在哪儿**（进度条 / 预览条），不用延时收起；
     //     · 它在底栏内部，但"预览条在屏"会让底栏不淡出（`previewStripVisible` 进 `showUi`）。
     property bool   previewEnabled: true
-    property var    previewData: ({})
+    //   就绪**查询**（由上层绑定到 `ui.viewer.previewBatchReady`）——不靠完成事件推进状态
+    property var    previewReadyProbe: function(batch) { return false }
+    property var    previewData: ({})           // **最新**请求
+    //   ★ 正在显示的那一份：**新批次就绪才换**（用户 2026-11-04）——
+    //     指针滑走时旧的一批还在解，界面保持上一份内容，不会先空一块再跳。
+    property var    previewShown: ({})
+    function syncPreviewShown() {
+        const b = previewData.batch ?? 0
+        if (b > 0 && previewReadyProbe(b)) previewShown = previewData
+    }
     //   ★ 指针扫动时的换页**节流**（throttle，不是 debounce）：持续移动也按间隔换页
     readonly property int previewDelayMs: 600
     property real   previewLastAt: 0          // 上次真正换页的时刻（节流窗口起点）
@@ -156,13 +165,16 @@ Item {
         anchors.bottom: timeline.top
         anchors.left: parent.left
         width: parent.width
-        items: root.previewData.items ?? []
-        stripX: root.previewData.stripX ?? 0
-        focusX: root.previewData.focusX ?? 0
-        focusW: root.previewData.focusW ?? 0
+        //   ★ 显示**已就绪的那一份**（`previewShown`）；未就绪时保持上一份，不会空一块再跳
+        items: root.previewShown.items ?? []
+        batchReady: (root.previewShown.batch ?? 0) > 0
+                    && root.previewReadyProbe(root.previewShown.batch ?? 0)
+        stripX: root.previewShown.stripX ?? 0
+        focusX: root.previewShown.focusX ?? 0
+        focusW: root.previewShown.focusW ?? 0
         //   显示条件：指针在**进度条** 或 在**预览条**里（用户 2026-11-03）
         visible: root.previewEnabled && (timeline.hovered || hovered)
-                 && (root.previewData.items ? root.previewData.items.length > 0 : false)
+                 && (root.previewShown.items ? root.previewShown.items.length > 0 : false)
         onItemClicked: function (i) { root.seeked(i) }      // 点缩略图 = 跳到那一页
     }
     //   给上层用：预览条在屏 ⇒ 底栏不淡出
