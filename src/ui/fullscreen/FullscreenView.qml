@@ -407,7 +407,7 @@ Item {
             if (ui.viewer) ui.viewer.intervalMs = ms
             else ui.slideshowIntervalMs = ms
         }
-        onIntervalStep: function (dir) { ui.stepSlideshowInterval(dir) }   // 非线性步进在 C++ 里（唯一实现）
+        onIntervalStep: function (dir) { ui.stepSlideshowInterval(dir) }   // 分段步进在 C++（唯一实现）
         onPrevFolderRequested: { if (ui.viewer) ui.viewer.stepFolder(-1) }
         onNextFolderRequested: { if (ui.viewer) ui.viewer.stepFolder(1) }
         onZoomLockToggled: { if (ui.viewer) ui.viewer.zoomLocked = !ui.viewer.zoomLocked }

@@ -69,7 +69,7 @@ Item {
     signal nextFolderRequested()
     signal loopModeSelected(int mode)
     signal intervalSelected(int ms)
-    signal intervalStep(int dir)          // 加速 -1 / 减速 +1（步进是**非线性**的，由 C++ 按量级算）
+    signal intervalStep(int dir)          // 加速 -1 / 减速 +1（分段步进见 app::slideshowStepMs）
     function openIntervalMenu() { intervalMenu.open() }   // 开发自检用（截图：菜单打开态）
     signal fitModeSelected(int mode)
     signal doublePageSelected(bool on)

@@ -197,9 +197,10 @@ public:
     // ── 幻灯片间隔（读写；值的家在 `m_settings`）──
     int  slideshowIntervalMs() const;
     void setSlideshowIntervalMs(int ms);
-    //   底栏「加速 / 减速」：非线性步进（`app::slideshowStepMs`），当前间隔是 viewer 的就动 viewer，
-    //   没有来源时动全局默认。dir = -1 加速 / +1 减速（与既有信号口径一致）
+    //   底栏「加速 / 减速」：按 `app::slideshowStepMs()` 的分段步进加减（clamp 到 [下限, 上限]）；
+    //   有 viewer 就动当前间隔，没有来源时动全局默认。dir = -1 加速 / +1 减速
     Q_INVOKABLE void stepSlideshowInterval(int dir);
+
 
     // ── 全局默认 ──
     int   fitMode() const;
