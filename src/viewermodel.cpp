@@ -120,10 +120,10 @@ void ViewerModel::onLoaded(quint64 epoch, int slot, const QImage &image, int pas
         if (passwordLevel >= 0 && !passwordUsed && nowHasPw) {
             // 丢弃（什么都不记）
         } else if (passwordLevel >= 0) {
-            //   ★ **要密码**：记专门的坏因（不能记 Unreadable —— 那会被永久跳过），
-            //     并把"哪一条 / 哪一层"报给上层去弹框（设计 22 §5.3）。
-            markBad(s.item, Bad::NeedsPassword);
-            emit passwordRequired(s.item, passwordLevel);
+            //   ★ **要密码**：记专门的坏因（不能记 Unreadable —— 那会被永久跳过），并带上
+            //     **层号**（弹框要靠它算"是哪个容器"）。这里**不弹框**：预取到的邻居缺密码
+            //     不该打断用户，弹框由"当前这一屏真的空着"决定（`maybeAskPassword` / 设计 22 §5.3）。
+            markBad(s.item, Bad::NeedsPassword, passwordLevel);
         } else {
             markBad(s.item, Bad::Unreadable);
         }

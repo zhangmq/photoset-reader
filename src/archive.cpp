@@ -600,7 +600,9 @@ QByteArray ArchiveSource::dataUnrar(int index) const
         delete seq;
         seq = new UnrarSeq;
         if (!seq->r.open(m_reopenPath, m_password, RAR_OM_EXTRACT)) {
-            qCWarning(lcScan).noquote() << QStringLiteral("[scan] libunrar reopen failed: %1")
+            //   ★ 每个解码线程都会各自重开一次 ⇒ 按路径只报一次（否则刷屏，用户 2026-11-03）
+            if (iblog::firstTime(QStringLiteral("scan/unrar-reopen:") + m_path))
+                qCWarning(lcScan).noquote() << QStringLiteral("[scan] libunrar reopen failed: %1")
                                    .arg(unrarErrorText(seq->r.openResult));
             delete seq;
             m_seqUnrar = nullptr;

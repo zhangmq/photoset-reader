@@ -239,7 +239,7 @@ void UiModel::openPath(const QString &path, int index)
 {
     if (path.isEmpty()) return;
     dropSource();
-    m_path = path;
+    m_path = QDir::cleanPath(path);      // ★ 统一形态（去掉尾随 `/`），见 Sequence::absClean
     m_sessionNotice.clear();                  // 换来源 ⇒ 瞬时提示重新计
     buildViewer();
     refreshScanning();
@@ -582,7 +582,7 @@ bool UiModel::hasUnsavedPasswords() const
 //   界面按宽度**中间省略**（头尾信息量最大）。
 QString UiModel::passwordPromptLabel(const QString &key) const
 {
-    const QString root = QFileInfo(m_path).absoluteFilePath();
+    const QString root = QDir::cleanPath(QFileInfo(m_path).absoluteFilePath());
     if (root.isEmpty() || key.isEmpty()) return key;
     if (key == root) return QFileInfo(m_path).fileName();
     if (key.startsWith(root + QLatin1String("!/")))
@@ -1057,7 +1057,7 @@ bool UiModel::writeProgress(const QString &filePath, bool quiet, bool savePasswo
     progressfile::Data d;
     d.meta.savedAt = QDateTime::currentSecsSinceEpoch();
     d.meta.title = progressfile::titleOf(m_path);
-    d.meta.sourcePath = fi.absoluteFilePath();
+    d.meta.sourcePath = QDir::cleanPath(fi.absoluteFilePath());   // ★ 统一形态（见 Sequence::absClean）
     d.meta.sourceKind = isDir ? Sequence::Kind::Folder : Sequence::Kind::Archive;
     d.meta.sourceMtime = fi.lastModified().toSecsSinceEpoch();
     d.meta.hidden = m_settings.scanHidden();
@@ -1075,7 +1075,7 @@ bool UiModel::writeProgress(const QString &filePath, bool quiet, bool savePasswo
     //     · 本次会话新输入的 ⇒ **只有用户同意**（`savePasswords`）才写。
     //   ★ 源本身是加密容器（根压缩包没有行）⇒ 密码写在元数据段
     {
-        const QString rootKey = m_src.seq->rootIsArchive() ? QFileInfo(m_path).absoluteFilePath()
+        const QString rootKey = m_src.seq->rootIsArchive() ? QDir::cleanPath(QFileInfo(m_path).absoluteFilePath())
                                                             : QString();
         if (!rootKey.isEmpty() && m_src.seq->hasStoredPassword(rootKey)
             && (m_src.seq->isPasswordSaved(rootKey) || savePasswords))
@@ -1181,14 +1181,14 @@ bool UiModel::openProgress(const QString &filePath)
     s.seq->restore(d.meta.sourcePath, d.rows, d.meta.sourceKind == Sequence::Kind::Archive);
     //   ★ 加密压缩包（2026-11-03）：进度文件里存了密码的容器行 ⇒ 灌进序列（条目已建好，
     //     `applyRowPasswords()` 会把每个条目的 `loc.passwords` 一并补齐）⇒ 浏览时不再弹框。
-    const QString srcKey = QFileInfo(d.meta.sourcePath).absoluteFilePath();
+    const QString srcKey = QDir::cleanPath(QFileInfo(d.meta.sourcePath).absoluteFilePath());
     if (!d.meta.sourcePassword.isEmpty())
         s.seq->setPassword(srcKey, d.meta.sourcePassword);      // ★ 源本身是加密容器
     s.seq->applyRowPasswords();
     s.seq->markPasswordsSaved();      // 文件里已有 ⇒ 不再问"是否保存"
     s.seq->syncItemPasswords();
     s.vm = new fetch::ViewerModel(m_settings.prefetchWindow(), nullptr);
-    m_path = d.meta.sourcePath;
+    m_path = QDir::cleanPath(d.meta.sourcePath);   // ★ 统一形态
     installViewer(s);
     if (m_src.vm) {
         m_src.vm->setDoublePage(d.meta.layout == 1);        // ★ 先还原版面，再按 chain/page 定位

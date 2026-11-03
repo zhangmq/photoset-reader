@@ -39,6 +39,14 @@ void sortNatural(QStringList &v)
               [](const QString &a, const QString &b) { return naturalCompare(a, b) < 0; });
 }
 
+//   ★ 绝对路径的**统一形态**：去掉尾随 `/`、合并重复分隔符。
+//     **密码表的 key 由它派生**：同一份来源，一次带尾随 `/`、一次不带，key 就不同 ⇒
+//     存过的密码对不上、又弹框（用户 2026-11-03 实测：收藏里 source 写成 `…/Dragon Ball/`）。
+QString absClean(const QString &p)
+{
+    return QDir::cleanPath(QFileInfo(p).absoluteFilePath());
+}
+
 QString joinRel(const QString &a, const QString &b)
 {
     if (a.isEmpty()) return b;
@@ -835,7 +843,7 @@ void Sequence::restore(const QString &rootPath, RowSource &src, bool rootIsArchi
 {
     clear();
     m_scanOptions = opt;                      // ★ 扫描参数**调用方传**（序列不读设置）
-    m_root = QFileInfo(rootPath).absoluteFilePath();
+    m_root = absClean(rootPath);
     m_recursive = true;
     m_archivePages = rootIsArchive;
     m_rootIsArchive = rootIsArchive;
@@ -872,7 +880,7 @@ void Sequence::startScan(const QString &path, int maxDepth, bool hidden, const S
     resetRows();
     m_scanOptions = opt;                      // ★ 扫描参数**调用方传**（序列不读设置）
     m_markMissingBySize = true;               // 扫描路径：尺寸读不到 ⇒ 标 missing
-    m_root = QFileInfo(path).absoluteFilePath();
+    m_root = absClean(path);
     m_recursive = true;
     m_archivePages = false;
     m_rootIsArchive = false;
@@ -1424,7 +1432,7 @@ void Sequence::sortNaturally()
 void Sequence::buildFromFolder(const QString &dir, bool recursive)
 {
     clear();
-    m_root = QFileInfo(dir).absoluteFilePath();
+    m_root = absClean(dir);
     m_recursive = recursive;
     m_rootIsArchive = false;
     m_markMissingBySize = false;
@@ -1520,7 +1528,7 @@ void Sequence::buildFromMultiPageFile(const QString &filePath, int pageCount)
 void Sequence::buildFromNames(const QString &archivePath, const QStringList &names)
 {
     clear();
-    m_root = QFileInfo(archivePath).absoluteFilePath();
+    m_root = absClean(archivePath);
     m_archivePages = true;
     m_rootIsArchive = true;
     m_markMissingBySize = false;
@@ -1547,7 +1555,7 @@ void Sequence::buildFromNames(const QString &archivePath, const QStringList &nam
 void Sequence::buildFromEntries(const QString &rootPath, const QVector<Item> &entries)
 {
     clear();
-    m_root = QFileInfo(rootPath).absoluteFilePath();
+    m_root = absClean(rootPath);
     m_markMissingBySize = false;
     for (const Item &it : entries) appendItem(it);
     finishAppend();
