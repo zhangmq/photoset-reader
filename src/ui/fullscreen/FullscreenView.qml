@@ -55,6 +55,9 @@ Item {
     // ── 幻灯片时的"鼠标静止"处理（参考 vsr-player 的 CursorAutoHide）────────
     //   播放中且鼠标静止 2.5 s ⇒ 隐藏指针并收起浮层；任何鼠标移动 / 按键立刻恢复。
     readonly property bool playing: ui.viewer ? ui.viewer.playing : false
+    //   指针是否在"功能区"（顶栏 / 底栏 / 预览条 / 弹层）
+    readonly property bool pointerInChrome: topBar.mouseInRegion || bottomBar.mouseInRegion
+                                            || bottomBar.popupOpen || bottomBar.previewStripVisible
     property bool cursorHidden: false
     function wakeUi() {
         if (root.cursorHidden)
@@ -67,7 +70,19 @@ Item {
         interval: 2500
         repeat: false
         running: root.playing
-        onTriggered: if (root.playing && !root.cursorHidden) root.cursorHidden = true
+        //   ★ 鼠标停在功能区（顶/底栏区域、预览条）⇒ **不自动隐藏**（用户 2026-11-04）：
+        //     否则播放中指针不动几秒，UI 连同指针一起消失，正在用的控件抓不到。
+        onTriggered: {
+            if (!root.playing || root.cursorHidden) return
+            if (root.pointerInChrome) { idleTimer.restart(); return }
+            root.cursorHidden = true
+        }
+    }
+    //   指针进入功能区 ⇒ 立刻恢复指针/浮层，并重新计时（避免"鼠标没动"被当成静止）
+    onPointerInChromeChanged: {
+        if (!root.pointerInChrome) return
+        if (root.cursorHidden) root.cursorHidden = false
+        if (root.playing) idleTimer.restart()
     }
     Connections {
         target: ui.viewer
@@ -391,9 +406,6 @@ Item {
         osdVisible: ui.viewer ? ui.viewer.osdVisible : false
         overlaysVisible: root.showUi
         previewEnabled: ui.previewStrip
-        previewReadyProbe: function (batch) {
-            return ui.viewer ? ui.viewer.previewBatchReady(batch) : false
-        }
         onPrevRequested: { if (ui.viewer) ui.viewer.stepPage(-1) }
         onNextRequested: { if (ui.viewer) ui.viewer.stepPage(1) }
         //   ★ 没有 viewer 时改**全局默认**（打开下一个来源时生效）；有 viewer 时只改当前阅读态

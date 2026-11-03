@@ -33,7 +33,7 @@ Rectangle {
         anchors.fill: parent
         hoverEnabled: true
         acceptedButtons: Qt.NoButton
-        onEntered: { root.hovered = true; root.updateHoverIndex(mouse.x) }
+        onEntered: { root.hovered = true; root.updateHoverIndex(mouseX) }   // onEntered 没有 mouse 形参
         onExited:  { root.hovered = false; root.hoverIndex = -1 }
         onPositionChanged: function (mouse) { if (containsMouse) root.updateHoverIndex(mouse.x) }
     }
@@ -74,8 +74,7 @@ Rectangle {
 
                 Image {
                     anchors.fill: parent
-                    //   一批全部解完才一起赋值 ⇒ 不再"一张一张出"
-                    source: root.batchReady ? modelData.url : ""
+                    source: modelData.url
                     //   ★ 立刻占位、异步出图：条先出来，缩略图逐张填（用户 2026-11-03）
                     asynchronous: true
                     cache: true
@@ -91,9 +90,7 @@ Rectangle {
     //   position = f(index, 该条 items 的宽度)   —— 整条该在哪 + 该条之前的累计宽
     //   width    = f(该条自己的宽高比)           —— 不看预览条里有没有它
     //   本组件**不再自己算**，只负责画与过渡动画（用户 2026-11-03）
-    //   这一批的图**是否都已就绪**（由上层按当前位置查询得出）：就绪才给 Image 源
-    //   ⇒ **整条一次性上屏**；未就绪时保持上一份内容（上层控制），不会出现"两次连续赋值"
-    property bool batchReady: false
+    //   （不再按"整批就绪"门控：条立即出现，图片由 provider 按需给，已缓存的立刻有）
     property real focusX: 0
     property real focusW: 0
     //   预览条里"指针正指着的那一张"（-1 = 没有）。**frame 跟着它走**，

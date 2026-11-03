@@ -25,6 +25,8 @@
 #include <QImageReader>
 #include <QMetaObject>
 #include <QStyleHints>
+#include <QElapsedTimer>
+#include <QThread>
 #include <QTimer>
 #include <QUrl>
 
@@ -176,6 +178,18 @@ void UiModel::applyLanguage()
 UiModel::~UiModel()
 {
     cancelRescan();              // 退出时后台重扫作废
+    //   ★ 退出前的**有界排空**（用户 2026-11-04：幻灯片播放中退出偶发段错误）：
+    //     播放中随时有解码线程在跑；进程直接退会让它们撞上库的静态析构。
+    //     这里最多等 300ms 让在飞的结果回来（等不到也照样退，不能卡住关窗）。
+    if (m_src.vm) {
+        m_src.vm->setPlaying(false);
+        m_src.vm->shutdownPreviewWork();
+        QElapsedTimer drain; drain.start();
+        while (m_src.vm->inFlightCount() > 0 && drain.elapsed() < 300) {
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+            QThread::msleep(2);
+        }
+    }
     if (m_inhibitCookie && m_src.vm) { m_src.vm->setPlaying(false); updateScreenSaverInhibit(); }
     autosaveProgress();          // 退出前补一次（有变化且条件满足才写）
     releaseNow(m_src);

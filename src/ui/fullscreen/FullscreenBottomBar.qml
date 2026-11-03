@@ -67,15 +67,15 @@ Item {
     //     · 显隐：**只看指针在哪儿**（进度条 / 预览条），不用延时收起；
     //     · 它在底栏内部，但"预览条在屏"会让底栏不淡出（`previewStripVisible` 进 `showUi`）。
     property bool   previewEnabled: true
-    //   就绪**查询**（由上层绑定到 `ui.viewer.previewBatchReady`）——不靠完成事件推进状态
-    property var    previewReadyProbe: function(batch) { return false }
     property var    previewData: ({})           // **最新**请求
     //   ★ 正在显示的那一份：**新批次就绪才换**（用户 2026-11-04）——
     //     指针滑走时旧的一批还在解，界面保持上一份内容，不会先空一块再跳。
     property var    previewShown: ({})
+    //   ★ 内容**立即**换（预览条要马上出现）；图片由 provider 按需给：
+    //     已解码的在缓存里 ⇒ 立刻就有；没解完的逐张补上（RAR 必须串行读，见 archive.cpp）。
     function syncPreviewShown() {
-        const b = previewData.batch ?? 0
-        if (b > 0 && previewReadyProbe(b)) previewShown = previewData
+        if (previewData && previewData.items && previewData.items.length > 0)
+            previewShown = previewData
     }
     //   ★ 指针扫动时的换页**节流**（throttle，不是 debounce）：持续移动也按间隔换页
     readonly property int previewDelayMs: 600
@@ -167,8 +167,6 @@ Item {
         width: parent.width
         //   ★ 显示**已就绪的那一份**（`previewShown`）；未就绪时保持上一份，不会空一块再跳
         items: root.previewShown.items ?? []
-        batchReady: (root.previewShown.batch ?? 0) > 0
-                    && root.previewReadyProbe(root.previewShown.batch ?? 0)
         stripX: root.previewShown.stripX ?? 0
         focusX: root.previewShown.focusX ?? 0
         focusW: root.previewShown.focusW ?? 0

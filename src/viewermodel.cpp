@@ -1070,6 +1070,12 @@ void ViewerModel::startPreviewBatch(const QVector<PreviewJob> &jobs)
     }));
 }
 
+void ViewerModel::shutdownPreviewWork()
+{
+    m_previewPendingJobs.clear();
+    m_previewPendingBatch = -1;          // 不会再起新批次
+}
+
 //   "这一批现在是否都就绪" —— **查询**（按 key 查缓存），不是状态推进
 bool ViewerModel::previewBatchReady(int batch) const
 {

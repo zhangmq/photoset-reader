@@ -181,6 +181,10 @@ public:
     Q_PROPERTY(int previewCacheVersion READ previewCacheVersion NOTIFY previewCacheChanged)
     int previewCacheVersion() const { return m_previewCacheVersion; }
     Q_INVOKABLE bool previewBatchReady(int batch) const;
+    //   退出前用：正在解码的条目数（有界排空用）
+    int inFlightCount() const { return m_inFlight; }
+    //   退出前用：停掉预览批次（不停在飞的那几个，只不再派新活）
+    void shutdownPreviewWork();
     //   预览用的共享表（由 `UiModel` 持有、provider 读取）
     void setPreviewStore(const std::shared_ptr<PreviewStore> &store) { m_previewStore = store; }
     //   把 pan 夹回当前 zoom/视口允许的范围（视口/dpr 变化后必须调，否则 VM 与渲染不一致）

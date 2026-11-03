@@ -216,6 +216,41 @@ QImage toSrgb(const QImage &in)
     return out.isNull() ? in : out;      // 转换失败（Qt 不支持的 profile）⇒ 保持原样
 }
 
+//   ★ 交给 Qt 之前先**认魔数**（2026-11-04，防段错误）：
+//     从压缩包里读出的字节若非已知图片格式（并发读 / 损坏导致的垃圾），
+//     `QImageReader` 会逐个插件试，Qt 的 RAW 插件（libraw）在非法输入上**段错误**
+//     （用户那份 core 的出错地址就在 kimg_raw.so）。认不出来 ⇒ 当作不可读。
+bool looksLikeImage(const QByteArray &b)
+{
+    if (b.size() < 18) return false;
+    const auto *p = reinterpret_cast<const uchar *>(b.constData());
+    const auto at = [p](int i) { return int(p[i]); };
+    if (at(0) == 0xFF && at(1) == 0xD8 && at(2) == 0xFF) return true;                 // JPEG
+    if (at(0) == 0x89 && at(1) == 0x50 && at(2) == 0x4E && at(3) == 0x47) return true; // PNG
+    if (b.startsWith("GIF87a") || b.startsWith("GIF89a")) return true;
+    if (at(0) == 'B' && at(1) == 'M') return true;                                     // BMP
+    if ((at(0) == 'I' && at(1) == 'I' && at(2) == 0x2A && at(3) == 0) ||
+        (at(0) == 'M' && at(1) == 'M' && at(2) == 0 && at(3) == 0x2A)) return true;    // TIFF 家族（含多数 RAW）
+    if (b.startsWith("RIFF") && b.mid(8, 4) == "WEBP") return true;
+    if (b.mid(4, 4) == "jP  " || b.mid(4, 4) == "jxl ") return true;                   // JP2 / JXL
+    if (at(0) == 0xFF && at(1) == 0x0A) return true;                                   // JXL codestream
+    if (at(0) == 0x76 && at(1) == 0x2F && at(2) == 0x31 && at(3) == 0x01) return true;  // EXR
+    if (b.startsWith("8BPS")) return true;                                             // PSD
+    if (b.startsWith("qoif")) return true;                                             // QOI
+    if (b.startsWith("DDS ")) return true;
+    if (at(0) == 0 && at(1) == 0 && at(2) == 1 && at(3) == 0) return true;              // ICO
+    if (b.startsWith("icns")) return true;
+    if (b.mid(4, 4) == "ftyp") return true;                                            // HEIF/AVIF/CR3
+    if (b.startsWith("FUJIFILM")) return true;                                         // RAF
+    if (at(0) == 'P' && at(1) >= '1' && at(1) <= '6') return true;                      // PNM
+    if (b.startsWith("/* XPM */") || b.startsWith("<?xml") || b.startsWith("<svg")) return true;
+    const int tgaType = at(2);      // TGA 无魔数：头部字段保守判断
+    if ((tgaType == 1 || tgaType == 2 || tgaType == 3 || tgaType == 9 || tgaType == 10 || tgaType == 11)
+        && (at(16) == 8 || at(16) == 15 || at(16) == 16 || at(16) == 24 || at(16) == 32))
+        return true;
+    return false;
+}
+
 class EntryReader
 {
 public:
@@ -231,6 +266,12 @@ public:
                                   loc.members.last(), loc.innerArchiveMaxMb * 1024 * 1024,
                                   loc.passwords, &passwordLevel);
             if (m_bytes.isEmpty()) return;
+            if (!looksLikeImage(m_bytes)) {   // 不是已知图片格式 ⇒ 不交给 Qt（防 libraw 崩）
+                qCDebug(lcDecode).noquote()
+                    << QStringLiteral("[decode] unrecognised member bytes, skipped: %1")
+                           .arg(loc.members.last());
+                return;
+            }
             m_buf.setData(m_bytes);
             if (!m_buf.open(QIODevice::ReadOnly)) return;
             m_r.setDevice(&m_buf);

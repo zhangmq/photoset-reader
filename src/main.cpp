@@ -1,6 +1,7 @@
 #include <QGuiApplication>
 #include <QIcon>
-#include <QApplication>          // 文件对话框用 QFileDialog（QtWidgets）；QApplication ⊂ QGuiApplication
+#include <QApplication>
+#include <QThreadPool>          // 文件对话框用 QFileDialog（QtWidgets）；QApplication ⊂ QGuiApplication
 #include <QStyleHints>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
@@ -545,5 +546,9 @@ int main(int argc, char *argv[])
                         parser.value(idxOpt).toInt(),
                         parser.isSet(popupOpt), parser.isSet(osdOpt), parser.value(seekOpt).toInt(), ui);
 
-    return app.exec();
+    const int rc = app.exec();
+    //   ★ 预览缩略图的批量解码跑在全局线程池里：退出前**有界等待**，避免进程退出时
+    //     还有解码在跑（与库的静态析构撞车）。等不到也走，不卡关窗。
+    QThreadPool::globalInstance()->waitForDone(300);
+    return rc;
 }
