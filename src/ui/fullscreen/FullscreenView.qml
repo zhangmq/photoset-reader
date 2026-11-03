@@ -79,10 +79,13 @@ Item {
     }
 
     // ── 浮层显隐：纯函数（照抄 vsr-player main.qml）──
+    //   ★ 显示条件（用户 2026-11-04 定稿）：
+    //     底栏 = 指针在底栏（轨道+控制条）内、或**预览条在屏**（不是"指针在预览条里"）；
+    //     预览条 = 指针在进度条 或 预览条内（见 `FullscreenBottomBar.previewStrip.visible`）。
     readonly property bool showUi: root.debugForceUi
                                    || (!root.cursorHidden
                                        && (topBar.mouseInRegion || bottomBar.mouseInRegion
-                                           || bottomBar.popupOpen))
+                                           || bottomBar.popupOpen || bottomBar.previewStripVisible))
     Component.onCompleted: {
         if (root.debugOpenSettings) {
             settingsDialog.tab = root.debugSettingsTab
@@ -423,7 +426,6 @@ Item {
             bottomBar.previewData = (ui.previewStrip && ui.viewer)
                     ? ui.viewer.previewStrip(index, imgH, bottomBar.width, Theme.spaceSm) : ({})
         }
-        onPreviewLeave: bottomBar.previewData = ({})
     }
 
     // ── OSD 信息面板：**只被 OSD 开关控制，不随控件条显隐**（用户 2026-10-11）──

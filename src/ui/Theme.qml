@@ -251,7 +251,9 @@ QtObject {
     // 列表视图（表格）列几何 —— **唯一定义处**，表头与行都读这里（§1.2 算法单一事实源）
     // 全屏浮层（照抄 vsr-player 的 OSD 几何）
     readonly property int osdHotZoneH: 40      // 顶/底浮层热区高
-    readonly property int osdTrackH:   14      // 时间轴行高
+    //   时间轴行高 = 轨道高（用户 2026-11-03）：原来行高 14、轨道 8 且贴底 ⇒
+    //   上面 6px 是"hover 区"，却被预览条压住 ⇒ 两个高度对不上，统一成同一个值。
+    readonly property int osdTrackH:   8
     readonly property int timelinePreviewH: 120  // 时间轴悬停预览条高度（固定）
     readonly property int osdCursorW:   2      // 时间轴游标宽
     // 开关几何 ← DSH Switch.module.css：36×20 轨道 + 16 圆形滑块 + 2 padding

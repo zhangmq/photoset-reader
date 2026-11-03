@@ -5,7 +5,7 @@ import AppUi
 //   · 图片占满窗口，本栏**覆盖其上**，不占布局（设计 §3.1）
 //   · 背景 = **不透明** `bgBase`（用户 2026-10-11：渐变 → 纯色 → 取消半透明）
 //   · **隐藏逻辑不用计时器**：可见性 = 鼠标是否在热区内
-//       `implicitHeight = osdHotZoneH(40) + osdTrackH(14) + barH(48)`
+//       `implicitHeight = osdTrackH(8) + barH(48)`
 //       —— 热区 + 时间轴 + 控制条**视作一个连续区域**，整块一个 HoverHandler
 //       （vsr-player 反面教训：三段各自判定会在段间留 6~8px 死带 → 鼠标穿过时
 //        "可见→消失→可见"）
@@ -62,15 +62,13 @@ Item {
     //     全屏窗口）照常可用 —— 它们改的是**全局默认**，打开文件后自动生效。
     property bool   hasSource: true
     //   ── 时间轴悬停预览（用户 2026-11-03）──
-    //   数据由上层（`FullscreenView` → `ui.viewer.previewStrip()`）填；本栏只负责摆和画
+    //   ── 悬停预览条（用户 2026-11-04 定稿的关系）──
+    //     · 数据：`previewData = { items, stripX, focusX, focusW }`，由上层调 `ui.viewer.previewStrip()` 填；
+    //     · 显隐：**只看指针在哪儿**（进度条 / 预览条），不用延时收起；
+    //     · 它在底栏内部，但"预览条在屏"会让底栏不淡出（`previewStripVisible` 进 `showUi`）。
     property bool   previewEnabled: true
-    //   预览条数据：`{ items, focusX, focusW }`（一次算完，减少中间态）
     property var    previewData: ({})
-    //   ★ 悬停预览的延迟（用户 2026-11-03 定 **600ms**，收起与换页**统一**用这一个值）：
-    //     · 离开进度条 ⇒ 延时收起（稍微挪开不会马上消失）
-    //     · 指针扫动   ⇒ **节流**（throttle，不是 debounce）：持续移动时也按 400ms 间隔换页，
-    //       不会出现"一直不动就一直不输出"（用户 2026-11-03 纠正）
-    property bool   previewVisible: false
+    //   ★ 指针扫动时的换页**节流**（throttle，不是 debounce）：持续移动也按间隔换页
     readonly property int previewDelayMs: 600
     property real   previewLastAt: 0          // 上次真正换页的时刻（节流窗口起点）
 
@@ -101,14 +99,42 @@ Item {
     signal osdToggled()
     signal seeked(int index)
     signal previewHover(int index)          // 鼠标进/移到进度条上（指到的条目）
-    signal previewLeave()
 
+    //   节流的尾随触发：到点用**最新**那一页换（持续移动也有输出）
+    Timer {
+        id: previewThrottleTimer
+        interval: root.previewDelayMs
+        onTriggered: {
+            root.previewLastAt = Date.now()
+            if (timeline.hovered)
+                root.previewHover(timeline.hoverIndex)
+        }
+    }
+    Connections {
+        target: timeline
+        function onHoveredChanged() {
+            if (timeline.hovered) {
+                previewThrottleTimer.stop()
+                root.previewLastAt = Date.now()
+                root.previewHover(timeline.hoverIndex)   // 刚进入进度条：立刻换
+            } else {
+                previewThrottleTimer.stop()
+            }
+        }
+        function onHoverIndexChanged() {
+            if (timeline.hovered) root.requestPreview()
+        }
+    }
+
+    //   ★ 控制条显示条件（用户 2026-11-03）：**指针在进度条 或 控制条**（不含预览条）
+    //   底栏（控制条）的显示条件：指针在**底栏**内（`barHover` 已覆盖"轨道 + 控制条"）
     readonly property bool mouseInRegion: barHover.hovered || timeline.pressed
+    readonly property bool timelineHovered: timeline.hovered     // 给上层判断"是否在进度条"
     readonly property bool popupOpen: fitMenu.visible || layoutMenu.visible
                                       || intervalMenu.visible || loopMenu.visible
-    implicitHeight: Theme.osdHotZoneH + Theme.osdTrackH + Theme.barH
+    implicitHeight: Theme.osdTrackH + Theme.barH
 
-    // 覆盖整个 UI 区域（40+14+48）的 hover 源 —— 见文件头注释
+    // 覆盖"进度条 + 控制条"的 hover 源 —— 见文件头注释
     HoverHandler { id: barHover }
 
     // ── 时间轴（贴控制条上沿）──
@@ -124,64 +150,23 @@ Item {
         onSeeked: function (i) { root.seeked(i) }
     }
 
-    // ── 悬停预览条：**紧贴进度条上方**（用户 2026-11-03）──
+    // ── 悬停预览条（在底栏内，但**不受底栏淡出影响**：它可见时底栏不会淡出）──
     TimelinePreview {
-        //   ★ 时间轴那一行高 `osdTrackH`(14)、轨道只有 `osdTrackLineH`(8) 且贴底 ⇒
-        //     直接贴 `timeline.top` 会留 6px 空隙；这里把底边再压下去 6px，**紧贴轨道上沿**
+        id: previewStrip
         anchors.bottom: timeline.top
-        anchors.bottomMargin: -(Theme.osdTrackH - Theme.osdTrackLineH)
         anchors.left: parent.left
         width: parent.width
         items: root.previewData.items ?? []
         stripX: root.previewData.stripX ?? 0
-        centered: root.previewData.centered ?? true
         focusX: root.previewData.focusX ?? 0
         focusW: root.previewData.focusW ?? 0
-        visible: root.previewEnabled && root.overlaysVisible && root.previewVisible
+        //   显示条件：指针在**进度条** 或 在**预览条**里（用户 2026-11-03）
+        visible: root.previewEnabled && (timeline.hovered || hovered)
                  && (root.previewData.items ? root.previewData.items.length > 0 : false)
+        onItemClicked: function (i) { root.seeked(i) }      // 点缩略图 = 跳到那一页
     }
-    //   鼠标进出 / 换条目 ⇒ 让上层去查数据（只在「条目变了」时查，避免每次移动都算）
-    //   ★ 离开进度条**延时**才收（250ms）：贴着边缘挪动 / 短暂划出时预览条不会闪掉
-    Timer {
-        id: previewHideTimer
-        interval: root.previewDelayMs
-        onTriggered: {
-            root.previewVisible = false
-            root.previewLeave()          // 真正收起时才清数据
-        }
-    }
-    //   节流的尾随触发：窗口末尾把**最新**的那一页换上去
-    Timer {
-        id: previewThrottleTimer
-        interval: root.previewDelayMs
-        onTriggered: {
-            root.previewLastAt = Date.now()
-            if (timeline.hovered)
-                root.previewHover(timeline.hoverIndex)
-        }
-    }
-    Connections {
-        target: timeline
-        function onHoveredChanged() {
-            if (timeline.hovered) {
-                previewHideTimer.stop()
-                previewThrottleTimer.stop()
-                root.previewVisible = true
-                root.previewLastAt = Date.now()
-                root.previewHover(timeline.hoverIndex)   // 刚进入：立刻出现
-            } else {
-                previewThrottleTimer.stop()
-                previewHideTimer.restart()   // 延时收起；期间重新进入 ⇒ stop()
-            }
-        }
-        function onHoverIndexChanged() {
-            if (timeline.hovered) {
-                previewHideTimer.stop()
-                root.previewVisible = true
-                root.requestPreview()        // 节流：持续移动也按间隔换页
-            }
-        }
-    }
+    //   给上层用：预览条在屏 ⇒ 底栏不淡出
+    readonly property bool previewStripVisible: previewStrip.visible
 
     // ── 控制条 ──
     Rectangle {

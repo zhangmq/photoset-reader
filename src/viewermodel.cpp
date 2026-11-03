@@ -913,7 +913,6 @@ QVariantMap ViewerModel::previewStrip(int center, int heightPx, int maxWidthPx, 
     QVariantList items;
     result.insert(QStringLiteral("items"), items);
     result.insert(QStringLiteral("stripX"), 0);
-    result.insert(QStringLiteral("centered"), true);
     result.insert(QStringLiteral("focusX"), 0);
     result.insert(QStringLiteral("focusW"), 0);
     if (!m_seq || m_seq->count() <= 0 || heightPx <= 0 || maxWidthPx <= 0 || !m_previewStore)
@@ -959,15 +958,16 @@ QVariantMap ViewerModel::previewStrip(int center, int heightPx, int maxWidthPx, 
     const double wanted = maxWidthPx / 2.0 - (leftSum + w / 2.0);
     const double stripX = qMin(0.0, qMax(double(maxWidthPx - rowW), wanted));
     const double fx = qMax(0.0, qMin(double(maxWidthPx - w), stripX + leftSum));
-    const bool centered = (wanted <= 0.0) && (wanted >= double(maxWidthPx - rowW));
     result.insert(QStringLiteral("stripX"), int(qRound(stripX)));   // 整条该在哪（Row 的唯一来源）
-    result.insert(QStringLiteral("centered"), centered);            // 居中 ⇒ 只有宽度过渡
     result.insert(QStringLiteral("focusX"), int(qRound(fx)));
     result.insert(QStringLiteral("focusW"), w);
 
     QHash<QString, PreviewStore::Entry> entries;
+    int xAcc = 0;                       // 该条在"条内"的左偏移（数据，供定位框按 hoverIndex 取用）
     for (int i : idx) {
         const int iw = widthOf(i);
+        const int ix = xAcc;
+        xAcc += iw + gap;
         const QString key = QStringLiteral("%1-%2").arg(heightPx).arg(i);
         PreviewStore::Entry e;
         e.loc    = m_seq->at(i).loc;
@@ -976,6 +976,7 @@ QVariantMap ViewerModel::previewStrip(int center, int heightPx, int maxWidthPx, 
 
         QVariantMap m;
         m.insert(QStringLiteral("index"), i);
+        m.insert(QStringLiteral("x"), ix);        // 条内左偏移（**数据**，不是渲染位置）
         m.insert(QStringLiteral("w"), iw);
         m.insert(QStringLiteral("h"), heightPx);
         m.insert(QStringLiteral("url"), QStringLiteral("image://preview/") + key);

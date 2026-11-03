@@ -25,6 +25,33 @@ Rectangle {
     radius: 0          // 不要圆角（用户 2026-11-03）
     clip: true
 
+    //   ★ 悬停目标**由指针 x 反查数据**（用户 2026-11-04：不再用"每张图一个 HoverHandler"）：
+    //     落在两张图之间的 spacing 上时取**最近的一张** —— 天然不会出现"没有目标"的空档，
+    //     也就不会在间距处把 hoverIndex 清掉、让框跳回 index 再跳回来。
+    //   用 MouseArea（API 最稳）：`acceptedButtons: NoButton` ⇒ 不吃点击，缩略图的 TapHandler 照常
+    MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+        acceptedButtons: Qt.NoButton
+        onEntered: { root.hovered = true; root.updateHoverIndex(mouse.x) }
+        onExited:  { root.hovered = false; root.hoverIndex = -1 }
+        onPositionChanged: function (mouse) { if (containsMouse) root.updateHoverIndex(mouse.x) }
+    }
+
+    //   指针 x（条内坐标）→ 条目：先找命中的，落在间距里就取最近的一条
+    function updateHoverIndex(px) {
+        if (items.length === 0) return
+        const lx = px - stripX
+        var best = -1, bestDist = Number.MAX_VALUE
+        for (var i = 0; i < items.length; ++i) {
+            const it = items[i]
+            if (lx >= it.x && lx <= it.x + it.w) { best = it.index; bestDist = 0; break }
+            const d = lx < it.x ? it.x - lx : lx - (it.x + it.w)
+            if (d < bestDist) { bestDist = d; best = it.index }
+        }
+        if (best >= 0) hoverIndex = best
+    }
+
     Row {
         id: row
         anchors.verticalCenter: parent.verticalCenter
@@ -40,6 +67,11 @@ Rectangle {
                 width: modelData.w
                 height: root.imgH
 
+                TapHandler {
+                    cursorShape: Qt.PointingHandCursor
+                    onTapped: root.itemClicked(modelData.index)
+                }
+
                 Image {
                     anchors.fill: parent
                     source: modelData.url
@@ -47,9 +79,8 @@ Rectangle {
                     asynchronous: true
                     cache: true
                     fillMode: Image.PreserveAspectCrop
-                    //   还没解出来时保持透明（不画空白块）
+                    //   还没解出来时保持透明（不画空白块）；悬停透明度由外层容器控制
                     opacity: status === Image.Ready ? 1 : 0
-                    Behavior on opacity { NumberAnimation { duration: Theme.durFast } }
                 }
             }
         }
@@ -61,23 +92,44 @@ Rectangle {
     //   本组件**不再自己算**，只负责画与过渡动画（用户 2026-11-03）
     property real focusX: 0
     property real focusW: 0
-    //   居中情形 ⇒ **位移不做过场动画**（宽度变会让 x 变几像素，别让它看起来在动）
-    property bool centered: true
+    //   预览条里"指针正指着的那一张"（-1 = 没有）。**frame 跟着它走**，
+    //   而条内容仍按 `index`（进度条上那一页）组织 —— 所以内容不会因悬停而重排（用户 2026-11-04）
+    property int  hoverIndex: -1
+    onVisibleChanged: if (!visible) hoverIndex = -1     // 收起时清掉，避免下次带着旧值
+    //   整条（`stripH` = 120）都是 hover 区（用户 2026-11-03）：
+    //   hover 覆盖整个预览区，指针落在条内任何位置都算"还在预览区里"
+    property bool hovered: false
+    //   指针离开**整条**才清 hoverIndex（中间经过 spacing 时保持上一次的目标）
+    onHoveredChanged: if (!hovered) hoverIndex = -1
+    signal itemClicked(int index)     // 点某张缩略图 ⇒ 跳转（用户 2026-11-03）
+
+    //   hoverIndex 在条内 ⇒ 用它的 (条内偏移, 宽) 算；否则退回 index 的那一份（focusX/focusW）
+    readonly property var hoverItem: {
+        if (hoverIndex < 0) return null
+        for (var i = 0; i < items.length; ++i)
+            if (items[i].index === hoverIndex) return items[i]
+        return null
+    }
+    readonly property real frameXNow: {
+        if (!hoverItem) return focusX
+        var x = stripX + hoverItem.x
+        return Math.max(0, Math.min(width - hoverItem.w, x))
+    }
+    readonly property real frameWNow: hoverItem ? hoverItem.w : focusW
 
     Rectangle {
-        visible: root.focusW > 0
-        x: root.focusX
+        visible: root.frameWNow > 0
+        x: root.frameXNow
         y: (root.height - root.imgH) / 2
-        width: root.focusW
+        width: root.frameWNow
         height: root.imgH
         color: "transparent"
         border.width: 2
         border.color: Theme.brand
         //   居中情形：只有宽度在变（x 跟着涨一半）；靠边情形：位移 + 宽度一起过渡
-        Behavior on x {
-            enabled: !root.centered        // 居中时框"不动"，只有靠边情形才位移过渡
-            NumberAnimation { duration: Theme.durMed; easing.type: Easing.OutCubic }
-        }
+        //   index 与 hoverIndex 走**同一个**过渡（用户 2026-11-04）：
+        //   位置和宽度都用 `Theme.durMed` 动画 —— 悬停换张时框是"滑过去"，不是直接跳
+        Behavior on x     { NumberAnimation { duration: Theme.durMed; easing.type: Easing.OutCubic } }
         Behavior on width  { NumberAnimation { duration: Theme.durMed; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: Theme.durFast } }
         opacity: visible ? 1 : 0
