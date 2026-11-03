@@ -971,6 +971,14 @@ void ViewerModel::judge()
     }
 }
 
+//   本屏有"等密码"拿不到的图（派生）：界面据此显示"无密码，无法查看"的占位
+bool ViewerModel::screenNeedsPassword() const
+{
+    if (!m_seq || m_seq->count() <= 0) return false;
+    const QVector<int> items = screenItems(screenStart(m_pos));
+    return screenWaitsPassword(items);
+}
+
 //   本屏有没有"要密码"的条目（有就**不跳屏**：停在原地等用户输密码，见设计 22 §5.3）
 bool ViewerModel::screenWaitsPassword(const QVector<int> &items) const
 {

@@ -303,6 +303,16 @@ Item {
         }
     }
 
+    // ★ 拒绝了密码 ⇒ 这张图拿不到：给一句说明，别只留一块空白（用户 2026-11-03）
+    //   弹框还在时不显示（由弹框说明情况）
+    Text {
+        anchors.centerIn: parent
+        z: 1
+        visible: ui.viewer !== null && ui.viewer.screenNeedsPassword && !ui.passwordPromptVisible
+        text: qsTr("No password, cannot view")
+        color: Theme.textSecondary
+    }
+
     // ★ 空来源（打开成功但 0 条）：别留一整块黑。扫描中报进度，扫完给说明。
     Column {
         anchors.centerIn: parent

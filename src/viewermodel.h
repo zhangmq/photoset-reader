@@ -80,6 +80,9 @@ class ViewerModel : public QObject
     Q_PROPERTY(QString prevFolderName READ prevFolderName NOTIFY currentChanged)
     Q_PROPERTY(QString nextFolderName READ nextFolderName NOTIFY currentChanged)
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
+    //   ★ 本屏有"等密码"拿不到的图（用户取消输入后界面要显示占位说明）——
+    //     派生值：本屏条目里有 `Bad::NeedsPassword` 就为真，拿到密码/清掉坏因后自然变假。
+    Q_PROPERTY(bool screenNeedsPassword READ screenNeedsPassword NOTIFY currentChanged)
     //   当前这一屏的**文件名**（双幅两页时用 " · " 连起来；多页文件是 "file [k/N]"）——
     //   顶栏显示用，派生值，不改任何状态
     Q_PROPERTY(QString currentName READ currentName NOTIFY currentChanged)
@@ -268,6 +271,7 @@ private:
     //   双幅那一对的位置由序列的**配对表**给（`pairStart` / `pairAt`），本类不自己算。
     int  screenStart(int item) const;
     QVector<int> screenItems(int start) const;
+    bool screenNeedsPassword() const;
     // ── 循环（到头怎么办）────────────────────────────────────────────────
     //   三个值：**不循环**（到头就是到头）/ **全部循环**（末尾回开头）/ **文件夹循环**
     //   （只在**当前这一条所在容器**的区间里环绕）。
