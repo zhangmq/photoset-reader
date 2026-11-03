@@ -395,7 +395,10 @@ bool ArchiveSource::openUnrar(const QString &path, const QString &password, Entr
     m_encrypted = anyEncrypted;
     // ★ RAR 的 solid 标记（用户 2026-10-13 定的原则：**能随机读的才支持**）
     m_solid = (r.flags & ROADF_SOLID) != 0;
-    if (m_solid)
+    //   ★ 同一个包会被**每个解码线程各打开一次** ⇒ 这条按"每个包只报一次"限流
+    //     （否则一份多卷收藏会刷几十上百行，把关键日志淹没，用户 2026-11-03）
+    if (m_solid
+        && iblog::firstTime(QStringLiteral("scan/archive-solid:") + QFileInfo(path).absoluteFilePath()))
         qCWarning(lcScan).noquote() << QStringLiteral("[scan] solid archive, random access unsupported: %1")
                                    .arg(QFileInfo(path).fileName());
     m_backend = Backend::Unrar;

@@ -17,7 +17,7 @@ echo "关键日志 → $OUT"
 QT_FORCE_STDERR_LOGGING=1 PHOTOSET_LOG=debug "$APP" "$@" 2>&1 \
     | grep --line-buffered -E 'password|rescan|unsupported|progress (restored|saved)|autosave|'\
 'favorite|viewer: screen|bad|skipped|error|failed|warning|qml:|dev:' \
-    | grep --line-buffered -vE 'No QRhi|MESA|EGL' \
+    | grep --line-buffered -vE 'No QRhi|MESA|EGL|solid archive' \
     | tee "$OUT"
 
 echo "把 $OUT 发我。"
