@@ -20,4 +20,4 @@ Exec=photoset-reader %F
 Icon=photoset-reader
 Terminal=false
 Categories=Graphics;Viewer;
-MimeType=image/jpeg;image/png;image/webp;image/gif;image/bmp;image/tiff;image/svg+xml;image/avif;image/jxl;image/qoi;image/tga;image/x-icon;image/x-portable-anymap;application/vnd.comicbook+zip;application/vnd.comicbook-rar;application/x-cb7;application/x-cbt;application/zip;application/vnd.rar;application/x-rar;application/x-7z-compressed;application/x-tar;
+MimeType=image/jpeg;image/png;image/webp;image/gif;image/bmp;image/tiff;image/svg+xml;image/avif;image/jxl;image/qoi;image/tga;image/x-icon;image/x-portable-anymap;application/vnd.comicbook+zip;application/vnd.comicbook-rar;application/x-cb7;application/x-cbt;application/zip;application/vnd.rar;application/x-rar;application/x-7z-compressed;application/x-tar;application/x-photoset-progress;

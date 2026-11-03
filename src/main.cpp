@@ -249,6 +249,8 @@ int main(int argc, char *argv[])
     QString dir;
     if (!parser.positionalArguments().isEmpty())
         dir = parser.positionalArguments().first();
+    //   `.prsave`（阅读进度文件）：**文件管理器双击 / "用…打开"** 也走位置参数（用户 2026-11-04）。
+    const bool isProgress = dir.endsWith(QStringLiteral(".prsave"), Qt::CaseInsensitive);
     const bool hasSource = !dir.isEmpty();
     if (hasSource) {
         const QFileInfo fi(dir);
@@ -256,7 +258,9 @@ int main(int argc, char *argv[])
             qCWarning(lcApp).noquote() << QStringLiteral("[app] source path does not exist: %1").arg(dir);
             return 2;
         }
-        if (!fi.isDir() && !ArchiveSource::isArchive(dir) && !isImageSuffix(fi.suffix())) {
+        if (isProgress) {
+            //   进度文件由 `UiModel::openProgress()` 负责（提前返回，不走来源校验）
+        } else if (!fi.isDir() && !ArchiveSource::isArchive(dir) && !isImageSuffix(fi.suffix())) {
             qCWarning(lcApp).noquote() << QStringLiteral("[app] source is neither folder, archive nor image: %1").arg(dir);
             return 2;
         }
@@ -329,8 +333,10 @@ int main(int argc, char *argv[])
 
     // 命令行 `-d <路径>` = **打开来源**（文件夹 / 压缩包 / 文件同一套）；
     //   `--index N` 定位到第 N 条（不给 = 第 0 条）。只有一个界面 ⇒ 不需要再切屏。
-    if (hasSource)
-        ui->openPath(dir);
+    if (hasSource) {
+        if (isProgress) ui->openProgress(dir);
+        else            ui->openPath(dir);
+    }
 
     engine.load(QUrl(QStringLiteral("qrc:/qt/qml/AppUi/src/ui/Main.qml")));
     if (engine.rootObjects().isEmpty()) {
@@ -351,7 +357,10 @@ int main(int argc, char *argv[])
                     const QString path = QString::fromUtf8(sock->readAll()).trimmed();
                     if (!path.isEmpty()) {
                         qCInfo(lcApp).noquote() << QStringLiteral("[app] ipc received path: %1").arg(path);
-                        ui->openPath(path);
+                        if (path.endsWith(QStringLiteral(".prsave"), Qt::CaseInsensitive))
+                            ui->openProgress(path);
+                        else
+                            ui->openPath(path);
                     }
                 }
                 if (rootWin) {

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--   photoset-reader 的阅读进度文件（`.prsave`）：让文件管理器能识别、能"用…打开"。
+       注意：`*.prsave` 是我们自己的扩展名，shared-mime-info 里没有现成类型 ⇒ 必须自带一份。 -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-photoset-progress">
+    <comment>photoset-reader reading progress</comment>
+    <comment xml:lang="zh_CN">photoset-reader 阅读进度</comment>
+    <icon name="photoset-reader"/>
+    <glob pattern="*.prsave"/>
+  </mime-type>
+</mime-info>

@@ -85,7 +85,18 @@ echo "  许可：    $PREFIX/share/doc/photoset-reader/{LICENSE,THIRD-PARTY.md}"
 # ── ④ 桌面集成（只在用户目录前缀时自动做；系统前缀由桌面环境自己扫）──────
 if [[ $DESKTOP -eq 1 && "$PREFIX" == "$HOME"* ]]; then
     echo "== 桌面集成 =="
+    #   `.prsave` 的自定义 MIME：装完必须重建 MIME 数据库，否则文件管理器不认识 *.prsave
+    if command -v update-mime-database >/dev/null 2>&1; then
+        update-mime-database "$PREFIX/share/mime" >/dev/null 2>&1 || true
+        echo "  MIME 数据库已更新（*.prsave）"
+    else
+        echo "  ⚠️ 没有 update-mime-database（shared-mime-info）：*.prsave 可能不被文件管理器识别"
+    fi
     ./scripts/install-desktop.sh --exec "$PREFIX/bin/photoset-reader" | sed 's/^/  /'
+    #   把进度文件默认交给本应用（只在这个用户前缀下做；失败不致命）
+    if command -v xdg-mime >/dev/null 2>&1; then
+        xdg-mime default photoset-reader.desktop application/x-photoset-progress >/dev/null 2>&1 || true
+    fi
 fi
 
 case ":$PATH:" in

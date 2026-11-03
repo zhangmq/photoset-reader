@@ -163,6 +163,20 @@ include(GNUInstallDirs)
 install(TARGETS photoset-reader RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 install(FILES assets/photoset-reader.desktop
         DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
+#   `.prsave` 的自定义 MIME（shared-mime-info）；装完要 `update-mime-database`（见 scripts/install.sh）
+install(FILES assets/photoset-reader-mime.xml
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/mime/packages"
+        RENAME photoset-reader.xml)
+#   ★ 装好的桌面入口要把 `Exec=` 换成**绝对路径**（用户 2026-11-04：从 launcher 起不来、
+#     提示"找不到"——launcher 不继承 shell 的 PATH，`~/.local/bin` 通常不在它里面）。
+install(CODE "
+  set(_dt \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/applications/photoset-reader.desktop\")
+  if(EXISTS \"\${_dt}\")
+    file(READ \"\${_dt}\" _c)
+    string(REPLACE \"Exec=photoset-reader\" \"Exec=\${CMAKE_INSTALL_PREFIX}/bin/photoset-reader\" _c \"\${_c}\")
+    file(WRITE \"\${_dt}\" \"\${_c}\")
+  endif()
+")
 foreach(_size 16 24 32 48 64 128 256 512)
     install(FILES "assets/icons/photoset-reader-${_size}.png"
             DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${_size}x${_size}/apps"
