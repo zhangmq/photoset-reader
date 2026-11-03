@@ -284,8 +284,16 @@ public:
     //     把这次来源已知的密码整份带过去 —— 用户 2026-11-03 定：重扫沿用已知密码，不再问。
     //     这不是"给新来源预置密码"：来源没变，表跟着来源走。
     void    copyPasswordStateFrom(const Sequence &other);
+    //   ★ "默认密码"就是弹框里勾的「后续压缩包使用相同密码」—— 它是**这个来源**的默认值，
+    //     写进度文件时只落一行（元数据段），不逐行复制（用户 2026-11-03 的优化）。
     QString passwordDefault() const { return m_passwordDefault; }
     void    setPasswordDefault(const QString &pw) { m_passwordDefault = pw; }
+    //   已经写进进度文件的默认密码（用来判断"这次不用再问要不要保存"）
+    void    setSavedPasswordDefault(const QString &pw) { m_savedPasswordDefault = pw; }
+    bool    isPasswordDefaultSaved() const
+    {
+        return !m_passwordDefault.isEmpty() && m_passwordDefault == m_savedPasswordDefault;
+    }
     QString passwordToTry(const QString &key) const;   // 记录值 → sticky → 空
     bool    hasStoredPassword(const QString &key) const { return m_passwords.contains(key); }
     //   本次扫描**卡在哪个容器上**（空 = 没卡）；调用方据此弹框。
@@ -568,7 +576,8 @@ private:
     QHash<QString, QString> m_enteredUnsaved;   // 本次会话新输入（还没写进进度文件）
     QSet<QString>           m_savedPasswords;   // 已经写进进度文件
     QSet<QString>           m_declined;         // 用户取消过（本序列不再问）
-    QString                 m_passwordDefault;  // "后续压缩包使用相同密码"（sticky）
+    QString                 m_passwordDefault;  // "后续压缩包使用相同密码"（来源默认密码）
+    QString                 m_savedPasswordDefault;   // 已写进进度文件的默认密码
     QString                 m_passwordNeeded;   // 本次扫描卡在哪个 key
 
     mutable QMutex m_noticeMutex;

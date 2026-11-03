@@ -1074,29 +1074,29 @@ bool UiModel::writeProgress(const QString &filePath, bool quiet, bool savePasswo
     //     · 已经保存过的（`Sequence::isPasswordSaved`）⇒ 每次都写（自动保存不能把密码弄丢）；
     //     · 本次会话新输入的 ⇒ **只有用户同意**（`savePasswords`）才写。
     //   ★ 源本身是加密容器（根压缩包没有行）⇒ 密码写在元数据段
+    //   ★ 密码只有**两个载体**（用户 2026-11-03 定的更简形态）：
+    //     ① **来源默认密码**（= 弹框里「后续压缩包使用相同密码」）⇒ 元数据段一行，管所有容器；
+    //     ② **按容器的例外**（这个包用了别的密码）⇒ 那一行自己的属性。
+    //     ⇒ 不需要"把同一个密码复制到每个容器行"：那样会越存越长，还会给没加密的包塞密码。
     {
-        const QString rootKey = m_src.seq->rootIsArchive() ? QDir::cleanPath(QFileInfo(m_path).absoluteFilePath())
-                                                            : QString();
-        if (!rootKey.isEmpty() && m_src.seq->hasStoredPassword(rootKey)
-            && (m_src.seq->isPasswordSaved(rootKey) || savePasswords))
-            d.meta.sourcePassword = m_src.seq->passwordToTry(rootKey);
+        const QString rootKey = m_src.seq->rootIsArchive()
+                                    ? QDir::cleanPath(QFileInfo(m_path).absoluteFilePath()) : QString();
+        const bool rootKnown = !rootKey.isEmpty() && m_src.seq->hasStoredPassword(rootKey);
+        const QString def = m_src.seq->passwordDefault();
+        if (rootKnown && (m_src.seq->isPasswordSaved(rootKey) || savePasswords))
+            d.meta.sourcePassword = m_src.seq->passwordToTry(rootKey);   // 根容器自己的密码优先
+        else if (!def.isEmpty() && (savePasswords || m_src.seq->isPasswordDefaultSaved()))
+            d.meta.sourcePassword = def;                                  // 来源默认密码
     }
-    //   ★ 勾了「后续压缩包使用相同密码」（sticky）+ 同意保存 ⇒ **所有容器都写这个密码**
-    //     （用户 2026-11-03：既然这些包用同一个密码，就别只写当前这个、下次还得一个个输）。
-    //     具体容器的密码优先于 sticky（密码不一样的包不会被覆盖）。
-    const QString sticky = m_src.seq->passwordDefault();
-    for (const auto &row : m_src.seq->containerRows()) {
+    for (const auto &row : m_src.seq->containerRows()) {   // 只写"例外"
         const QString &key = row.second;
-        const bool known = m_src.seq->hasStoredPassword(key);
-        if (known && !m_src.seq->isPasswordSaved(key) && !savePasswords) continue;
-        if (!known && !(savePasswords && !sticky.isEmpty())) continue;
+        if (!m_src.seq->hasStoredPassword(key)) continue;
+        if (!m_src.seq->isPasswordSaved(key) && !savePasswords) continue;
+        //   和来源默认密码相同的**不写**（默认已经管它了）⇒ 文件里只留真正的例外
+        if (m_src.seq->passwordToTry(key) == m_src.seq->passwordDefault()) continue;
         if (row.first >= 0 && row.first < d.rows.size())
-            d.rows[row.first].password = known ? m_src.seq->passwordToTry(key) : sticky;
+            d.rows[row.first].password = m_src.seq->passwordToTry(key);
     }
-    //   源本身是加密容器、又没有具体密码 ⇒ 也写 sticky
-    if (d.meta.sourcePassword.isEmpty() && savePasswords && !sticky.isEmpty()
-        && m_src.seq->rootIsArchive())
-        d.meta.sourcePassword = sticky;
 
     QString err;
     if (!progressfile::write(filePath, d, &err)) {
@@ -1191,8 +1191,14 @@ bool UiModel::openProgress(const QString &filePath)
     //   ★ 加密压缩包（2026-11-03）：进度文件里存了密码的容器行 ⇒ 灌进序列（条目已建好，
     //     `applyRowPasswords()` 会把每个条目的 `loc.passwords` 一并补齐）⇒ 浏览时不再弹框。
     const QString srcKey = QDir::cleanPath(QFileInfo(d.meta.sourcePath).absoluteFilePath());
-    if (!d.meta.sourcePassword.isEmpty())
-        s.seq->setPassword(srcKey, d.meta.sourcePassword);      // ★ 源本身是加密容器
+    if (!d.meta.sourcePassword.isEmpty()) {
+        //   ★ 文件里那个密码 = **这个来源的默认密码**（所有容器先拿它试），不是"只给根容器"。
+        //     根容器把它同时记到自己名下（根没有行，靠元数据段，写回时原样带着）。
+        s.seq->setPasswordDefault(d.meta.sourcePassword);
+        s.seq->setSavedPasswordDefault(d.meta.sourcePassword);
+        if (d.meta.sourceKind == Sequence::Kind::Archive)
+            s.seq->setPassword(srcKey, d.meta.sourcePassword);
+    }
     s.seq->applyRowPasswords();
     s.seq->markPasswordsSaved();      // 文件里已有 ⇒ 不再问"是否保存"
     s.seq->syncItemPasswords();
