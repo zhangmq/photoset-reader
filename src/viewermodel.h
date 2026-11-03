@@ -185,6 +185,7 @@ public:
     QString prevFolderName() const;
     QString nextFolderName() const;
     bool loading() const { return m_loading; }
+    bool screenNeedsPassword() const;               // 本屏有空着等密码的图（派生）
     int  cursor() const { return m_cursor; }        // 上屏那一屏的起点（写 = 跳转）
     void setCursor(int index) { jump(index); }
     int  itemCount() const { return m_seq ? m_seq->count() : 0; }
@@ -271,7 +272,6 @@ private:
     //   双幅那一对的位置由序列的**配对表**给（`pairStart` / `pairAt`），本类不自己算。
     int  screenStart(int item) const;
     QVector<int> screenItems(int start) const;
-    bool screenNeedsPassword() const;
     // ── 循环（到头怎么办）────────────────────────────────────────────────
     //   三个值：**不循环**（到头就是到头）/ **全部循环**（末尾回开头）/ **文件夹循环**
     //   （只在**当前这一条所在容器**的区间里环绕）。
@@ -305,7 +305,10 @@ private:
     QImage imageOf(int item) const;   // 这一条备好时的那张图（坏 / 在飞 ⇒ 空图）
     int  takeSlot(int item);          // 找一个槽给它（池满 ⇒ 淘汰；找不到 ⇒ -1）
     bool isBad(int item) const;       // 坏因表里记着这一条吗（**不占**槽位额度）
-    void markBad(int item, Bad why);  // 把坏因写进小表（两个写点的唯一入口）
+    void markBad(int item, Bad why, int level = -1);  // 把坏因写进小表（两个写点的唯一入口）
+    //   ★ 弹框**由"当前这一屏"触发**，不由任意一条解码失败触发：预取到的邻居缺密码不该打断
+    //     用户（否则打开一份漫画会连着弹好几个卷）。见设计 22 §5.3。
+    void maybeAskPassword(const QVector<int> &items);
 
     static constexpr int kMaxInFlight = 4;   // 并发上限（在飞计数上限；写死）
     //   ★ 一屏最多的位置数（单幅 1 / 双幅 2）：槽位池容量 = 预取长度 + 它。
@@ -325,6 +328,8 @@ private:
     //   坏因小表：条目 → 坏因。**不占** `L + 1` 的额度；**同一次查看内一直保留**
     //   （这就是"坏不重试"的依据）；换来源（`setSequence`）时清空。
     QHash<int, Bad> m_bad;
+    QHash<int, int> m_badLevel;       // item → 密码层号（只对 Bad::NeedsPassword 有意义）
+    int             m_promptedItem = -1;   // 已经为哪一条问过密码（不重复问）
     int     m_inFlight = 0;                  // 在飞计数
     int     m_skipped  = 0;                  // 跳过计数
     quint64 m_epoch    = 0;                  // 换来源记号（单调递增）

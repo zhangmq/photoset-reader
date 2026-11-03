@@ -287,6 +287,8 @@ private:
     bool hasUnsavedPasswords() const;
     //   弹框里的"哪个文件"：容器路径 → **相对来源**的显示文本（见 .cpp）
     QString passwordPromptLabel(const QString &key) const;
+    //   `onPasswordRequired()` 延迟复核通过后的真正弹框动作
+    void askPasswordNow(int item, int level);
 
     // ── ★ 自动保存（用户 2026-11-01）────────────────────────────────────────
     //   只有"当前来源**已经关联**某个进度文件"时才写（打开进度文件 / 刚保存过）；
@@ -322,6 +324,11 @@ private:
     int                     m_pendingPasswordItem = -1;   // 解码期：等密码的条目（-1 = 扫描期）
     void onPasswordRequired(int item, int level);         // 解码期检测（设计 22 §5.3）
     QString                 m_pendingPasswordKey;   // 正在等密码的容器（空 = 没在等）
+    //   ★ 弹框**延迟一拍**再决定（打开进度文件时会有"先落到 0 再跳到链位置"的瞬态）：
+    //     到点再看"这一屏是不是真的还空着"，空着才弹 —— 否则会为瞬态画面连弹好几个卷。
+    int                     m_passwordAskToken = 0;
+    int                     m_passwordAskItem = -1;
+    int                     m_passwordAskLevel = 0;
     //   ★ 这个框是**哪条序列**问的：会话序列（扫描 / 解码）或后台「重新扫描」那条
     //     （两条同时存在时，提交密码要写回"问的人"，见设计 22 §5.1）
     Sequence               *m_passwordOwner = nullptr;

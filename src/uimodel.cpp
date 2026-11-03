@@ -739,6 +739,24 @@ void UiModel::cancelPassword()
 void UiModel::onPasswordRequired(int item, int level)
 {
     if (item < 0 || !m_src.seq) return;
+    //   ★ 延迟一拍：打开进度文件时窗口会先落 0、再跳到链位置；瞬态那屏也可能是"空着等密码"，
+    //     立刻弹就会连着弹好几个卷（用户 2026-11-03 实测）。到点复核"还空着"再弹。
+    const int token = ++m_passwordAskToken;
+    m_passwordAskItem = item;
+    m_passwordAskLevel = level;
+    QTimer::singleShot(300, this, [this, token] {
+        if (token != m_passwordAskToken) return;
+        if (!m_src.vm || !m_src.seq) return;
+        if (!m_src.vm->imageA().isNull()) return;          // 已经看到图了 ⇒ 不需要密码
+        if (!m_src.vm->screenNeedsPassword()) return;
+        askPasswordNow(m_passwordAskItem, m_passwordAskLevel);
+    });
+}
+
+//   真正弹框（延迟复核通过之后）
+void UiModel::askPasswordNow(int item, int level)
+{
+    if (item < 0 || !m_src.seq) return;
     if (item >= m_src.seq->count()) return;
     const Sequence::Item &it = m_src.seq->at(item);
     //   key = 容器绝对路径；`level` = 0 是外层盘上容器，i = 第 i 层嵌套

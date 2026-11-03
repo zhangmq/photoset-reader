@@ -143,6 +143,8 @@ void ViewerModel::setSequence(const Sequence *seq)
     m_seq = seq;
     m_slots.clear();
     m_bad.clear();                   // 坏因的生命周期 = 一次查看（换来源一起清）
+    m_badLevel.clear();
+    m_promptedItem = -1;
     m_inFlight = 0;
     m_skipped  = 0;
     m_pos      = 0;
@@ -897,9 +899,11 @@ bool ViewerModel::isBad(int item) const
     return m_bad.contains(item);
 }
 
-void ViewerModel::markBad(int item, Bad why)
+void ViewerModel::markBad(int item, Bad why, int level)
 {
     m_bad.insert(item, why);
+    if (why == Bad::NeedsPassword) m_badLevel.insert(item, level);
+    else                           m_badLevel.remove(item);
 }
 
 // ══ 重判：唯一决定上屏的地方 ═══════════════════════════════════════════════
@@ -916,9 +920,14 @@ void ViewerModel::retryNeedingPassword()
     //     本屏另一条仍然停在 NeedsPassword ⇒ 画面空白，翻页才出来（用户 2026-11-03 实测）。
     //     别的容器里的条目也会被重取一次：密码不对就再次失败、再次追问（符合"继续弹框即可"）。
     for (auto it = m_bad.begin(); it != m_bad.end();) {
-        if (it.value() == Bad::NeedsPassword) it = m_bad.erase(it);
-        else ++it;
+        if (it.value() == Bad::NeedsPassword) {
+            m_badLevel.remove(it.key());
+            it = m_bad.erase(it);
+        } else {
+            ++it;
+        }
     }
+    m_promptedItem = -1;                  // 拿到密码了 ⇒ 以后（密码错时）可以再问
     judge();
 }
 
@@ -944,6 +953,7 @@ void ViewerModel::judge()
             if (screenWaitsPassword(items)) {  // ★ 有"要密码"的条目 ⇒ 停在原地（空白），不跳屏
                 screen(start, items);
                 dispatch();
+                maybeAskPassword(items);       // ★ 只有"这一屏真的空着"才弹框
                 return;
             }
             ++m_skipped;                       // 整屏坏 ⇒ 跳过（按当前方向）
@@ -967,6 +977,21 @@ void ViewerModel::judge()
         bool settled2 = false, anyReady2 = false;
         scanScreen(items, settled2, anyReady2);
         if (settled2) continue;                // 派活当场写出坏因（缺失）⇒ 再判
+        return;
+    }
+}
+
+//   本屏真需要密码才问：挑本屏第一条 `Bad::NeedsPassword`，同一个条目只问一次。
+//   ★ 为什么不在解码失败时直接弹：预取会让**别的卷/别的包**的条目也在飞，
+//     那边缺密码就把框弹出来 ⇒ 打开一份多卷漫画会连着弹好几个（用户 2026-11-03 实测）。
+void ViewerModel::maybeAskPassword(const QVector<int> &items)
+{
+    for (int i : items) {
+        const auto it = m_bad.constFind(i);
+        if (it == m_bad.constEnd() || it.value() != Bad::NeedsPassword) continue;
+        if (m_promptedItem == i) return;       // 这一条已经问过（不重复问）
+        m_promptedItem = i;
+        emit passwordRequired(i, m_badLevel.value(i, 0));
         return;
     }
 }
