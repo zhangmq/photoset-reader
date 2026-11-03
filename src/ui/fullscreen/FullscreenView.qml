@@ -576,25 +576,59 @@ Item {
             return
         if (ui.scanning) { scanNotDoneDialog.open(); return }
         if (ui.scanIncomplete) { pendingSaveTarget = "favorites"; incompleteSaveDialog.open(); return }
-        ui.saveProgressToFavorites()
+        if (maybeAskPasswords("favorites")) return
+        ui.saveProgressToFavorites(false)
     }
     function requestSaveToFile() {
         if (ui.viewer === null)
             return
         if (ui.scanning) { scanNotDoneDialog.open(); return }
         if (ui.scanIncomplete) { pendingSaveTarget = "file"; incompleteSaveDialog.open(); return }
-        ui.saveProgressToFile()
+        if (maybeAskPasswords("file")) return
+        ui.saveProgressToFile(false)
     }
     function runPendingSave() {
-        if (pendingSaveTarget === "favorites") ui.saveProgressToFavorites()
-        else if (pendingSaveTarget === "file") ui.saveProgressToFile()
+        const target = pendingSaveTarget
         pendingSaveTarget = ""
+        if (maybeAskPasswords(target)) return
+        if (target === "favorites") ui.saveProgressToFavorites(false)
+        else if (target === "file") ui.saveProgressToFile(false)
+    }
+
+    // ── 加密压缩包：保存进度时问一次"要不要把密码存进进度文件"（用户 2026-11-03）──
+    //   只有**本次会话新输入、还没保存过**的密码才问（`ui.hasUnsavedPasswords`）。
+    property string pendingPasswordSaveTarget: ""
+    function maybeAskPasswords(target) {
+        if (!ui.hasUnsavedPasswords)
+            return false
+        pendingPasswordSaveTarget = target
+        savePasswordDialog.open()
+        return true
     }
     function toggleFavorite() {
         if (ui.viewer === null)
             return
         if (ui.sourceFavorited) unfavoriteDialog.open()
         else requestSaveToFavorites()
+    }
+
+    //   ── 保存进度时问"要不要保存密码"──
+    ConfirmDialog {
+        id: savePasswordDialog
+        title: qsTr("Save password?")
+        message: qsTr("Save the archive password in this progress file? It is stored as plain text.")
+        acceptText: qsTr("Save")
+        rejectText: qsTr("Don't save")
+        onAccepted: {
+            if (pendingPasswordSaveTarget === "favorites") ui.saveProgressToFavorites(true)
+            else if (pendingPasswordSaveTarget === "file") ui.saveProgressToFile(true)
+            pendingPasswordSaveTarget = ""
+        }
+        onRejected: {
+            if (pendingPasswordSaveTarget === "favorites") ui.saveProgressToFavorites(false)
+            else if (pendingPasswordSaveTarget === "file") ui.saveProgressToFile(false)
+            pendingPasswordSaveTarget = ""
+        }
     }
 
     ConfirmDialog {

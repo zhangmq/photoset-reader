@@ -60,7 +60,13 @@ missing_literals() {
     python3 - "$ts" "${INPUTS[@]}" <<'PYEOF'
 import re, sys
 ts, files = sys.argv[1], sys.argv[2:]
-have = set(re.findall(r'<source>(.*?)</source>', open(ts, encoding='utf-8').read(), re.S))
+#   ★ .ts 里的文本是 **XML 转义**的（`Don&apos;t` / `&quot;` / `&lt;` / `&amp;`）——
+#     源码里是普通字符 ⇒ 比对前必须还原，否则带撇号的文案会被误报"没进 .ts"。
+def unesc(t):
+    return (t.replace('&lt;', '<').replace('&gt;', '>')
+             .replace('&quot;', '"').replace('&apos;', "'")
+             .replace('&amp;', '&'))
+have = {unesc(x) for x in re.findall(r'<source>(.*?)</source>', open(ts, encoding='utf-8').read(), re.S)}
 pat = re.compile(r'(?<![A-Za-z0-9_])(?:qsTr|tr)\(\s*"((?:[^"\\]|\\.)*)"\s*\)')
 missing, total = [], 0
 for f in files:

@@ -10,6 +10,7 @@
 #include <QMetaObject>
 #include <QTimer>
 
+#include <algorithm>
 #include <chrono>
 
 namespace fetch {
@@ -67,10 +68,14 @@ void ViewerModel::preload(const Sequence::Item &imageMeta, int slot)
     //     第一次用到在主线程（`preload()` 就是主线程调的）⇒ 它就住在主线程。
     static QObject *const sink = new QObject;
 
-    std::thread([poster, epoch, slot, meta] {
-        const QImage image = imageread::image(meta.loc);
+    //   这次解码**手里有没有密码**（嵌套时密码可能只在某一层，不能只看第 0 项）
+    const bool passwordUsed = std::any_of(meta.loc.passwords.cbegin(), meta.loc.passwords.cend(),
+                                          [](const QString &pw) { return !pw.isEmpty(); });
+    std::thread([poster, epoch, slot, meta, passwordUsed] {
+        int passwordLevel = -1;
+        const QImage image = imageread::image(meta.loc, &passwordLevel);
         //   ★ 工作线程到此为止：只投递、不看任何共享标志。丢掉与否在主线程判。
-        QMetaObject::invokeMethod(sink, [poster, epoch, slot, image] {
+        QMetaObject::invokeMethod(sink, [poster, epoch, slot, image, passwordLevel, passwordUsed] {
             //   ★★ **第一步**：这份结果所属的那个 `ViewerModel` 还在不在？
             //     · **不在 ⇒ 把收到的东西整个抛弃** —— 不写状态、不 emit、不判、不派活、
             //       不碰任何槽位（`image` 随之释放）。这是**正常路径**，不是异常情况：
@@ -79,7 +84,7 @@ void ViewerModel::preload(const Sequence::Item &imageMeta, int slot)
             //   ⚠️ 这里的丢弃**不打日志**（要留痕最多 debug 级，不许刷屏）。
             //   读 `valid` / `target` 与析构的写**同在主线程** ⇒ 无需锁、无需 atomic。
             if (!poster->valid || !poster->target) return;
-            poster->target->onLoaded(epoch, slot, image);     // 换来源由 `onLoaded` 比记号丢掉
+            poster->target->onLoaded(epoch, slot, image, passwordLevel, passwordUsed);
         }, Qt::QueuedConnection);
     }).detach();
 }
@@ -87,21 +92,35 @@ void ViewerModel::preload(const Sequence::Item &imageMeta, int slot)
 // ══ 结果回主线程 ════════════════════════════════════════════════════════════
 //   先比记号，再比"这个槽现在还等不等这一条"；任一条不符 ⇒ **直接丢**（白干，不算数）。
 //   解码失败（空图）⇒ **坏因写进小表**（不可读），并**释放那个槽**（坏不占槽位额度）。
-void ViewerModel::onLoaded(quint64 epoch, int slot, const QImage &image)
+void ViewerModel::onLoaded(quint64 epoch, int slot, const QImage &image, int passwordLevel,
+                           bool passwordUsed)
 {
     if (epoch != m_epoch) return;                        // 换来源记号不符 ⇒ 丢
     if (slot < 0 || slot >= m_slots.size()) return;
     if (m_slots[slot].state != Slot::State::InFlight) return;   // 这个槽已经不等它了 ⇒ 丢
 
     Slot &s = m_slots[slot];
-    if (image.isNull()) {                                // 解码失败 = 坏（不可读）
-        markBad(s.item, Bad::Unreadable);
+    if (!image.isNull()) {
+        s.image = image;
+        s.state = Slot::State::Ready;
+    } else {
+        //   这次解码是在**用户输入密码之前**发起的（结果回来晚）：条目现在已经有密码了
+        //   ⇒ 丢掉这个结果，别误报"要密码"、也别把它记成坏因（等 retry 的新结果）。
+        const bool nowHasPw = m_seq && s.item >= 0 && s.item < m_seq->count()
+                              && !m_seq->at(s.item).loc.passwords.value(passwordLevel).isEmpty();
+        if (passwordLevel >= 0 && !passwordUsed && nowHasPw) {
+            // 丢弃（什么都不记）
+        } else if (passwordLevel >= 0) {
+            //   ★ **要密码**：记专门的坏因（不能记 Unreadable —— 那会被永久跳过），
+            //     并把"哪一条 / 哪一层"报给上层去弹框（设计 22 §5.3）。
+            markBad(s.item, Bad::NeedsPassword);
+            emit passwordRequired(s.item, passwordLevel);
+        } else {
+            markBad(s.item, Bad::Unreadable);
+        }
         s.item  = -1;
         s.state = Slot::State::Empty;
         s.image = QImage();
-    } else {
-        s.image = image;
-        s.state = Slot::State::Ready;
     }
     --m_inFlight;
     judge();                                             // 重判一次（里面也会继续派活）
@@ -879,6 +898,17 @@ void ViewerModel::markBad(int item, Bad why)
 //   · 本屏**整屏都坏**（单幅 = 那一条坏）  ⇒ 跳过计数 +1，位置挪到下一屏（同方向），再派活再判；
 //   · 还有位置没结论                      ⇒ 等下一个结果回来。
 //   每一轮开头都更新一次浮层（`updateLoading()`）⇒ 所有返回路径都更新到，没有早退漏掉。
+//   ★ 加密压缩包（设计 22 §5.3）：用户提交密码后，只清这一条的 `NeedsPassword`
+//     再判一次（重新派解码）。**只有"提交密码"会调它** —— 不是自动重试。
+void ViewerModel::retry(int item)
+{
+    if (item < 0) return;
+    const auto it = m_bad.constFind(item);
+    if (it == m_bad.constEnd() || it.value() != Bad::NeedsPassword) return;
+    m_bad.remove(item);
+    judge();
+}
+
 void ViewerModel::judge()
 {
     const int origin = screenStart(m_pos);     // 出发那一屏（跳过坏屏时"绕一圈回到它就停"）
@@ -896,6 +926,11 @@ void ViewerModel::judge()
             if (anyReady) {
                 screen(start, items);
                 dispatch();                    // 上屏之后接着按份额备图
+                return;
+            }
+            if (screenWaitsPassword(items)) {  // ★ 有"要密码"的条目 ⇒ 停在原地（空白），不跳屏
+                screen(start, items);
+                dispatch();
                 return;
             }
             ++m_skipped;                       // 整屏坏 ⇒ 跳过（按当前方向）
@@ -921,6 +956,16 @@ void ViewerModel::judge()
         if (settled2) continue;                // 派活当场写出坏因（缺失）⇒ 再判
         return;
     }
+}
+
+//   本屏有没有"要密码"的条目（有就**不跳屏**：停在原地等用户输密码，见设计 22 §5.3）
+bool ViewerModel::screenWaitsPassword(const QVector<int> &items) const
+{
+    for (int i : items) {
+        const auto it = m_bad.constFind(i);
+        if (it != m_bad.constEnd() && it.value() == Bad::NeedsPassword) return true;
+    }
+    return false;
 }
 
 //   本屏每个位置的状态：`settled` = 都有结论（备好 / 坏）；`anyReady` = 至少一个备好。

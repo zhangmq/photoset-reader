@@ -146,6 +146,7 @@ struct Streams {
     QVector<quint64> numUnpackStreams;   // 每块里的文件数（缺省 1）
     QByteArray firstCoderProps;          // 第一个块的第一个 coder 的 props
     quint64 firstCoderId = 0;
+    bool    anyAes = false;               // 出现 AES coder ⇒ 头/数据是加密的
 };
 
 // 读 UnpackInfo（块 + coder + 解压后大小）。`onlyFirstCoder`：头流只需要第一个块的编码器
@@ -179,6 +180,7 @@ bool readUnpackInfo(Reader &r, Streams *st, bool *external)
                 if (!r.byte(&b)) return false;
                 coderId = (coderId << 8) | quint64(b);      // ★ 大端：03 01 01 ⇒ 0x030101
             }
+            if (coderId == 0x06F10701) st->anyAes = true;   // 7z 的 AES-256 编码器
             if (hasAttrs) {
                 quint64 propSize = 0;
                 if (!r.num(&propSize)) return false;
@@ -299,7 +301,8 @@ bool readStreamsInfo(Reader &r, Streams *st, bool *external)
 }
 
 // 解出"头本体"（明文头 / 被压缩的头）
-bool loadHeaderBody(QFile &f, const uchar *sig, QByteArray *body, QString *why)
+bool loadHeaderBody(QFile &f, const uchar *sig, QByteArray *body, QString *why,
+                    bool *encrypted)
 {
     const quint64 nextOff = le64(sig + 12);
     const quint64 nextSize = le64(sig + 20);
@@ -335,8 +338,24 @@ bool loadHeaderBody(QFile &f, const uchar *sig, QByteArray *body, QString *why)
                reinterpret_cast<const uchar *>(raw.constData()) + raw.size() };
     Streams st;
     bool external = false;
-    if (!readStreamsInfo(r, &st, &external) || external || st.packSizes.isEmpty()
-        || st.unpackSizes.isEmpty()) {
+    const bool streamsOk = readStreamsInfo(r, &st, &external);
+    if (!streamsOk || external || st.packSizes.isEmpty() || st.unpackSizes.isEmpty()) {
+        //   ★ 头的编码器是 AES ⇒ **头被加密**，不是"结构不认识"（用户 2026-11-03）
+        if (st.anyAes || streamsOk == false) {
+            //   `readStreamsInfo` 失败也可能是我们还没解析到的 AES 头 —— 用"有没有 AES"
+            //   无法覆盖；这里退一步：结构解析失败时再看文件里是否出现过 0x06F10701
+            //   （AES coder id 的字节序列），有就判为"要密码"。
+            QFile probe(f.fileName());
+            if (probe.open(QIODevice::ReadOnly)) {
+                const QByteArray head = probe.read(4096);
+                const QByteArray aes("\x06\xF1\x07\x01", 4);
+                if (head.contains(aes) || st.anyAes) {
+                    if (why) *why = QStringLiteral("7z header is encrypted (password required)");
+                    if (encrypted) *encrypted = true;
+                    return false;
+                }
+            }
+        }
         if (why) *why = QStringLiteral("7z 压缩头结构不认识");
         return false;
     }
@@ -354,6 +373,11 @@ bool loadHeaderBody(QFile &f, const uchar *sig, QByteArray *body, QString *why)
     const QByteArray decoded = decodeLzma(packed, st.unpackSizes.first(), st.firstCoderProps,
                                           st.firstCoderId);
     if (decoded.isEmpty()) {
+        if (st.anyAes || st.firstCoderId == 0x06F10701) {
+            if (why) *why = QStringLiteral("7z header is encrypted (password required)");
+            if (encrypted) *encrypted = true;
+            return false;
+        }
         if (why) *why = QStringLiteral("7z 压缩头解不开（编码器不支持）");
         return false;
     }
@@ -363,9 +387,10 @@ bool loadHeaderBody(QFile &f, const uchar *sig, QByteArray *body, QString *why)
 
 } // namespace
 
-bool sevenZipIsRandomAccessible(const QString &path, QString *why)
+bool sevenZipIsRandomAccessible(const QString &path, QString *why, bool *encrypted)
 {
     if (why) why->clear();
+    if (encrypted) *encrypted = false;
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly)) {
         if (why) *why = QStringLiteral("打不开文件");
@@ -383,7 +408,7 @@ bool sevenZipIsRandomAccessible(const QString &path, QString *why)
         return false;
     }
     QByteArray body;
-    if (!loadHeaderBody(f, sig, &body, why)) return false;
+    if (!loadHeaderBody(f, sig, &body, why, encrypted)) return false;
 
     // 走 Header → MainStreamsInfo（FilesInfo 里还有文件总数，用来补"最后一块"）
     Reader r { reinterpret_cast<const uchar *>(body.constData()),
@@ -399,8 +424,16 @@ bool sevenZipIsRandomAccessible(const QString &path, QString *why)
     for (;;) {
         if (!r.byte(&id)) break;
         if (id == kMainStreamsInfo) {
-            if (!readStreamsInfo(r, &st, &external)) {
-                if (why) *why = QStringLiteral("7z 主流信息不认识");
+            if (!readStreamsInfo(r, &st, &external) || st.anyAes) {
+                //   ★ 目录头里有 AES coder（`06 F1 07 01`）⇒ 这是**条目加密**的 7z
+                //     （头本身是明文）：我们解不开 AES 流，所以**判不了 solid**。
+                //     取舍（用户 2026-11-03）：当作"非 solid/未知"放行，让 libarchive 用
+                //     密码去打开；真 solid 的包由 libarchive 报错兜底。
+                //   ★ 条目加密（头明文、数据用 AES）：libarchive 3.8 解不了 ⇒ **不支持**
+                //     （实测：`bsdtar --passphrase` 同样报 "content is encrypted,
+                //      but currently not supported"）。这里直接判死，别放行。
+                if (encrypted) *encrypted = true;
+                if (why) *why = QStringLiteral("7z data is encrypted (unsupported by libarchive)");
                 return false;
             }
             continue;

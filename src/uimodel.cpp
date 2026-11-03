@@ -259,7 +259,7 @@ void UiModel::buildViewer()
     if (m_path.isEmpty()) return;
 
     Source s;
-    s.seq = new Sequence;
+    s.seq = new Sequence;          // 新来源 ⇒ 空密码表（"密码随来源"）
     // ★★ **序列只有一个消费者 = 本类（GUI 线程）**：唤醒 = 序列自带的**发布钩子**
     //   （生产者放完一批 / 写终态时调）⇒ **合并成一次** queued 投递 ⇒ 一次 drain 到空。
     //   ⚠️ 必须**在 `startScan()` 之前**设好（此后生产者只读 ⇒ 无锁读安全）。
@@ -293,6 +293,9 @@ void UiModel::installViewer(Source s)
     //   自动保存的"有变化"：位置或版面变了 ⇒ 下一个间隔点写一次
     connect(s.vm, &fetch::ViewerModel::currentChanged, this, [this] { markProgressDirty(); });
     connect(s.vm, &fetch::ViewerModel::doublePageChanged, this, [this] { markProgressDirty(); });
+    //   ★ 加密压缩包（设计 22 §5.3）：解码失败原因是"要密码" ⇒ 弹框（浏览进度文件那条路）
+    connect(s.vm, &fetch::ViewerModel::passwordRequired, this,
+            [this](int item, int level) { onPasswordRequired(item, level); });
     // ★ 本类与 viewer 之间只剩"**给序列 + 序列变了通知**"：位置 / 预取 / 上屏 / loading
     //   全归 viewer 自己。
     const Source old = m_src;
@@ -327,6 +330,7 @@ void UiModel::pumpSession()
     Sequence *seq = m_src.seq;
     if (!seq) return;
     if (seq->drain()) onSequenceChanged();
+    checkPasswordNeeded();
 }
 
 // 序列变了（放了新批 / 收尾）⇒ 通知 viewer（序列长进了）
@@ -591,6 +595,175 @@ void UiModel::setSoftwareBackend(bool on)
     emit softwareBackendChanged();
 }
 
+// ══ 加密压缩包（2026-11-03）：密码表住在 `Sequence` 里（**密码随来源**）══════════
+//   · key = 容器**绝对路径**（外层 = 源路径；嵌套 = `源!/成员链`）；
+//   · 本类只留**弹框瞬态**：正在问哪个 key / 错误文案 / 可见性；
+//   · "本次会话新输入、尚未保存"由序列的 `m_enteredUnsaved` 管，保存进度时问一次。
+bool UiModel::hasUnsavedPasswords() const
+{
+    return m_src.seq && m_src.seq->hasUnsavedPasswords();
+}
+
+//   这次扫描卡在密码上 ⇒ 让 QML 弹框（同一个包已经在问的话不重复发通知）
+void UiModel::checkPasswordNeeded()
+{
+    //   ★ 谁卡住就问谁：会话序列（打开来源 / 解码）或后台「重新扫描」那条。
+    Sequence *owner = nullptr;
+    QString key;
+    if (m_src.seq) {
+        key = m_src.seq->passwordNeeded();
+        if (!key.isEmpty()) owner = m_src.seq;
+    }
+    if (!owner && m_rescanSeq) {
+        key = m_rescanSeq->passwordNeeded();
+        if (!key.isEmpty()) owner = m_rescanSeq;
+    }
+    if (!owner || key == m_pendingPasswordKey) return;
+
+    m_pendingPasswordItem = -1;          // 扫描期
+    m_pendingPasswordKey = key;
+    m_passwordOwner = owner;
+    //   显示用：相对来源根的路径（来源本身 = 文件名）
+    QString shown = key;
+    const QString root = QFileInfo(m_path).absoluteFilePath();
+    if (key == root)
+        shown = QFileInfo(m_path).fileName();
+    else if (key.startsWith(root + QLatin1String("!/")))
+        shown = QFileInfo(m_path).fileName() + key.mid(root.size());
+    m_passwordPromptPath = shown;
+    //   试过才说"密码不正确"（第一次问的时候不能吓人）
+    m_passwordPromptError = m_attempted.contains(key) ? tr("Wrong password") : QString();
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] password required: %1").arg(shown);
+    emit passwordPromptChanged();
+}
+
+void UiModel::submitPassword(const QString &pw, bool reuseForSubsequent)
+{
+    const QString key = m_pendingPasswordKey;
+    if (key.isEmpty() || pw.isEmpty()) return;
+    m_attempted.insert(key);
+    Sequence *owner = m_passwordOwner;
+    m_passwordOwner = nullptr;
+    //   ★ 后台「重新扫描」那条序列问的 ⇒ 写回它、重启它（不碰当前会话序列）
+    if (m_rescanSeq && owner != m_rescanSeq && m_rescanSeq->passwordNeeded() == key) {
+        //   取消的是"会话那条"问的框，但后台重扫也在等同一个包 ⇒ 一并放弃重扫
+        delete m_rescanSeq;
+        m_rescanSeq = nullptr;
+        refreshScanning();
+    }
+    if (owner && owner == m_rescanSeq) {
+        owner->notePasswordEntered(key, pw);
+        if (reuseForSubsequent) owner->setPasswordDefault(pw);
+        m_pendingPasswordItem = -1;
+        m_pendingPasswordKey.clear();
+        m_passwordPromptPath.clear();
+        m_passwordPromptError.clear();
+        emit passwordPromptChanged();
+        owner->startScan(m_path, m_settings.recurseDepth(), m_settings.scanHidden(),
+                         Sequence::ScanOptions{ qint64(m_settings.innerArchiveMaxMb()) });
+        qCInfo(lcUi).noquote() << QStringLiteral("[ui] password submitted (rescan restarted)");
+        return;
+    }
+    if (m_src.seq) {
+        //   ★ 密码表住在序列里（随来源）；解码期不重扫，`syncItemPasswords()` 从这里回填。
+        m_src.seq->notePasswordEntered(key, pw);
+        if (reuseForSubsequent) m_src.seq->setPasswordDefault(pw);
+    }
+    //   ★ 同一个来源的两条序列（会话 + 后台重扫）同时等同一个容器的密码 ⇒ 共享这份输入，
+    //     否则重扫会一直停在"等密码"。来源没变 ⇒ 密码随来源走，只此一处共享。
+    if (m_rescanSeq && m_rescanSeq->passwordNeeded() == key) {
+        m_rescanSeq->notePasswordEntered(key, pw);
+        if (reuseForSubsequent) m_rescanSeq->setPasswordDefault(pw);
+        m_rescanSeq->startScan(m_path, m_settings.recurseDepth(), m_settings.scanHidden(),
+                               Sequence::ScanOptions{ qint64(m_settings.innerArchiveMaxMb()) });
+    }
+    const int item = m_pendingPasswordItem;
+    m_pendingPasswordItem = -1;
+    m_pendingPasswordKey.clear();
+    m_passwordPromptPath.clear();
+    m_passwordPromptError.clear();
+    emit passwordPromptChanged();
+    if (item >= 0 && m_src.seq && m_src.vm) {
+        //   ★ 解码期（浏览进度文件）：只重填密码 + **重取这一条**（不重扫、不关来源）
+        m_src.seq->syncItemPasswords();
+        m_src.vm->retry(item);
+        qCInfo(lcUi).noquote() << QStringLiteral("[ui] password submitted (retrying one item)");
+        return;
+    }
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] password submitted (retrying scan)");
+    //   ★ **同一个序列对象**再扫一次（`startScan` 自己先 join + 重置行）；
+    //     不新建序列 ⇒ 密码表（在序列里）自然带着，不必拷贝。
+    restartScan();
+}
+
+//   同一个来源重扫（提交密码后）：复用当前 `Sequence`，只把 viewer 的槽位/坏因复位
+void UiModel::restartScan()
+{
+    if (!m_src.seq) return;
+    m_src.seq->startScan(m_path, m_settings.recurseDepth(), m_settings.scanHidden(),
+                         Sequence::ScanOptions{ qint64(m_settings.innerArchiveMaxMb()) });
+    if (m_src.vm) m_src.vm->setSequence(m_src.seq);      // 槽位 / 坏因 / 位置复位
+    m_pendingJump = -1;
+    if (m_sessionProbe) m_sessionProbe->start();
+    refreshScanning();
+}
+
+void UiModel::cancelPassword()
+{
+    if (m_pendingPasswordKey.isEmpty()) return;
+    const QString key = m_pendingPasswordKey;
+    const bool decodeTime = m_pendingPasswordItem >= 0;
+    Sequence *owner = m_passwordOwner;
+    m_passwordOwner = nullptr;
+    m_pendingPasswordItem = -1;
+    m_pendingPasswordKey.clear();
+    m_passwordPromptPath.clear();
+    m_passwordPromptError.clear();
+    emit passwordPromptChanged();
+    if (owner && owner == m_rescanSeq) {
+        //   ★ 后台「重新扫描」问的不想答 ⇒ 放弃这次重扫，**当前画面不动**
+        owner->declinePassword(key);
+        delete m_rescanSeq;
+        m_rescanSeq = nullptr;
+        refreshScanning();
+        qCInfo(lcUi).noquote() << QStringLiteral("[ui] password cancelled; rescan abandoned");
+        return;
+    }
+    if (decodeTime) {
+        //   ★ 浏览进度文件时取消 ⇒ 只记"别再问"，**不关来源**（用户还在看图）
+        if (m_src.seq) m_src.seq->declinePassword(key);
+        qCInfo(lcUi).noquote() << QStringLiteral("[ui] password cancelled (item stays unreadable)");
+        return;
+    }
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] password cancelled; source closed");
+    dropSource();                       // 扫描期取消 ⇒ 中止本次打开（不留残缺序列）
+}
+
+//   ★ 解码期检测（设计 22 §5.3）：浏览进度文件时，光标进入某个需要密码的容器 ⇒ 弹框。
+void UiModel::onPasswordRequired(int item, int level)
+{
+    if (item < 0 || !m_src.seq) return;
+    if (item >= m_src.seq->count()) return;
+    const Sequence::Item &it = m_src.seq->at(item);
+    //   key = 容器绝对路径；`level` = 0 是外层盘上容器，i = 第 i 层嵌套
+    const QString key = Sequence::containerKey(it.loc.diskPath,
+                                               it.loc.members.mid(0, level));
+    if (m_src.seq->isPasswordDeclined(key)) return;  // 本次会话取消过 ⇒ 不再问
+    if (key == m_pendingPasswordKey) return;         // 已经在问同一个包
+
+    m_pendingPasswordItem = item;
+    m_pendingPasswordKey = key;
+    QString shown = key;
+    const QString root = QFileInfo(m_path).absoluteFilePath();
+    if (key == root) shown = QFileInfo(m_path).fileName();
+    else if (key.startsWith(root + QLatin1String("!/")))
+        shown = QFileInfo(m_path).fileName() + key.mid(root.size());
+    m_passwordPromptPath = shown;
+    m_passwordPromptError = m_attempted.contains(key) ? tr("Wrong password") : QString();
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] password required (while browsing): %1").arg(shown);
+    emit passwordPromptChanged();
+}
+
 // ══ 收藏夹 / 进度文件（设计 20）═════════════════════════════════════════════
 QString UiModel::favoritesDir() const
 {
@@ -728,6 +901,8 @@ void UiModel::startRescan()
 
     m_rescanSeq = new Sequence;
     //   与会话序列同一套唤醒：生产者放完一批 / 写终态 ⇒ 合并成一次 queued 投递
+    //   ★ 重扫 = 同一个来源的另一次扫描 ⇒ 来源已知的密码跟着表走（不再重复问）
+    m_rescanSeq->copyPasswordStateFrom(*m_src.seq);
     m_rescanSeq->setPublishHook([this] {
         if (m_rescanQueued.exchange(true)) return;
         QMetaObject::invokeMethod(this, [this] {
@@ -749,6 +924,12 @@ void UiModel::onRescanChanged()
     m_rescanSeq->drain();
     if (!m_rescanSeq->scanFinished()) {
         refreshScanning();                 // spin 的"已发现 N"
+        return;
+    }
+    if (!m_rescanSeq->passwordNeeded().isEmpty()) {
+        //   ★ 重扫卡在密码上 ⇒ **先别替换**（否则等于把这次重扫当"没扫到"），
+        //     保留这条序列，等用户输密码后重启它（设计 22 §5.1）。
+        checkPasswordNeeded();
         return;
     }
     applyRescan();
@@ -831,7 +1012,7 @@ void UiModel::refreshFavorited()
 
 //   把当前来源写成 filePath。**元数据里所有"进度相关"的字段都按**当前浏览状态**取**
 //   —— 位置（label 链 + 页号）、第 N 条 / 共 M 条、版面（单/双）；不用任何缓存值。
-bool UiModel::writeProgress(const QString &filePath, bool quiet)
+bool UiModel::writeProgress(const QString &filePath, bool quiet, bool savePasswords)
 {
     if (!m_src.seq || !m_src.vm) {
         if (!quiet) notify(tr("No source is open"));
@@ -869,6 +1050,24 @@ bool UiModel::writeProgress(const QString &filePath, bool quiet)
     d.meta.done = cursor + 1;
     d.meta.total = m_src.seq->count();
     d.rows = m_src.seq->rows();
+    //   ★ 加密压缩包（2026-11-03）：密码**按容器条目**写进行里（明文，用户已确认）。
+    //     · 已经保存过的（`Sequence::isPasswordSaved`）⇒ 每次都写（自动保存不能把密码弄丢）；
+    //     · 本次会话新输入的 ⇒ **只有用户同意**（`savePasswords`）才写。
+    //   ★ 源本身是加密容器（根压缩包没有行）⇒ 密码写在元数据段
+    {
+        const QString rootKey = m_src.seq->rootIsArchive() ? QFileInfo(m_path).absoluteFilePath()
+                                                            : QString();
+        if (!rootKey.isEmpty() && m_src.seq->hasStoredPassword(rootKey)
+            && (m_src.seq->isPasswordSaved(rootKey) || savePasswords))
+            d.meta.sourcePassword = m_src.seq->passwordToTry(rootKey);
+    }
+    for (const auto &row : m_src.seq->containerRows()) {
+        const QString &key = row.second;
+        if (!m_src.seq->hasStoredPassword(key)) continue;
+        if (!m_src.seq->isPasswordSaved(key) && !savePasswords) continue;
+        if (row.first >= 0 && row.first < d.rows.size())
+            d.rows[row.first].password = m_src.seq->passwordToTry(key);
+    }
 
     QString err;
     if (!progressfile::write(filePath, d, &err)) {
@@ -880,10 +1079,12 @@ bool UiModel::writeProgress(const QString &filePath, bool quiet)
     qCInfo(lcUi).noquote() << QStringLiteral("[ui] progress saved: %1 (%2 rows)")
                              .arg(filePath).arg(d.rows.size());
     snapshotSavedState(d.meta, d.rows.size());
+    if (savePasswords && m_src.seq)            // 用户同意保存 ⇒ 之后不再问
+        m_src.seq->markPasswordsSaved();
     return true;
 }
 
-bool UiModel::saveProgressToFavorites()
+bool UiModel::saveProgressToFavorites(bool savePasswords)
 {
     const QString file = currentFavoritesFile();
     if (file.isEmpty()) {
@@ -891,7 +1092,7 @@ bool UiModel::saveProgressToFavorites()
                                 : tr("Only folders and archives can save progress"));
         return false;
     }
-    if (!writeProgress(file))
+    if (!writeProgress(file, false, savePasswords))
         return false;
     refreshFavorited();
     if (m_favorites) m_favorites->reload();      // 列表里能立刻看到
@@ -900,7 +1101,7 @@ bool UiModel::saveProgressToFavorites()
     return true;
 }
 
-bool UiModel::saveProgressToFile()
+bool UiModel::saveProgressToFile(bool savePasswords)
 {
     if (!m_src.seq || !m_src.vm) {
         notify(tr("No source is open"));
@@ -918,7 +1119,7 @@ bool UiModel::saveProgressToFile()
     QString file = picked;
     if (!file.endsWith(QLatin1String(".prsave"), Qt::CaseInsensitive))
         file += QLatin1String(".prsave");
-    if (!writeProgress(file))
+    if (!writeProgress(file, false, savePasswords))
         return false;
     m_lastProgressDir = QFileInfo(file).absolutePath();
     startTrackingProgress(file);
@@ -958,6 +1159,14 @@ bool UiModel::openProgress(const QString &filePath)
     s.seq = new Sequence;
     //   ★ 恢复 = 行 → 序列（**同一份 `Sequence::Row`**，与扫描共用一套表示）
     s.seq->restore(d.meta.sourcePath, d.rows, d.meta.sourceKind == Sequence::Kind::Archive);
+    //   ★ 加密压缩包（2026-11-03）：进度文件里存了密码的容器行 ⇒ 灌进序列（条目已建好，
+    //     `applyRowPasswords()` 会把每个条目的 `loc.passwords` 一并补齐）⇒ 浏览时不再弹框。
+    const QString srcKey = QFileInfo(d.meta.sourcePath).absoluteFilePath();
+    if (!d.meta.sourcePassword.isEmpty())
+        s.seq->setPassword(srcKey, d.meta.sourcePassword);      // ★ 源本身是加密容器
+    s.seq->applyRowPasswords();
+    s.seq->markPasswordsSaved();      // 文件里已有 ⇒ 不再问"是否保存"
+    s.seq->syncItemPasswords();
     s.vm = new fetch::ViewerModel(m_settings.prefetchWindow(), nullptr);
     m_path = d.meta.sourcePath;
     installViewer(s);

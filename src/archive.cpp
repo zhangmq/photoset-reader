@@ -159,12 +159,23 @@ bool ArchiveSource::open(const QString &path, const QString &password, Entries e
     QMutexLocker lock(&m_mutex);
     close();
     m_password = password;
+    m_needsPassword = false;
+    m_openError.clear();
 
     const QString suffix = QFileInfo(path).suffix().toLower();
     const bool isRar = (suffix == QLatin1String("rar") || suffix == QLatin1String("cbr"));
 
+    const auto isPasswordFailure = [this]() {
+        if (m_openError.contains(QLatin1String("password"), Qt::CaseInsensitive)) return true;
+        if (m_openError.contains(QLatin1String("passphrase"), Qt::CaseInsensitive)) return true;
+        return false;
+    };
+
     if (isRar) {
-        if (!openUnrar(path, password, entries, progress)) return false;
+        if (!openUnrar(path, password, entries, progress)) {
+            m_needsPassword = isPasswordFailure();
+            return false;
+        }
     } else {
         if (!openLibarchive(path, password, entries, progress)) {
             // 枚举被取消（不是"打不开"）⇒ 不要再回退 / 不要再报错
@@ -172,8 +183,20 @@ bool ArchiveSource::open(const QString &path, const QString &password, Entries e
             qCWarning(lcScan).noquote()
                 << QStringLiteral("[scan] libarchive open failed, falling back to libunrar: %1")
                        .arg(QFileInfo(path).fileName());
-            if (!openUnrar(path, password, entries, progress)) return false;
+            if (!openUnrar(path, password, entries, progress)) {
+                m_needsPassword = isPasswordFailure();
+                return false;
+            }
         }
+    }
+
+    //   ★ 打开**成功**但内容加密、又没给密码（典型：ZIP 条目加密 —— 中央目录明文，
+    //     名字/大小都列得出来，真正读条目时才要 passphrase）⇒ 立刻标记"需要密码"，
+    //     让调用方在取任何字节之前弹框（否则会读失败、白跑一遍扫描）。
+    if (m_encrypted && m_password.isEmpty()) {
+        m_needsPassword = true;
+        m_openError = QStringLiteral("passphrase required (encrypted entries)");
+        return true;                          // 条目表是好的，只是读不了
     }
 
     if (m_names.isEmpty()) {
@@ -281,8 +304,9 @@ bool ArchiveSource::openLibarchive(const QString &path, const QString &password,
 {
     ArcReader r;
     if (!r.open(path, password)) {
+        m_openError = archiveError(r.a);
         qCWarning(lcScan).noquote() << QStringLiteral("[scan] libarchive open failed: %1 (%2)")
-                                   .arg(path, archiveError(r.a));
+                                   .arg(path, m_openError);
         return false;
     }
     if (!listLibarchive(r, entries, &m_names, &m_sizes, &m_archiveOrder, &m_format, &m_encrypted,
@@ -298,8 +322,9 @@ bool ArchiveSource::openLibarchiveBytes(const QByteArray &bytes, const QString &
 {
     ArcReader r;
     if (!r.openMemory(bytes, password)) {
+        m_openError = archiveError(r.a);
         qCWarning(lcScan).noquote() << QStringLiteral("[scan] libarchive memory open failed: %1")
-                                   .arg(archiveError(r.a));
+                                   .arg(m_openError);
         return false;
     }
     if (!listLibarchive(r, entries, &m_names, &m_sizes, &m_archiveOrder, &m_format, &m_encrypted,
@@ -316,8 +341,9 @@ bool ArchiveSource::openUnrar(const QString &path, const QString &password, Entr
 {
     UnrarReader r;
     if (!r.open(path, password, RAR_OM_LIST)) {
+        m_openError = unrarErrorText(r.openResult);
         qCWarning(lcScan).noquote() << QStringLiteral("[scan] libunrar open failed: %1")
-                                   .arg(unrarErrorText(r.openResult));
+                                   .arg(m_openError);
         return false;
     }
 
@@ -527,8 +553,12 @@ QByteArray ArchiveSource::dataLibarchive(int index) const
                 const la_ssize_t got = archive_read_data(seq->r.a, out.data() + total,
                                                          size_t(wantSize - total));
                 if (got < 0) {
+                    const QString err = archiveError(seq->r.a);
+                    if (err.contains(QLatin1String("passphrase"), Qt::CaseInsensitive)
+                        || err.contains(QLatin1String("password"), Qt::CaseInsensitive))
+                        m_needsPassword = true;          // ★ 密码错 / 没给：交给上层弹框
                     qCWarning(lcScan).noquote() << QStringLiteral("[scan] libarchive extraction failed: %1 (%2)")
-                        .arg(m_names.at(index), archiveError(seq->r.a));
+                        .arg(m_names.at(index), err);
                     bad = true;
                     break;
                 }

@@ -53,6 +53,9 @@ struct Meta {
 
     QString        title;                  // 列表显示用（源的名字）
     QString        sourcePath;             // 源**绝对路径**
+    //   ★ 加密压缩包（2026-11-03）：**源本身**是加密容器时的密码（明文）。
+    //     嵌套容器的密码在各自的 `Sequence::Row::password` 上（根容器没有行）。
+    QString        sourcePassword;
     Sequence::Kind sourceKind = Sequence::Kind::Folder;
     qint64         sourceMtime = 0;        // 保存那一刻（诊断用；**不做自动重扫判定**）
 

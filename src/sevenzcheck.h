@@ -15,4 +15,5 @@
 //     · 实测差 30 倍：非 solid 全扫 117 条 1.8s ✓ / solid 48.9s ✗
 //
 //   ★ 拿不准就返回 **false**（按"不能随机读"处理）—— 宁可少支持，不要卡死用户。
-bool sevenZipIsRandomAccessible(const QString &path, QString *why);
+bool sevenZipIsRandomAccessible(const QString &path, QString *why,
+                                bool *encrypted = nullptr);

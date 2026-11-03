@@ -18,6 +18,25 @@ ApplicationWindow {
 
     // ★ 唯一的界面：查看。它自己管浮层显隐 / 键盘 / 设置对话框；
     //   `focus` 绑定在组件里（这里**不要**再绑 —— 实例级绑定会覆盖组件里的那一份，见 07 §五）。
+    // ══ 加密压缩包：要密码（**全局唯一实例**；设计 22 §6）══════════════════
+    //   驱动字段全在 `UiModel`：扫描期（打不开）与解码期（浏览进度文件）共用同一个框。
+    PasswordDialog {
+        id: passwordDialog
+        pathLabel: ui.passwordPromptPath
+        errorText: ui.passwordPromptError
+        onSubmitted: function (pw, reuse) { ui.submitPassword(pw, reuse) }
+        onCancelled: ui.cancelPassword()
+    }
+    Connections {
+        target: ui
+        function onPasswordPromptChanged() {
+            if (ui.passwordPromptVisible && !passwordDialog.visible)
+                passwordDialog.open()
+            else if (!ui.passwordPromptVisible && passwordDialog.visible)
+                passwordDialog.close()
+        }
+    }
+
     FullscreenView {
         id: viewerView
         anchors.fill: parent

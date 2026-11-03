@@ -99,6 +99,25 @@ imageread::Location locateOne(const QString &rootPath, bool rootIsArchive,
     return loc;
 }
 
+//   ★ 按层填密码（加密压缩包，2026-11-03）：`[0]` = 最外层（diskPath），
+//     `[i]` = 第 i 层嵌套容器（= members[i-1]）；最后一项（叶子）留空 —— 它不是容器。
+void fillLocationPasswords(const QHash<QString, QString> &table, const QString &sticky,
+                           imageread::Location &loc)
+{
+    const auto pick = [&](const QString &key) {
+        const auto it = table.constFind(key);
+        return it != table.constEnd() ? it.value() : sticky;
+    };
+    loc.passwords.clear();
+    loc.passwords << pick(loc.diskPath);
+    QString key = loc.diskPath;
+    for (int i = 0; i + 1 < loc.members.size(); ++i) {
+        key += QStringLiteral("!/") + loc.members.at(i);
+        loc.passwords << pick(key);
+    }
+    while (loc.passwords.size() < loc.members.size()) loc.passwords << QString();
+}
+
 } // namespace
 
 // ══ 构造 / 析构 ══════════════════════════════════════════════════════
@@ -774,6 +793,7 @@ void Sequence::applyRows(const QVector<Row> &rows)
         it.ord = r.ord;
         it.loc = locateOne(m_root, m_rootIsArchive, m_rowIndexByOrd, m_rows, rowIndex,
                            m_scanOptions.innerArchiveMaxMb);
+        fillLocationPasswords(m_passwords, m_passwordDefault, it.loc);   // ★ 加密压缩包
         it.size = QSize(r.width, r.height);
         it.missing = m_markMissingBySize && !it.size.isValid();
         const int pn = m_nodeIndexByOrd.value(r.parentOrd, m_nodeIndexByOrd.value(-1, -1));
@@ -908,7 +928,25 @@ QString Sequence::checkSupported(const QString &path, const std::function<bool()
         m_unsupportedLog = QStringLiteral("stream-compressed suffix=.%1").arg(suf);
     } else if (suf == QLatin1String("7z") || suf == QLatin1String("cb7")) {
         QString why;
-        if (!sevenZipIsRandomAccessible(path, &why)) {
+        bool enc7z = false;
+        const bool randomOk = sevenZipIsRandomAccessible(path, &why, &enc7z);
+        //   ⚠️ 实测（2026-11-03，libarchive 3.8.11）：**7z 的加密（头或条目）它都不支持**
+        //     （"The archive header is encrypted, but currently not supported" /
+        //      "The file content is encrypted, but currently not supported"），
+        //     系统里也没有 lib7z 可链接 ⇒ 加密 7z 打不开，**明确告诉用户去解压**，
+        //     而不是弹一个"输了密码也打不开"的框。
+        if (enc7z) {
+            m_unsupported = QCoreApplication::translate("Sequence",
+                "Encrypted 7z is not supported yet; extract it to a folder first");
+            m_unsupportedLog = QStringLiteral("7z encrypted (libarchive cannot decrypt)");
+            return m_unsupported;
+        }
+        if (!randomOk) {
+            //   ★ 7z **头部加密**（AES-256）：不是"不支持"，是"要密码" ⇒ 放行，
+            //     交给 `ArchiveSource::open(path, 密码)` 去处理（用户 2026-11-03）。
+            //     代价：solid 判定在"头加密"时做不了 ⇒ 当作**非 solid** 继续；
+            //     真 solid 的包会在打开/读取时暴露（libarchive 自己会报错）。
+            if (why.isEmpty()) why = QStringLiteral("7z not randomly accessible");
             m_unsupported = QCoreApplication::translate("Sequence",
                         "7z cannot be read randomly (%1); extract it to a folder first").arg(why);
             m_unsupportedLog = QStringLiteral("7z not randomly accessible: %1").arg(why);
@@ -1016,10 +1054,20 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
                                            m_scanOptions.innerArchiveMaxMb);
             Item probe;
             probe.loc = loc;
-            const QSize sz = imageread::imageSize(probe.loc);
+            //   ★ 加密压缩包：扫描期读图头也要密码（与建条目时同一份密码表）
+            fillLocationPasswords(m_passwords, m_passwordDefault, probe.loc);
+            int pwLevel = -1;
+            const QSize sz = imageread::imageSize(probe.loc, &pwLevel);
             bumpProgress();                      // ★ 逐条读图头（`imageSize()`）返回后写进度
             if (stopRequested()) return r.ord;   // ★ 看到停止立刻退出，不再碰任何状态
             Row &back = localRows.last();
+            if (!sz.isValid() && pwLevel >= 0) {
+                //   ★ 读图头失败且原因是密码（典型：密码错 / 没给）⇒ 中止这次扫描去弹框；
+                //     不留半截行（列表里已经有的是父行，重扫会整体换掉）。
+                m_passwordNeeded = containerKey(loc.diskPath, loc.members.mid(0, pwLevel));
+                requestStop();
+                return r.ord;
+            }
             if (sz.isValid()) { back.width = sz.width(); back.height = sz.height(); }
             else              { back.width = 0; back.height = 0; }
             batch << back;
@@ -1154,13 +1202,34 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
                 if (stopRequested()) return;
                 if (bytes.isEmpty()) continue;
                 ArchiveSource inner;
+                QStringList innerChain = cMembers;
+                innerChain << e.name;                    // 这个内层包**自身**的成员链
+                const QString innerKey = containerKey(m_root, innerChain);
                 // ★ 内层容器的**枚举**同样要汇报进度（它也可能有几万条）
-                if (!inner.openBytes(bytes, e.leaf, QString(),
+                if (!inner.openBytes(bytes, e.leaf, passwordToTry(innerKey),
                                      ArchiveSource::Entries::All, progressFn)) {
                     if (stopRequested()) return;             // 取消 ⇒ 不是"打不开"，不记日志
+                    if (inner.needsPassword()) {
+                        m_passwordNeeded = innerKey;
+                        writeTerminal(State::Scaned);
+                        return;
+                    }
                     qCWarning(lcScan).noquote()
                         << QStringLiteral("[scan] nested archive open failed, container skipped: %1").arg(e.name);
                     continue;
+                }
+                if (inner.needsPassword()) {
+                    //   ★ 嵌套的 7z 加密同样**不支持、不弹框**（见上）
+                    const QString suf7 = QFileInfo(e.name).suffix().toLower();
+                    if (suf7 == QLatin1String("7z") || suf7 == QLatin1String("cb7")) {
+                        qCWarning(lcScan).noquote()
+                            << QStringLiteral("[scan] encrypted 7z (nested) is not supported, skipped: %1")
+                                   .arg(e.name);
+                        continue;
+                    }
+                    m_passwordNeeded = innerKey;
+                    writeTerminal(State::Scaned);
+                    return;
                 }
                 QStringList members = cMembers;
                 members << e.name;
@@ -1215,13 +1284,33 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
                 }
                 if (e.isArchive) {                             // 压缩包：在场展开
                     ArchiveSource a;
+                    const QString key = QFileInfo(e.path).absoluteFilePath();
                     // ★ 必须列出**全部**条目（要看见"压缩包里的压缩包"）；
-                    //   打不开 ⇒ 该容器不出现（+ 日志）
-                    if (!a.open(e.path, QString(), ArchiveSource::Entries::All, progressFn)) {
+                    //   打不开 ⇒ 该容器不出现（+ 日志）；**要密码** ⇒ 中止整次扫描去弹框
+                    if (!a.open(e.path, passwordToTry(key), ArchiveSource::Entries::All, progressFn)) {
                         if (stopRequested()) return;           // 取消 ⇒ 不是"打不开"，不记日志
+                        if (a.needsPassword()) {
+                            //   ★ 7z 加密 = 不支持（libarchive 解不了）⇒ 跳过并记日志，
+                            //     **不许弹框**（弹了也永远打不开，用户会无限重试）。
+                            const QString suf = QFileInfo(e.path).suffix().toLower();
+                            if (suf == QLatin1String("7z") || suf == QLatin1String("cb7")) {
+                                qCWarning(lcScan).noquote()
+                                    << QStringLiteral("[scan] encrypted 7z is not supported, skipped: %1")
+                                           .arg(e.name);
+                                continue;
+                            }
+                            m_passwordNeeded = key;
+                            writeTerminal(State::Scaned);
+                            return;
+                        }
                         qCWarning(lcScan).noquote()
                             << QStringLiteral("[scan] archive open failed, container skipped: %1").arg(e.path);
                         continue;
+                    }
+                    if (a.needsPassword()) {
+                        m_passwordNeeded = key;
+                        writeTerminal(State::Scaned);
+                        return;
                     }
                     const int arcOrd = emitNode(Kind::Archive, e.name, nodeOrd);
                     expandArchive(a, QStringList(), arcOrd, 0);
@@ -1243,12 +1332,33 @@ void Sequence::scanThreadMain(QString path, int maxDepth, bool hidden)
         walk(path, 0, -1, QString());                // 根**没有节点行**（根描述那一片负责）
     } else if (rootIsArchive) {
         ArchiveSource a;
-        if (!a.open(path, QString(), ArchiveSource::Entries::All, progressFn)) {
+        const QString key = m_root;                      // 外层容器 key = 源绝对路径
+        if (!a.open(path, passwordToTry(key), ArchiveSource::Entries::All, progressFn)) {
             if (stopRequested()) {                   // ★ 是取消（不是"打不开"）⇒ 不记日志、不写 Scaned
                 writeTerminal(State::ScanStoped);
                 return;
             }
+            if (a.needsPassword()) {                  // ★ 要密码：中止扫描，交给 GUI 弹框
+                m_passwordNeeded = key;
+                writeTerminal(State::Scaned);
+                return;
+            }
             qCWarning(lcScan).noquote() << QStringLiteral("[scan] archive open failed: %1").arg(path);
+            writeTerminal(State::Scaned);
+            return;
+        }
+        //   ★ ZIP 条目加密：**打开成功**（中央目录明文）但内容要 passphrase ⇒ 也要先要密码，
+        //     否则读每条图头时才失败（白跑一遍扫描）。
+        if (a.needsPassword()) {
+            const QString suf = QFileInfo(path).suffix().toLower();
+            if (suf == QLatin1String("7z") || suf == QLatin1String("cb7")) {
+                m_unsupported = QCoreApplication::translate("Sequence",
+                    "Encrypted 7z is not supported yet; extract it to a folder first");
+                m_unsupportedLog = QStringLiteral("7z encrypted (libarchive cannot decrypt)");
+                writeTerminal(State::Scaned);
+                return;
+            }
+            m_passwordNeeded = key;
             writeTerminal(State::Scaned);
             return;
         }
@@ -1455,4 +1565,105 @@ int Sequence::markMissing()
         else if (exists && it.missing) { it.missing = false; }
     }
     return n;
+}
+
+// ══ 加密压缩包：密码 key 与查询（2026-11-03）═════════════════════════════════
+//   key = 容器**绝对路径**：外层就是 `diskPath`；嵌套 = `diskPath + "!/" + 成员链`。
+//   ★ 与 OSD 里 `diskPath!/成员链` 的写法一致（同一个概念只有一个写法）。
+QString Sequence::containerKey(const QString &diskPath, const QStringList &chain)
+{
+    if (chain.isEmpty()) return diskPath;
+    return diskPath + QStringLiteral("!/") + chain.join(QStringLiteral("!/"));
+}
+
+void Sequence::setPassword(const QString &key, const QString &pw)
+{
+    if (key.isEmpty() || pw.isEmpty()) return;
+    m_passwords.insert(key, pw);
+    m_passwordNeeded.clear();          // 有密码了 ⇒ 不再是"卡在密码上"
+}
+
+QString Sequence::rowKey(int rowIndex) const
+{
+    if (rowIndex < 0 || rowIndex >= m_rows.size()) return {};
+    if (m_rows.at(rowIndex).kind == Kind::Image) return {};
+    const imageread::Location loc = locateOne(m_root, m_rootIsArchive, m_rowIndexByOrd, m_rows,
+                                              rowIndex, m_scanOptions.innerArchiveMaxMb);
+    if (loc.members.isEmpty()) return loc.diskPath;
+    return loc.diskPath + QStringLiteral("!/") + loc.members.join(QStringLiteral("!/"));
+}
+
+QVector<QPair<int, QString>> Sequence::containerRows() const
+{
+    QVector<QPair<int, QString>> out;
+    for (int i = 0; i < m_rows.size(); ++i) {
+        if (m_rows.at(i).kind != Kind::Archive) continue;
+        const QString key = rowKey(i);
+        if (!key.isEmpty()) out.append({ i, key });
+    }
+    return out;
+}
+
+void Sequence::syncItemPasswords()
+{
+    for (Item &it : m_items)
+        fillLocationPasswords(m_passwords, m_passwordDefault, it.loc);
+}
+
+void Sequence::applyRowPasswords()
+{
+    for (int i = 0; i < m_rows.size(); ++i) {
+        const QString pw = m_rows.at(i).password;
+        if (pw.isEmpty()) continue;
+        const QString key = rowKey(i);
+        if (!key.isEmpty()) {
+            m_passwords.insert(key, pw);
+            m_savedPasswords.insert(key);          // 文件里已有 ⇒ 不再问"是否保存"
+        }
+    }
+    //   已经建好的条目也要补上（`restore()` 建条目时密码表还是空的）
+    for (Item &it : m_items)
+        fillLocationPasswords(m_passwords, m_passwordDefault, it.loc);
+}
+
+void Sequence::notePasswordEntered(const QString &key, const QString &pw)
+{
+    if (key.isEmpty() || pw.isEmpty()) return;
+    m_passwords.insert(key, pw);
+    m_enteredUnsaved.insert(key, pw);
+    m_passwordNeeded.clear();
+}
+
+void Sequence::copyPasswordStateFrom(const Sequence &other)
+{
+    if (&other == this) return;
+    m_passwords       = other.m_passwords;
+    m_passwordDefault = other.m_passwordDefault;
+    m_enteredUnsaved  = other.m_enteredUnsaved;
+    m_savedPasswords  = other.m_savedPasswords;
+    m_declined        = other.m_declined;
+}
+
+void Sequence::markPasswordsSaved()
+{
+    //   ★ **表里所有密码都算"已保存"**：调用点只有两个 ——
+    //     ① 刚读完一份进度文件（文件里有的就是已保存的，含**元数据段的根容器密码**，
+    //        它不走 `applyRowPasswords()` ⇒ 只看 `m_enteredUnsaved` 会漏掉它）；
+    //     ② 刚写进度文件且用户同意保存密码（写下去的就是表里这些）。
+    for (auto it = m_passwords.constBegin(); it != m_passwords.constEnd(); ++it)
+        m_savedPasswords.insert(it.key());
+}
+
+bool Sequence::hasUnsavedPasswords() const
+{
+    for (auto it = m_enteredUnsaved.constBegin(); it != m_enteredUnsaved.constEnd(); ++it)
+        if (!m_savedPasswords.contains(it.key())) return true;
+    return false;
+}
+
+QString Sequence::passwordToTry(const QString &key) const
+{
+    const auto it = m_passwords.constFind(key);
+    if (it != m_passwords.constEnd()) return it.value();
+    return m_passwordDefault;      // sticky 只作**候选**：试错仍会再弹框
 }

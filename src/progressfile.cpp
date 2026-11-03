@@ -91,6 +91,10 @@ QJsonObject rowToJson(const Sequence::Row &r)
     o.insert(QStringLiteral("height"), r.height);
     o.insert(QStringLiteral("firstIndex"), r.firstIndex);
     o.insert(QStringLiteral("lastIndex"), r.lastIndex);
+    //   ★ 加密压缩包（2026-11-03）：容器行的密码。按**条目**存（用户要求：即使勾了
+    //     "后续使用相同密码"，也逐个容器写，不搞一份通用密码）。明文 —— 用户已确认。
+    if (!r.password.isEmpty())
+        o.insert(QStringLiteral("password"), r.password);
     return o;
 }
 
@@ -108,6 +112,7 @@ Sequence::Row rowFromJson(const QJsonObject &o)
     r.height     = o.value(QStringLiteral("height")).toInt();
     r.firstIndex = o.value(QStringLiteral("firstIndex")).toInt(-1);
     r.lastIndex  = o.value(QStringLiteral("lastIndex")).toInt(-1);
+    r.password   = o.value(QStringLiteral("password")).toString();
     return r;
 }
 
@@ -156,6 +161,8 @@ bool parseHead(const QByteArray &bytes, Meta *m, int *rowsOffset, QString *err)
             m->title = unescaped(value);
         } else if (key == "source") {
             m->sourcePath = unescaped(value);
+        } else if (key == "password") {                  // ★ 源本身（外层容器）的密码
+            m->sourcePassword = unescaped(value);
         } else if (key == "kind") {
             m->sourceKind = kindFromName(value);
         } else if (key == "mtime") {
@@ -296,6 +303,8 @@ bool write(const QString &filePath, const Data &d, QString *err)
     head += "savedAt " + QByteArray::number(d.meta.savedAt) + '\n';
     head += "title " + escaped(d.meta.title).toUtf8() + '\n';
     head += "source " + escaped(d.meta.sourcePath).toUtf8() + '\n';
+    if (!d.meta.sourcePassword.isEmpty())                 // ★ 加密压缩包（源本身）
+        head += "password " + escaped(d.meta.sourcePassword).toUtf8() + '\n';
     head += "kind " + kindName(d.meta.sourceKind).toUtf8() + '\n';
     head += "mtime " + QByteArray::number(d.meta.sourceMtime) + '\n';
     head += "scan " + QByteArray(d.meta.hidden ? "1" : "0") + ' '

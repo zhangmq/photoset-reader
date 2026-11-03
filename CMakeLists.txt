@@ -258,6 +258,7 @@ function(ib_add_qml_resources target)
         src/ui/components/HintBubble.qml
         src/ui/components/SearchField.qml
         src/ui/components/ConfirmDialog.qml
+        src/ui/components/PasswordDialog.qml
         src/ui/components/SegmentedControl.qml
         src/ui/components/Breadcrumb.qml
         src/ui/components/Badge.qml

@@ -212,8 +212,6 @@ int main(int argc, char *argv[])
     QCommandLineOption idxOpt(QStringLiteral("index"),
                               QStringLiteral("Jump to item N when opening the source"),
                               QStringLiteral("n"), QStringLiteral("-1"));
-    QCommandLineOption pwOpt(QStringLiteral("password"),
-                             QStringLiteral("Archive password"), QStringLiteral("pw"));
     QCommandLineOption seekOpt(QStringLiteral("seek-test"),
                                QStringLiteral("Jump to page N and report the result"),
                                QStringLiteral("n"), QStringLiteral("-1"));
@@ -279,7 +277,6 @@ int main(int argc, char *argv[])
     parser.addOption(idxOpt);
     parser.addOption(probeArcOpt);
     parser.addOption(probeLaOpt);
-    parser.addOption(pwOpt);
     parser.addOption(popupOpt);
     parser.addOption(osdOpt);
     parser.addOption(seekOpt);
@@ -465,7 +462,7 @@ int main(int argc, char *argv[])
     if (parser.isSet(devSaveFavOpt)) {
         QTimer::singleShot(1200, ui, [ui] {
             qCInfo(lcApp).noquote() << QStringLiteral("[app] dev: save progress to favorites: %1")
-                                        .arg(ui->saveProgressToFavorites() ? QStringLiteral("ok")
+                                        .arg(ui->saveProgressToFavorites(false) ? QStringLiteral("ok")
                                                                            : QStringLiteral("failed"));
         });
     }

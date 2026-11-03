@@ -149,6 +149,9 @@ public:
     Q_INVOKABLE void setViewport(qreal logicalW, qreal logicalH, qreal dpr);
     Q_INVOKABLE void applyFit();
     Q_INVOKABLE void panBy(qreal dx, qreal dy);
+    //   ★ 加密压缩包（设计 22 §5.3）：用户提交了密码 ⇒ **只清这一条的坏因**再重取一次。
+    //     唯一调用点 = "提交密码"，**不做任何自动重试**。
+    Q_INVOKABLE void retry(int item);
     //   把 pan 夹回当前 zoom/视口允许的范围（视口/dpr 变化后必须调，否则 VM 与渲染不一致）
     void clampPan();
     Q_INVOKABLE void zoomAtPoint(qreal factor, qreal anchorX, qreal anchorY);
@@ -189,6 +192,8 @@ Q_SIGNALS:
     void doublePageChanged();
     void fitModeChanged();
     void zoomChanged();
+    //   ★ 解码失败且原因是密码：`item` = 条目下标，`level` = 层号（0 = 最外层容器）
+    void passwordRequired(int item, int level);
     void panChanged();
     void zoomLockedChanged();
     void osdVisibleChanged();
@@ -212,8 +217,10 @@ private:
 
     //   坏因：这一条拿不出图的原因。**只有两种**，对应两个已知写点（见 .cpp）。
     enum class Bad {
-        Missing,      // 元数据已标缺失（`Item::missing`）⇒ 不派解码
-        Unreadable,   // 解码回来是空图 ⇒ 不可读
+        Missing,        // 元数据已标缺失（`Item::missing`）⇒ 不派解码
+        Unreadable,     // 解码回来是空图 ⇒ 不可读
+        NeedsPassword,  // ★ 读失败的原因是"要密码"（设计 22 §5.3）—— 不许记成 Unreadable，
+                        //   否则这条会被**永久跳过**，用户输了密码也回不来
     };
 
     //   ★ **post 交接点没有锁**：工作线程**完全不碰 `ViewerModel`**，也**不读**下面两个字段
@@ -234,7 +241,8 @@ private:
 
     // ── 结果回主线程 ────────────────────────────────────────────────────
     //   先比记号，再比"这个槽现在还等不等这一条"；任一条不符 ⇒ 直接丢（白干，不算数）。
-    void onLoaded(quint64 epoch, int slot, const QImage &image);
+    void onLoaded(quint64 epoch, int slot, const QImage &image, int passwordLevel,
+                  bool passwordUsed);
 
     // ── 每个动作（stepPage / jump / 换版面）：改位置 → 当场判 → 就位就上屏 / 没就位就派活再等
     //   `stepDir` = 这次是"换一屏"（+1 / −1）；0 = 跳转或换版面（份额回到起始）。
@@ -284,7 +292,8 @@ private:
     //   换一屏：**单幅** = 相邻一条；**双幅** = 问序列的配对表（+本对张数）。到头 ⇒ -1。
     //   ⇒ "±本对张数"的算术在序列的配对表里，本类只做"这次用一条还是用一对"的选择。
     int  nextScreen(int start, int dir) const;
-    bool onScreen(int item) const;             // 这一条在不在当前屏上（淘汰时不离手）
+    bool onScreen(int item) const;
+    bool screenWaitsPassword(const QVector<int> &items) const;             // 这一条在不在当前屏上（淘汰时不离手）
     int  slotOf(int item) const;      // 管着这一条的槽（-1 = 没有）
     QImage imageOf(int item) const;   // 这一条备好时的那张图（坏 / 在飞 ⇒ 空图）
     int  takeSlot(int item);          // 找一个槽给它（池满 ⇒ 淘汰；找不到 ⇒ -1）

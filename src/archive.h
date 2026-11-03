@@ -80,6 +80,15 @@ public:
     QString formatName() const { return m_format; }
     bool isEncrypted() const { return m_encrypted; }
 
+    // ★ **需要密码**（2026-11-03，加密压缩包支持）：
+    //   · 打开**失败**且失败原因是密码（libunrar 的 `ERAR_MISSING_PASSWORD` / `ERAR_BAD_PASSWORD`；
+    //     libarchive 的 error string 含 "Passphrase"，大小写不敏感）；或
+    //   · 打开**成功**但里面有加密条目、而这次没给密码（ZIP 条目加密：列得出来、读不了）。
+    //   ⇒ 调用方据此**在取任何条目字节之前**弹框要密码。
+    bool needsPassword() const { return m_needsPassword; }
+    //   最近一次失败的英文原因（日志 / 诊断用，不含密码）
+    QString openError() const { return m_openError; }
+
     // **能不能随机读**：RAR 由打开时的 ROADF_SOLID 判定（solid ⇒ 不能随机读 ✗）；
     //   其它后端这里恒 false（7z 由 sevenzcheck 单独判；zip/tar 恒可随机 ✓）
     bool isSolid() const { return m_solid; }
@@ -120,6 +129,8 @@ private:
     QVector<int> m_archiveOrder;  // 排序后第 i 项在归档中的原始序号
     QString m_format;
     bool m_encrypted = false;
+    mutable bool m_needsPassword = false;   // dataAt 是 const，但"密码错"要在里面标记
+    QString m_openError;                 // 最近一次失败的英文原因（绝不含密码）
     bool m_solid = false;                // RAR solid ⇒ 不能随机读（见 isSolid）
     // ★ v7：RAR 的 openBytes 落的临时文件（**本对象拥有**，close()/析构即删）。
     //   裸指针：QTemporaryFile 只前向声明（析构在 archive.cpp 里做，那里类型完整）。

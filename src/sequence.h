@@ -4,6 +4,7 @@
 
 #include <QByteArray>
 #include <QHash>
+#include <QSet>
 #include <QImage>
 #include <QMutex>
 #include <QPair>
@@ -141,6 +142,9 @@ public:
         //   · 找"这张图在哪个容器" = 覆盖它的容器里 `firstIndex` **最大**（并列取 `ord` 更大的）。
         int     firstIndex = -1;
         int     lastIndex = -1;
+        //   ★ 加密压缩包：**这个容器行的密码**（只对 `kind == Archive` 有意义）。
+        //     写进度文件时用它；空 = 没保存密码（用户 2026-11-03：按条目分别存）。
+        QString password;
     };
 
     // ★★ v5：条目携带的**读取位置** —— 类型与读取都在 `imageread.h`
@@ -259,6 +263,43 @@ public:
     //  ★ 给**日志**用的英文原因（与 `unsupportedReason()` 分开：那个是**界面文案**、已翻译；
     //    日志一律英文，不把界面文案写进日志（用户 2026-11-03 口径：日志全英文）。
     QString unsupportedLogReason() const { return m_unsupportedLog; }
+
+    // ── ★ 加密压缩包（2026-11-03）：密码 ──────────────────────────────────
+    //   · key = 容器**绝对路径**：外层 = `diskPath`；嵌套 = `diskPath + "!/" + 成员链`；
+    //   · 密码**只在内存**（不写 settings.json、不进日志）；
+    //   · `setPasswordDefault` = 弹框里勾了"后续压缩包使用相同密码"的那个 sticky 值：
+    //     只作为**候选**去试，试错仍然会走 `passwordNeeded()` 再弹框（用户 2026-11-03）。
+    static QString containerKey(const QString &diskPath, const QStringList &chain);
+    //   写密码时顺手清掉"卡在哪个容器上"（再调 `startScan()` 就能继续）
+    void    setPassword(const QString &key, const QString &pw);
+    //   ★ 密码表**随来源**（用户 2026-11-03）：全部住在本序列里 —— 换来源 = 新序列 = 空表
+    //     （另一个加密包会**重新弹框**）；sticky 只服务**同一来源内**的嵌套容器 / 重扫。
+    void    notePasswordEntered(const QString &key, const QString &pw);   // 新输入（未保存）
+    void    markPasswordsSaved();                                        // 写进进度文件后
+    bool    hasUnsavedPasswords() const;                                 // 新输入 − 已保存
+    bool    isPasswordSaved(const QString &key) const { return m_savedPasswords.contains(key); }
+    bool    isPasswordDeclined(const QString &key) const { return m_declined.contains(key); }
+    void    declinePassword(const QString &key) { m_declined.insert(key); }
+    //   ★ **同一个来源的另一次扫描**（「重新扫描」会在后台新起一条序列，扫完替换）：
+    //     把这次来源已知的密码整份带过去 —— 用户 2026-11-03 定：重扫沿用已知密码，不再问。
+    //     这不是"给新来源预置密码"：来源没变，表跟着来源走。
+    void    copyPasswordStateFrom(const Sequence &other);
+    QString passwordDefault() const { return m_passwordDefault; }
+    void    setPasswordDefault(const QString &pw) { m_passwordDefault = pw; }
+    QString passwordToTry(const QString &key) const;   // 记录值 → sticky → 空
+    bool    hasStoredPassword(const QString &key) const { return m_passwords.contains(key); }
+    //   本次扫描**卡在哪个容器上**（空 = 没卡）；调用方据此弹框。
+    QString passwordNeeded() const { return m_passwordNeeded; }
+    bool    rootIsArchive() const { return m_rootIsArchive; }
+    void    clearPasswordNeeded() { m_passwordNeeded.clear(); }
+    //   容器行 → 绝对 key（`diskPath` 或 `diskPath!/成员链`）；非容器行返回空。
+    QString rowKey(int rowIndex) const;
+    //   所有容器行的 (行下标, key) —— 写进度文件时按行填密码用。
+    QVector<QPair<int, QString>> containerRows() const;
+    //   进度文件恢复后：把行里的密码灌进本序列（并刷新已建条目的 `loc.passwords`）。
+    void    applyRowPasswords();
+    //   把当前密码表重新填进**所有条目**的 `loc.passwords`（解码期提交密码后用）
+    void    syncItemPasswords();
     bool  scanFinished() const
     {
         const State s = state();
@@ -522,6 +563,14 @@ private:
     QString m_unsupported;
     // ★ v7：瞬时提示（扫描线程写 / GUI 侧读 ⇒ 互斥；**不写入磁盘**）
     QString        m_unsupportedLog;   // 英文诊断（只进日志）
+    // 加密压缩包：key = 容器绝对路径 → 密码；sticky 默认值；本次扫描卡住的 key
+    QHash<QString, QString> m_passwords;        // key → 密码
+    QHash<QString, QString> m_enteredUnsaved;   // 本次会话新输入（还没写进进度文件）
+    QSet<QString>           m_savedPasswords;   // 已经写进进度文件
+    QSet<QString>           m_declined;         // 用户取消过（本序列不再问）
+    QString                 m_passwordDefault;  // "后续压缩包使用相同密码"（sticky）
+    QString                 m_passwordNeeded;   // 本次扫描卡在哪个 key
+
     mutable QMutex m_noticeMutex;
     QString        m_notice;
     QString m_root;

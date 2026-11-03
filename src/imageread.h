@@ -29,10 +29,17 @@ struct Location {
     QStringList members;
     int         page = 0;
     qint64      innerArchiveMaxMb = kDefaultInnerArchiveMaxMb;
+    //   ★ **每层容器的密码**（2026-11-03 加密压缩包）：与 `members` 对齐 ——
+    //     `passwords[0]` = 最外层容器（`diskPath`），`passwords[i]` = 第 i 层嵌套容器
+    //     （即 `members[i-1]`）；最后一项（叶子本身）没用。
+    //     空串 = 该层不需要密码。**随条目带**（与 `innerArchiveMaxMb` 同一个先例）。
+    QStringList passwords;
 };
 
 // 整条字节（解码用）。空 = 读不到（容器打不开 / 成员不存在 / 超过内层包上限）
-QByteArray readLocation(const Location &loc);
+//   ★ `passwordLevel`（可选，2026-11-03）：读不到且原因是**要密码**时，带出层号
+//     （0 = 最外层磁盘容器，i = 第 i 层嵌套容器）；-1 = 不是密码原因。
+QByteArray readLocation(const Location &loc, int *passwordLevel = nullptr);
 
 // 条目探测（**一次拿全**，不解码）：容器格式 + 显示尺寸 + 页数 + 字节数
 //   ★ 给 OSD 用：磁盘文件不必取字节（解析器自己 seek）；包内成员交出整份（已在内存）
@@ -48,9 +55,13 @@ Probe probe(const Location &loc);
 
 // 解码（**唯一实现**）。空图 = 不可读
 QImage image(const Location &loc);
+//   ★ 带出"密码层号"的版本（解码期检测用，见设计 22 §5.3）
+QImage image(const Location &loc, int *passwordLevel);
 
 // 不解码读像素尺寸（扫描判宽窄用）
 QSize imageSize(const Location &loc);
+//   ★ 带出"密码层号"的版本（扫描期读图头失败 ⇒ 立刻要密码，设计 22 §5.1）
+QSize imageSize(const Location &loc, int *passwordLevel);
 
 // 一张源图有几页（多页 TIFF 等）；1 = 普通单页图
 int pageCount(const QString &path);

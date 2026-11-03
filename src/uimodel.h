@@ -30,6 +30,8 @@
 #include "progressfile.h"
 
 #include <QObject>
+#include <QHash>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QUrl>
@@ -153,8 +155,24 @@ public:
     //   扫描中**取消 / 退出应用 ⇒ 这条序列作废**（当前视图不受影响）。
     Q_INVOKABLE void rescanSource();
     //   保存 / 打开 / 取消收藏：成功 true；失败已经经 `notify` 说过原因
-    Q_INVOKABLE bool saveProgressToFavorites();
-    Q_INVOKABLE bool saveProgressToFile();
+    //   ★ `savePasswords`：用户是否同意把**本次会话新输入、尚未保存过**的密码写进进度文件
+    //     （用户 2026-11-03：已保存过的不再问；即使勾了"相同密码"也按条目分开写）。
+    Q_INVOKABLE bool saveProgressToFavorites(bool savePasswords = false);
+    Q_INVOKABLE bool saveProgressToFile(bool savePasswords = false);
+
+    // ── ★ 加密压缩包（2026-11-03）：GUI 弹框要密码 ──────────────────────────
+    Q_PROPERTY(bool    passwordPromptVisible READ passwordPromptVisible
+                                             NOTIFY passwordPromptChanged)
+    Q_PROPERTY(QString passwordPromptPath    READ passwordPromptPath
+                                             NOTIFY passwordPromptChanged)
+    Q_PROPERTY(QString passwordPromptError   READ passwordPromptError
+                                             NOTIFY passwordPromptChanged)
+    //   本次会话**新输入、还没保存过**的密码（保存进度时要问一次）
+    Q_PROPERTY(bool    hasUnsavedPasswords   READ hasUnsavedPasswords
+                                             NOTIFY passwordPromptChanged)
+    //   `reuseForSubsequent` = 弹框里勾了"后续压缩包使用相同密码"
+    Q_INVOKABLE void submitPassword(const QString &pw, bool reuseForSubsequent);
+    Q_INVOKABLE void cancelPassword();
     Q_INVOKABLE void openProgressFile();
     Q_INVOKABLE bool openProgress(const QString &filePath);
     //   删掉一份进度文件（收藏夹列表的"移除"）：删完刷新"已收藏"与列表
@@ -227,6 +245,7 @@ Q_SIGNALS:
     void innerArchiveMaxMbChanged();
     void scaleAlgorithmChanged();
     void softwareBackendChanged();
+    void passwordPromptChanged();
     void languageChanged();
     void slideshowIntervalMsChanged();
 
@@ -248,7 +267,15 @@ private:
     void onSequenceChanged();           // 序列长了 / 收尾了 ⇒ 通知 viewer
     void applyViewerDefaults();         // 新建 viewer ⇒ 把全局默认下发一次
     //   进度文件：把当前来源写成 `filePath`（保存的两条路 + 自动保存共用这一份实现）
-    bool writeProgress(const QString &filePath, bool quiet = false);
+    bool writeProgress(const QString &filePath, bool quiet = false,
+                       bool savePasswords = false);
+    // 加密压缩包：检查"这次扫描是不是卡在密码上"
+    void checkPasswordNeeded();
+    void restartScan();                 // 同一个序列再扫（提交密码后）
+    bool passwordPromptVisible() const { return !m_pendingPasswordKey.isEmpty(); }
+    QString passwordPromptPath() const { return m_passwordPromptPath; }
+    QString passwordPromptError() const { return m_passwordPromptError; }
+    bool hasUnsavedPasswords() const;
 
     // ── ★ 自动保存（用户 2026-11-01）────────────────────────────────────────
     //   只有"当前来源**已经关联**某个进度文件"时才写（打开进度文件 / 刚保存过）；
@@ -280,6 +307,16 @@ private:
 
     // ★★ 运行期设置的**唯一实例**（没有单例、没有第二个副本）
     AppSettings m_settings;
+    // ── 加密压缩包：弹框**瞬态**（密码表住在 `Sequence` 里 —— 密码随来源）────────
+    QSet<QString>           m_attempted;        // 试过的 key（用来显示"密码不正确"）
+    int                     m_pendingPasswordItem = -1;   // 解码期：等密码的条目（-1 = 扫描期）
+    void onPasswordRequired(int item, int level);         // 解码期检测（设计 22 §5.3）
+    QString                 m_pendingPasswordKey;   // 正在等密码的容器（空 = 没在等）
+    //   ★ 这个框是**哪条序列**问的：会话序列（扫描 / 解码）或后台「重新扫描」那条
+    //     （两条同时存在时，提交密码要写回"问的人"，见设计 22 §5.1）
+    Sequence               *m_passwordOwner = nullptr;
+    QString                 m_passwordPromptPath;
+    QString                 m_passwordPromptError;
     //   界面翻译：**只有一份**（换语言时摘掉旧的、装新的）。空 = 没有 .qm（源串即英文）。
     QTranslator *m_translator = nullptr;
     void applyLanguage();               // 按 m_settings.language() 装/摘翻译
