@@ -17,3 +17,4 @@ AGENTS.md
 .vscode/
 .idea/
 *.swp
+photoset-log-*.log
