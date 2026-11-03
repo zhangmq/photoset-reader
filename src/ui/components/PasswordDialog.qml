@@ -24,7 +24,8 @@ Popup {
     closePolicy: Popup.CloseOnEscape
     padding: 0
     readonly property var win: parent ? parent.Window.window : null
-    width: Math.min(Theme.dialogW, win ? win.width - Theme.spaceXl * 2 : Theme.dialogW)
+    // 比标准对话框宽一点：这里要显示容器相对来源的**路径**（中间省略）
+    width: Math.min(Theme.dialogWideW, win ? win.width - Theme.spaceXl * 2 : Theme.dialogWideW)
     implicitHeight: column.implicitHeight
     height: implicitHeight
 

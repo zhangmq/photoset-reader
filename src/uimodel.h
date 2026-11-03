@@ -275,6 +275,8 @@ private:
     QString passwordPromptPath() const { return m_passwordPromptPath; }
     QString passwordPromptError() const { return m_passwordPromptError; }
     bool hasUnsavedPasswords() const;
+    //   弹框里的"哪个文件"：容器路径 → **相对来源**的显示文本（见 .cpp）
+    QString passwordPromptLabel(const QString &key) const;
 
     // ── ★ 自动保存（用户 2026-11-01）────────────────────────────────────────
     //   只有"当前来源**已经关联**某个进度文件"时才写（打开进度文件 / 刚保存过）；

@@ -575,6 +575,23 @@ bool UiModel::hasUnsavedPasswords() const
     return m_src.seq && m_src.seq->hasUnsavedPasswords();
 }
 
+//   弹框里显示"哪个文件要密码"：**相对来源的路径**（用户 2026-11-03，便于定位具体文件）。
+//     · 文件夹来源 ⇒ 相对路径（`vol12/a.zip`）；
+//     · 压缩包来源 ⇒ 归档内的成员链（`inner.zip` / `a.zip!/b.zip`）；
+//     · 要密码的就是来源本身 ⇒ 只给文件名。
+//   界面按宽度**中间省略**（头尾信息量最大）。
+QString UiModel::passwordPromptLabel(const QString &key) const
+{
+    const QString root = QFileInfo(m_path).absoluteFilePath();
+    if (root.isEmpty() || key.isEmpty()) return key;
+    if (key == root) return QFileInfo(m_path).fileName();
+    if (key.startsWith(root + QLatin1String("!/")))
+        return key.mid(root.size() + 2);
+    if (key.startsWith(root + QLatin1Char('/')))
+        return key.mid(root.size() + 1);
+    return key;
+}
+
 //   这次扫描卡在密码上 ⇒ 让 QML 弹框（同一个包已经在问的话不重复发通知）
 void UiModel::checkPasswordNeeded()
 {
@@ -594,13 +611,7 @@ void UiModel::checkPasswordNeeded()
     m_pendingPasswordItem = -1;          // 扫描期
     m_pendingPasswordKey = key;
     m_passwordOwner = owner;
-    //   显示用：相对来源根的路径（来源本身 = 文件名）
-    QString shown = key;
-    const QString root = QFileInfo(m_path).absoluteFilePath();
-    if (key == root)
-        shown = QFileInfo(m_path).fileName();
-    else if (key.startsWith(root + QLatin1String("!/")))
-        shown = QFileInfo(m_path).fileName() + key.mid(root.size());
+    const QString shown = passwordPromptLabel(key);
     m_passwordPromptPath = shown;
     //   试过才说"密码不正确"（第一次问的时候不能吓人）
     //   ★ 判据只有一条：**这个容器表里已经有密码、却还被追问** ⇒ 那个密码是错的。
@@ -725,11 +736,7 @@ void UiModel::onPasswordRequired(int item, int level)
 
     m_pendingPasswordItem = item;
     m_pendingPasswordKey = key;
-    QString shown = key;
-    const QString root = QFileInfo(m_path).absoluteFilePath();
-    if (key == root) shown = QFileInfo(m_path).fileName();
-    else if (key.startsWith(root + QLatin1String("!/")))
-        shown = QFileInfo(m_path).fileName() + key.mid(root.size());
+    const QString shown = passwordPromptLabel(key);
     m_passwordPromptPath = shown;
     //   ★ 判据只有一条：**这个容器表里已经有密码、却还被追问** ⇒ 那个密码是错的。
     //     第一次问（表里没密码 / 只剩 sticky 候选）不吓人。

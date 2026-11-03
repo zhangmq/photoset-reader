@@ -227,6 +227,8 @@ QtObject {
     readonly property int favPopupH:  560
     readonly property int donutSize:   20
     readonly property int dialogW:    380      // 对话框宽度 ← DSH Modal.module.css .dialog{width:min(380px,100%)}
+    //   需要显示**路径**的对话框（密码框）：比 dialogW 宽一点，路径中间省略后仍能看清头尾
+    readonly property int dialogWideW: 460
     readonly property int progressH:    4      // 进度条高度
     readonly property int badgePadH:   Theme.spaceMd   // 徽标左右内边距（合计）← DSH rowTag: padding 1px 6px
     readonly property int hairline:     1      // 分割线
