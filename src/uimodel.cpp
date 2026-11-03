@@ -419,6 +419,17 @@ void UiModel::setSlideshowIntervalMs(int ms)
     emit slideshowIntervalMsChanged();
 }
 
+void UiModel::stepSlideshowInterval(int dir)
+{
+    const int cur = m_src.vm ? m_src.vm->intervalMs() : m_settings.intervalMs();
+    const int step = app::slideshowStepMs(cur);
+    const int next = qBound(app::kMinSlideshowIntervalMs,
+                            cur + (dir < 0 ? -step : step),
+                            app::kMaxSlideshowIntervalMs);
+    if (m_src.vm) m_src.vm->setIntervalMs(next);
+    else          setSlideshowIntervalMs(next);
+}
+
 // ── 全局默认 ───────────────────────────────────────────────────────────
 int UiModel::fitMode() const { return m_settings.defaultFitMode(); }
 

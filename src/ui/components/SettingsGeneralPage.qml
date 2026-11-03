@@ -75,6 +75,7 @@ Item {
                 DropdownButton {
                     label: qsTr("Presets")
                     menuItems: [
+                        { text: "100ms", selected: ui.slideshowIntervalMs === 100 },
                         { text: "500ms", selected: ui.slideshowIntervalMs === 500 },
                         { text: "1s",    selected: ui.slideshowIntervalMs === 1000 },
                         { text: "2s",    selected: ui.slideshowIntervalMs === 2000 },
@@ -83,7 +84,7 @@ Item {
                         { text: "5s",    selected: ui.slideshowIntervalMs === 5000 }
                     ]
                     onItemTriggered: function (i) {
-                        ui.slideshowIntervalMs = [500, 1000, 2000, 3000, 4000, 5000][i]
+                        ui.slideshowIntervalMs = [100, 500, 1000, 2000, 3000, 4000, 5000][i]
                     }
                 }
             }

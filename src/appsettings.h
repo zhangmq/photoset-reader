@@ -18,6 +18,17 @@ enum class Layout { Single = 0, Double = 1 };
 //   · 所以干脆放到 0：语义仍是"**间隔是下限**"（`到期 = 请求时刻 + 间隔`，到点没备好就等，
 //     不堆积、不跳页）⇒ 0 的实际效果 = **每备好一张就立刻翻**，速度由解码 / 上屏 / 屏幕刷新率决定。
 inline constexpr int kMinSlideshowIntervalMs = 0;
+//   上限与设置页 `NumberField.to` 一致（万一手滑连点"减速"不至于跑到天上去）
+inline constexpr int kMaxSlideshowIntervalMs = 60000;
+
+//   加速 / 减速的**非线性步进**（唯一实现）：约 10%，向下取整到 10 ms，最小 10 ms。
+//   ⇒ 越靠近 0 步越小（0/10/20… 都是 10ms 一档），越大步越大（5000 ⇒ 500、60000 ⇒ 6000）。
+//   为什么按 10%：间隔短时 10 ms 的差别很明显、长时 10 ms 的差别几乎看不出来 ⇒ 步进要跟着量级走。
+inline int slideshowStepMs(int ms)
+{
+    const int ten = (ms / 100) * 10;      // = floor(ms/10) 再对齐到 10ms
+    return qMax(10, ten);
+}
 
 // ══ 应用设置（配置文件）════════════════════════════════════════
 //   设计：docs/design/11-应用ViewModel设计.md §二 / 14 §9.3 / §10

@@ -28,11 +28,12 @@ Item {
     property bool   playing: false
     property int    loopMode: 0           // 0=不循环 1=全部循环 2=文件夹循环
     property int    intervalMs: 300       // 切换速度（幻灯片间隔）
-    readonly property var intervalPresets: [500, 1000, 2000, 3000, 4000, 5000]
+    readonly property var intervalPresets: [100, 500, 1000, 2000, 3000, 4000, 5000]
     readonly property bool intervalIsPreset: intervalPresets.indexOf(root.intervalMs) >= 0
     //   ★ 切换速度菜单的行（**选中态 = 对号**，与库屏排序菜单同一写法）：
     //     选中行在前导列显示对号；末尾两项是加速 / 减速（`keepOpen` = 可连点、不关菜单）
     readonly property var intervalItems: [
+        { icon: root.intervalMs === 100  ? Theme.icCheck : "", text: "100 ms", selected: root.intervalMs === 100 },
         { icon: root.intervalMs === 500  ? Theme.icCheck : "", text: "500 ms", selected: root.intervalMs === 500 },
         { icon: root.intervalMs === 1000 ? Theme.icCheck : "", text: "1 s",    selected: root.intervalMs === 1000 },
         { icon: root.intervalMs === 2000 ? Theme.icCheck : "", text: "2 s",    selected: root.intervalMs === 2000 },
@@ -68,7 +69,7 @@ Item {
     signal nextFolderRequested()
     signal loopModeSelected(int mode)
     signal intervalSelected(int ms)
-    signal intervalStep(int deltaMs)      // 加速 / 减速（步进 10ms）
+    signal intervalStep(int dir)          // 加速 -1 / 减速 +1（步进是**非线性**的，由 C++ 按量级算）
     function openIntervalMenu() { intervalMenu.open() }   // 开发自检用（截图：菜单打开态）
     signal fitModeSelected(int mode)
     signal doublePageSelected(bool on)
@@ -282,8 +283,8 @@ Item {
                     //     —— 用**数组长度**定位末尾两项、用**预设个数**定位前缀，
                     //     不再写死下标（写死下标会随分隔线 / 档位增减而错位）。
                     //   ★ 加速 = **间隔变小**（播得更快）；减速 = 间隔变大
-                    if (i === root.intervalItems.length - 2)      root.intervalStep(-10)     // 加速
-                    else if (i === root.intervalItems.length - 1) root.intervalStep(+10)     // 减速
+                    if (i === root.intervalItems.length - 2)      root.intervalStep(-1)      // 加速
+                    else if (i === root.intervalItems.length - 1) root.intervalStep(+1)      // 减速
                     else if (i < root.intervalPresets.length)     root.intervalSelected(root.intervalPresets[i])
                     // 其余（自定义行）不改值：当前值本身就是自定义值
                 }
