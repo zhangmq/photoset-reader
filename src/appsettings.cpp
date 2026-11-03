@@ -115,6 +115,7 @@ void AppSettings::load()
             m_scaleAlgorithm = QStringLiteral("lanczos3");   // 其余一律按默认（原来的 balanced/auto）
     }
     m_scanHidden    = o.value(QStringLiteral("scanHidden")).toBool(m_scanHidden);
+    m_previewStrip  = o.value(QStringLiteral("previewStrip")).toBool(m_previewStrip);
     m_recurseDepth  = qBound(1, o.value(QStringLiteral("recurseDepth")).toInt(m_recurseDepth), 64);
     m_prefetchWindow = qBound(3, o.value(QStringLiteral("prefetchWindow")).toInt(m_prefetchWindow), 64);
     m_innerArchiveMaxMb = qBound(64, o.value(QStringLiteral("innerArchiveMaxMb"))
@@ -137,6 +138,7 @@ void AppSettings::save()
     o.insert(QStringLiteral("defaultLoop"), m_loop);
     o.insert(QStringLiteral("scaleAlgorithm"), m_scaleAlgorithm);
     o.insert(QStringLiteral("scanHidden"), m_scanHidden);
+    o.insert(QStringLiteral("previewStrip"), m_previewStrip);
     o.insert(QStringLiteral("recurseDepth"), m_recurseDepth);
     o.insert(QStringLiteral("prefetchWindow"), m_prefetchWindow);
     o.insert(QStringLiteral("innerArchiveMaxMb"), m_innerArchiveMaxMb);

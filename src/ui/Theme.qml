@@ -66,7 +66,9 @@ QtObject {
     //   ★ 浅色下**不是纯白**（用户 2026-11-02）：设置对话框的表面是 `bgLayer2` = nb00（纯白），
     //     页面底若也用 nb00，对话框边界完全看不出来（白压白）⇒ 页面底降一档到 nb75，
     //     对话框（白）与菜单（menuFill）就都浮在浅灰页面上了。
-    readonly property color bgBase:    isDark ? _s.nb950 : _s.nb75
+    //   ★ 浅色主题的**画布与栏面对调**（用户 2026-11-03 实拍效果）：
+    //     画布 = nb100（略深）、栏面 = nb75（略浅）—— 栏面比画布"亮"，界面上更容易分开
+    readonly property color bgBase:    isDark ? _s.nb950 : _s.nb100
 
     // 卡片 / 面板        ← DSH: --dsw-alias-bg-module-platform (== specific-selector == bg-multi-select)
     readonly property color bgCard:    isDark ? _s.nb800 : _s.nb60
@@ -104,9 +106,10 @@ QtObject {
     // ── 全屏浮层：**跟随主题，配色一律用 DSH alias 令牌**（用户 2026-10-11 定案 (A)）──
     //   画布/栏底 = `bgBase`；文字 = `textPrimary`；图标 = `textSecondary`；hover 底 = `hoverFill`；
     //   禁用 = `dimOpacity`。**只保留三个 alias 层没有对应物的**：
-    //     · `overlayTrack` / `overlayCursor`：时间轴轨道与游标（照抄 vsr-player `ProgressSlider`）
+    //     · `overlayTrack` / `overlayCursor`：时间轴轨道与游标（轨道改成**不透明**，用户 2026-11-03）
     //     · `overlayTextOutline`：OSD 无背景文字的外描边
-    readonly property color overlayTrack:       isDark ? "#44ffffff" : "#33000000"
+    //   时间轴轨道 = **不透明**（用户 2026-11-03：未完成区不要半透明，避免透出画面）
+    readonly property color overlayTrack:       isDark ? _s.nb800 : _s.nb300
     readonly property color overlayCursor:      isDark ? "#e0e0e0" : "#404040"
     readonly property color overlayTextOutline: isDark ? "#cc000000" : "#ccffffff"
 
@@ -118,6 +121,12 @@ QtObject {
     readonly property color bgLayer2: isDark ? _s.nb850 : _s.nb00   // 对话框表面
     // 遮罩            ← DSH: --dsw-alias-bg-mask-1
     readonly property color mask:     isDark ? "#80000000" : "#3d000000"   // QML 是 AARRGGBB
+
+    // 顶/底栏 + 时间轴预览条：**同一个面**（用户 2026-11-03：这三处必须一致，
+    //   既不是画布 `bgBase`、也不是对话框面 `bgLayer2`，单独一个"栏面"令牌）
+    //   深色：比画布**抬一档**（nb950 → nb875，差 14 级）
+    //   浅色：比画布**更浅**（nb100 → nb50，差 20 级；2026-11-03 用户要求"再浅一点"）
+    readonly property color barFill: isDark ? _s.nb875 : _s.nb50
 
     // 卡片底 / hover   ← DSH 产出物·文件变更卡 `ChangedFiles.module.css`
     //   `.header{background:var(--changes-fill)}`，深色主题重绑：
@@ -243,6 +252,7 @@ QtObject {
     // 全屏浮层（照抄 vsr-player 的 OSD 几何）
     readonly property int osdHotZoneH: 40      // 顶/底浮层热区高
     readonly property int osdTrackH:   14      // 时间轴行高
+    readonly property int timelinePreviewH: 120  // 时间轴悬停预览条高度（固定）
     readonly property int osdCursorW:   2      // 时间轴游标宽
     // 开关几何 ← DSH Switch.module.css：36×20 轨道 + 16 圆形滑块 + 2 padding
     readonly property int switchW:      36
@@ -261,8 +271,8 @@ QtObject {
     readonly property int osdKeyMaxW:   180     // OSD 键列上限（未映射的 EXIF 名可能很长）
     readonly property int fastFwdDelayMs:  400   // 长按多久开始连续快进（设计 §3.5）
     readonly property int fastFwdFastMs:    80   // 连续快进的重叠间隔
-    readonly property int osdTrackLineH: 4     // 时间轴轨道高（常态）
-    readonly property int osdTrackLineHoverH: 6  // 时间轴轨道高（hover/拖动，vsr-player 6→8 同理）
+    //   时间轴轨道高：**8**（用户 2026-11-03：加高一倍；hover 不再变高）
+    readonly property int osdTrackLineH: 8
     readonly property int crumbItemH:  24      // 面包屑段高
     readonly property int crumbMaxW:  360      // 面包屑段最大宽度（超出中间省略 + tooltip 全名）
     readonly property int crumbRootMaxW: 240   // 锁死的**根**段上限（它是整条路径，通常最长，单独压一档）

@@ -71,6 +71,7 @@ struct AppSettings
 
     // 系统
     bool scanHidden() const { return m_scanHidden; }            // 默认关
+    bool previewStrip() const { return m_previewStrip; }        // 时间轴悬停预览，默认开
     int  recurseDepth() const { return m_recurseDepth; }        // 默认 5 层
     //   ★ T2d-1d-②：语义 = **两个方向的条数相加**（队列长度恒为该值），默认 **8**。
     //     名字沿用旧名（改名按术语铁律单列报批）。
@@ -93,6 +94,7 @@ struct AppSettings
     void setDefaultLoop(int v) { m_loop = qBound(0, v, 2); save(); }
     void setScaleAlgorithm(const QString &v) { m_scaleAlgorithm = v; save(); }
     void setScanHidden(bool v) { m_scanHidden = v; save(); }
+    void setPreviewStrip(bool v) { m_previewStrip = v; save(); }
     void setRecurseDepth(int v) { m_recurseDepth = qBound(1, v, 64); save(); }
     void setPrefetchWindow(int v) { m_prefetchWindow = qBound(3, v, 64); save(); }
     void setInnerArchiveMaxMb(int v) { m_innerArchiveMaxMb = qBound(64, v, 8192); save(); }
@@ -109,6 +111,7 @@ private:
     int  m_loop = 0;                    // 默认循环：不循环
     QString m_scaleAlgorithm = QStringLiteral("lanczos3");
     bool m_scanHidden = false;
+    bool m_previewStrip = true;
     int  m_recurseDepth = 5;
     int  m_prefetchWindow = 8;
     int  m_innerArchiveMaxMb = 512;     // ★ v7：内层压缩包上限（MB），范围 64–8192

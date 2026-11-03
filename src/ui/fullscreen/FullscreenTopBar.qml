@@ -45,7 +45,7 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         height: Theme.barH
-        color: Theme.bgBase                  // **不透明**（用户 2026-10-11：能自动显隐就不需要半透明）
+        color: Theme.barFill                 // 栏面 = 顶/底栏/预览条同一个令牌（用户 2026-11-03）
         opacity: root.overlaysVisible ? 1.0 : 0.0
         Behavior on opacity { NumberAnimation { duration: Theme.durMed; easing.type: Easing.OutCubic } }
 

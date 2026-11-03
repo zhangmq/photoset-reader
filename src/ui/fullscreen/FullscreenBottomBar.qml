@@ -61,6 +61,29 @@ Item {
     //     时间轴、锁定缩放、OSD）；**不依赖文件的**（画面缩放 / 版面 / 算法 / 切换速度 / 循环 /
     //     全屏窗口）照常可用 —— 它们改的是**全局默认**，打开文件后自动生效。
     property bool   hasSource: true
+    //   ── 时间轴悬停预览（用户 2026-11-03）──
+    //   数据由上层（`FullscreenView` → `ui.viewer.previewStrip()`）填；本栏只负责摆和画
+    property bool   previewEnabled: true
+    //   预览条数据：`{ items, focusX, focusW }`（一次算完，减少中间态）
+    property var    previewData: ({})
+    //   ★ 悬停预览的延迟（用户 2026-11-03 定 **600ms**，收起与换页**统一**用这一个值）：
+    //     · 离开进度条 ⇒ 延时收起（稍微挪开不会马上消失）
+    //     · 指针扫动   ⇒ **节流**（throttle，不是 debounce）：持续移动时也按 400ms 间隔换页，
+    //       不会出现"一直不动就一直不输出"（用户 2026-11-03 纠正）
+    property bool   previewVisible: false
+    readonly property int previewDelayMs: 600
+    property real   previewLastAt: 0          // 上次真正换页的时刻（节流窗口起点）
+
+    //   节流：到窗口就立刻换；不到窗口就排一次尾随触发（保证持续移动也有输出）
+    function requestPreview() {
+        const now = Date.now()
+        if (now - previewLastAt >= previewDelayMs) {
+            previewLastAt = now
+            previewHover(timeline.hoverIndex)
+        } else if (!previewThrottleTimer.running) {
+            previewThrottleTimer.start()
+        }
+    }
 
     signal prevRequested()
     signal playToggled()
@@ -77,6 +100,8 @@ Item {
     signal windowFullscreenToggled()
     signal osdToggled()
     signal seeked(int index)
+    signal previewHover(int index)          // 鼠标进/移到进度条上（指到的条目）
+    signal previewLeave()
 
     readonly property bool mouseInRegion: barHover.hovered || timeline.pressed
     readonly property bool popupOpen: fitMenu.visible || layoutMenu.visible
@@ -99,6 +124,65 @@ Item {
         onSeeked: function (i) { root.seeked(i) }
     }
 
+    // ── 悬停预览条：**紧贴进度条上方**（用户 2026-11-03）──
+    TimelinePreview {
+        //   ★ 时间轴那一行高 `osdTrackH`(14)、轨道只有 `osdTrackLineH`(8) 且贴底 ⇒
+        //     直接贴 `timeline.top` 会留 6px 空隙；这里把底边再压下去 6px，**紧贴轨道上沿**
+        anchors.bottom: timeline.top
+        anchors.bottomMargin: -(Theme.osdTrackH - Theme.osdTrackLineH)
+        anchors.left: parent.left
+        width: parent.width
+        items: root.previewData.items ?? []
+        stripX: root.previewData.stripX ?? 0
+        centered: root.previewData.centered ?? true
+        focusX: root.previewData.focusX ?? 0
+        focusW: root.previewData.focusW ?? 0
+        visible: root.previewEnabled && root.overlaysVisible && root.previewVisible
+                 && (root.previewData.items ? root.previewData.items.length > 0 : false)
+    }
+    //   鼠标进出 / 换条目 ⇒ 让上层去查数据（只在「条目变了」时查，避免每次移动都算）
+    //   ★ 离开进度条**延时**才收（250ms）：贴着边缘挪动 / 短暂划出时预览条不会闪掉
+    Timer {
+        id: previewHideTimer
+        interval: root.previewDelayMs
+        onTriggered: {
+            root.previewVisible = false
+            root.previewLeave()          // 真正收起时才清数据
+        }
+    }
+    //   节流的尾随触发：窗口末尾把**最新**的那一页换上去
+    Timer {
+        id: previewThrottleTimer
+        interval: root.previewDelayMs
+        onTriggered: {
+            root.previewLastAt = Date.now()
+            if (timeline.hovered)
+                root.previewHover(timeline.hoverIndex)
+        }
+    }
+    Connections {
+        target: timeline
+        function onHoveredChanged() {
+            if (timeline.hovered) {
+                previewHideTimer.stop()
+                previewThrottleTimer.stop()
+                root.previewVisible = true
+                root.previewLastAt = Date.now()
+                root.previewHover(timeline.hoverIndex)   // 刚进入：立刻出现
+            } else {
+                previewThrottleTimer.stop()
+                previewHideTimer.restart()   // 延时收起；期间重新进入 ⇒ stop()
+            }
+        }
+        function onHoverIndexChanged() {
+            if (timeline.hovered) {
+                previewHideTimer.stop()
+                root.previewVisible = true
+                root.requestPreview()        // 节流：持续移动也按间隔换页
+            }
+        }
+    }
+
     // ── 控制条 ──
     Rectangle {
         id: bar
@@ -106,7 +190,7 @@ Item {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         height: Theme.barH
-        color: Theme.bgBase                  // **不透明**（用户 2026-10-11：能自动显隐就不需要半透明）
+        color: Theme.barFill                 // 栏面 = 顶/底栏/预览条同一个令牌（用户 2026-11-03）
         opacity: root.overlaysVisible ? 1.0 : 0.0
         Behavior on opacity { NumberAnimation { duration: Theme.durMed; easing.type: Easing.OutCubic } }
 

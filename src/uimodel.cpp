@@ -275,6 +275,7 @@ void UiModel::buildViewer()
                      Sequence::ScanOptions{ qint64(m_settings.innerArchiveMaxMb()) });
     // 本类只给 viewer **预取长度**（它不读设置）
     s.vm = new fetch::ViewerModel(m_settings.prefetchWindow(), nullptr);
+    s.vm->setPreviewStore(m_previewStore);      // 时间轴预览：位置表归本类，provider 读它
     connect(s.vm, &fetch::ViewerModel::playingChanged, this, &UiModel::updateScreenSaverInhibit);
     installViewer(s);
     // 打开 ⇒ 看第 0 条（"进入查看 = jump"）：一进来就有画面
@@ -520,6 +521,15 @@ void UiModel::setScanHidden(bool on)
     emit scanHiddenChanged();
     //   ★ 扫描参数**只在建序列时用一次** ⇒ 下一次打开来源 / 手动「重新扫描」时生效，
     //     改它不重建（用户 2026-11-03：设置项不该触发 rebuildViewer）。
+}
+
+bool UiModel::previewStrip() const { return m_settings.previewStrip(); }
+
+void UiModel::setPreviewStrip(bool on)
+{
+    if (m_settings.previewStrip() == on) return;
+    m_settings.setPreviewStrip(on);
+    emit previewStripChanged();
 }
 
 int UiModel::recurseDepth() const { return m_settings.recurseDepth(); }
@@ -1214,6 +1224,7 @@ bool UiModel::openProgress(const QString &filePath)
     s.seq->markPasswordsSaved();      // 文件里已有 ⇒ 不再问"是否保存"
     s.seq->syncItemPasswords();
     s.vm = new fetch::ViewerModel(m_settings.prefetchWindow(), nullptr);
+    s.vm->setPreviewStore(m_previewStore);      // 时间轴预览：位置表归本类，provider 读它
     m_path = QDir::cleanPath(d.meta.sourcePath);   // ★ 统一形态
     installViewer(s);
     if (m_src.vm) {

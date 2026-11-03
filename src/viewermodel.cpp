@@ -906,6 +906,99 @@ void ViewerModel::markBad(int item, Bad why, int level)
     else                           m_badLevel.remove(item);
 }
 
+//   时间轴悬停预览：一次算完 **条目 + 定位框几何**（以 center 为中心，左右交替取）
+QVariantMap ViewerModel::previewStrip(int center, int heightPx, int maxWidthPx, int gapPx)
+{
+    QVariantMap result;
+    QVariantList items;
+    result.insert(QStringLiteral("items"), items);
+    result.insert(QStringLiteral("stripX"), 0);
+    result.insert(QStringLiteral("centered"), true);
+    result.insert(QStringLiteral("focusX"), 0);
+    result.insert(QStringLiteral("focusW"), 0);
+    if (!m_seq || m_seq->count() <= 0 || heightPx <= 0 || maxWidthPx <= 0 || !m_previewStore)
+        return result;
+
+    const int n = m_seq->count();
+    center = qBound(0, center, n - 1);
+    const auto widthOf = [this, heightPx](int i) {
+        const QSize s = m_seq->at(i).size;
+        const qreal ratio = (s.isValid() && s.height() > 0) ? qreal(s.width()) / s.height() : 0.7;
+        return qMax(24, int(qRound(heightPx * ratio)));
+    };
+
+    const int half = maxWidthPx / 2 + heightPx;
+    const int gap = qMax(0, gapPx);        // ★ 间距由调用方给（与 QML 的 Row spacing 同一个值）
+    QVector<int> idx;
+    idx << center;
+    int total = widthOf(center);
+    int leftW = 0, rightW = 0;
+    int li = center - 1, ri = center + 1;
+    const auto takeLeft = [&] { if (li < 0) return false; idx << li; total += widthOf(li) + gap;
+                                leftW += widthOf(li) + gap; --li; return true; };
+    const auto takeRight = [&] { if (ri >= n) return false; idx << ri; total += widthOf(ri) + gap;
+                                 rightW += widthOf(ri) + gap; ++ri; return true; };
+    while ((leftW < half || rightW < half) && idx.size() < 40) {
+        bool added = false;
+        if (leftW < half)  added = takeLeft()  || added;
+        if (rightW < half) added = takeRight() || added;
+        if (!added) break;
+    }
+    while (total < maxWidthPx && idx.size() < 40) {
+        bool added = takeLeft();
+        added = takeRight() || added;
+        if (!added) break;
+    }
+    std::sort(idx.begin(), idx.end());
+
+    //   定位框几何（**同一份数据**）：width = 该条宽度；position = 整条该在的 x + 该条之前的宽度
+    int leftSum = 0, rowW = -gap;
+    for (int i : idx) rowW += widthOf(i) + gap;
+    for (int i : idx) { if (i == center) break; leftSum += widthOf(i) + gap; }
+    const int w = widthOf(center);
+    const double wanted = maxWidthPx / 2.0 - (leftSum + w / 2.0);
+    const double stripX = qMin(0.0, qMax(double(maxWidthPx - rowW), wanted));
+    const double fx = qMax(0.0, qMin(double(maxWidthPx - w), stripX + leftSum));
+    const bool centered = (wanted <= 0.0) && (wanted >= double(maxWidthPx - rowW));
+    result.insert(QStringLiteral("stripX"), int(qRound(stripX)));   // 整条该在哪（Row 的唯一来源）
+    result.insert(QStringLiteral("centered"), centered);            // 居中 ⇒ 只有宽度过渡
+    result.insert(QStringLiteral("focusX"), int(qRound(fx)));
+    result.insert(QStringLiteral("focusW"), w);
+
+    QHash<QString, PreviewStore::Entry> entries;
+    for (int i : idx) {
+        const int iw = widthOf(i);
+        const QString key = QStringLiteral("%1-%2").arg(heightPx).arg(i);
+        PreviewStore::Entry e;
+        e.loc    = m_seq->at(i).loc;
+        e.target = QSize(iw * 2, heightPx * 2);
+        entries.insert(key, e);
+
+        QVariantMap m;
+        m.insert(QStringLiteral("index"), i);
+        m.insert(QStringLiteral("w"), iw);
+        m.insert(QStringLiteral("h"), heightPx);
+        m.insert(QStringLiteral("url"), QStringLiteral("image://preview/") + key);
+        items << m;
+    }
+    {
+        QMutexLocker lk(&m_previewStore->mutex);
+        for (auto it = entries.constBegin(); it != entries.constEnd(); ++it)
+            m_previewStore->entries.insert(it.key(), it.value());
+        if (m_previewStore->entries.size() > 512) m_previewStore->entries.clear();
+    }
+    result.insert(QStringLiteral("items"), items);
+    return result;
+}
+
+int ViewerModel::previewItemWidth(int index, int heightPx) const
+{
+    if (!m_seq || index < 0 || index >= m_seq->count() || heightPx <= 0) return 0;
+    const QSize s = m_seq->at(index).size;
+    const qreal ratio = (s.isValid() && s.height() > 0) ? qreal(s.width()) / s.height() : 0.7;
+    return qMax(24, int(qRound(heightPx * ratio)));
+}
+
 // ══ 重判：唯一决定上屏的地方 ═══════════════════════════════════════════════
 //   · 本屏每个位置都有结论（备好 / 坏）**且至少一个备好** ⇒ 上屏（坏的位置留空图）；
 //   · 本屏**整屏都坏**（单幅 = 那一条坏）  ⇒ 跳过计数 +1，位置挪到下一屏（同方向），再派活再判；

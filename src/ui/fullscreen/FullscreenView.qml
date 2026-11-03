@@ -387,6 +387,7 @@ Item {
         windowFullscreen: ui.windowFullscreen
         osdVisible: ui.viewer ? ui.viewer.osdVisible : false
         overlaysVisible: root.showUi
+        previewEnabled: ui.previewStrip
         onPrevRequested: { if (ui.viewer) ui.viewer.stepPage(-1) }
         onNextRequested: { if (ui.viewer) ui.viewer.stepPage(1) }
         //   ★ 没有 viewer 时改**全局默认**（打开下一个来源时生效）；有 viewer 时只改当前阅读态
@@ -414,6 +415,15 @@ Item {
         onWindowFullscreenToggled: ui.windowFullscreen = !ui.windowFullscreen
         onOsdToggled: { if (ui.viewer) ui.viewer.osdVisible = !ui.viewer.osdVisible }
         onSeeked: function (i) { if (ui.viewer) ui.viewer.cursor = i }
+        //   时间轴悬停预览：只在"条目变了"时查一次（数据在 viewer 里算，provider 解码缩略图）
+        onPreviewHover: function (index) {
+            //   ★ 条目与定位框几何**一次取回**（`{ items, focusX, focusW }`），
+            //     避免分几次赋值产生"半新半旧"的中间态（用户 2026-11-03）
+            const imgH = Theme.timelinePreviewH - Theme.spaceSm * 2
+            bottomBar.previewData = (ui.previewStrip && ui.viewer)
+                    ? ui.viewer.previewStrip(index, imgH, bottomBar.width, Theme.spaceSm) : ({})
+        }
+        onPreviewLeave: bottomBar.previewData = ({})
     }
 
     // ── OSD 信息面板：**只被 OSD 开关控制，不随控件条显隐**（用户 2026-10-11）──

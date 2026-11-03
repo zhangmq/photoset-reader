@@ -32,6 +32,7 @@
 
 #include "natural.h"
 #include "uimodel.h"
+#include "previewprovider.h"
 #include "screenshot.h"
 #include "devcli.h"
 #include "devbench.h"
@@ -395,6 +396,8 @@ int main(int argc, char *argv[])
     //   ★ **全局只有一个 VM** = `app::UiModel`（QML 里的 `ui`）——viewer（`ui.viewer.*`）由它持有；
     //     它自己就是 QML 侧的类型信息不需要额外注册（只有一个界面之后没有枚举要给 QML 读）。
     auto *ui = new app::UiModel(&app);
+    //   时间轴悬停预览：provider 只读位置表 + 解码缩略图（位置表归 UiModel ⇒ 换来源也不会悬空）
+    engine.addImageProvider(QStringLiteral("preview"), new PreviewProvider(ui->previewStore()));
     //   ★ 换语言：`UiModel` 负责装/摘 `QTranslator`，**界面重算在本行** ——
     //     Qt 6 里 `installTranslator` **不会**让 QML 的 `qsTr()` 绑定自动重算（实测：
     //     对话框文字保持旧语言），必须显式 `QQmlEngine::retranslate()`。

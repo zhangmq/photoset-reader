@@ -87,6 +87,9 @@ add_library(ibcore STATIC
     src/progressfile.h
     src/progresslistmodel.cpp
     src/progresslistmodel.h
+    # ── 时间轴悬停预览：位置表 + provider（只解码缩略图）──
+    src/previewprovider.cpp
+    src/previewprovider.h
 )
 
 # ── GPU 缩放的 shader：**qsb 烘焙**（生产代码里不塞裸 GLSL 字符串）──────
@@ -259,6 +262,7 @@ function(ib_add_qml_resources target)
         src/ui/components/SearchField.qml
         src/ui/components/ConfirmDialog.qml
         src/ui/components/PasswordDialog.qml
+        src/ui/components/TimelinePreview.qml
         src/ui/components/SegmentedControl.qml
         src/ui/components/Breadcrumb.qml
         src/ui/components/Badge.qml

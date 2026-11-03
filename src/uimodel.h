@@ -31,6 +31,9 @@
 
 #include <QObject>
 #include <QHash>
+#include <memory>
+
+#include "previewprovider.h"
 #include <QSet>
 #include <QString>
 #include <QStringList>
@@ -95,6 +98,8 @@ public:
     Q_PROPERTY(bool inputFromKeyboard READ inputFromKeyboard WRITE setInputFromKeyboard
                                       NOTIFY inputFromKeyboardChanged)
     Q_PROPERTY(bool scanHidden READ scanHidden WRITE setScanHidden NOTIFY scanHiddenChanged)
+    //   时间轴悬停预览（用户 2026-11-03）：关掉就不再弹预览条
+    Q_PROPERTY(bool previewStrip READ previewStrip WRITE setPreviewStrip NOTIFY previewStripChanged)
     Q_PROPERTY(int  recurseDepth READ recurseDepth WRITE setRecurseDepth NOTIFY recurseDepthChanged)
     Q_PROPERTY(int  prefetchWindow READ prefetchWindow WRITE setPrefetchWindow
                                     NOTIFY prefetchWindowChanged)
@@ -126,6 +131,8 @@ public:
     QObject *viewer() const;            // 定义在 .cpp（ViewerModel 只前向声明 ⇒ 需要完整类型转换）
     // C++ 侧（调试入口 / 用例）拿具体类型；QML 只认上面那个 QObject*
     fetch::ViewerModel *viewerCore() const { return m_src.vm; }
+    //   时间轴预览的位置表（provider 在它这里读；生命周期 = UiModel）
+    std::shared_ptr<PreviewStore> previewStore() const { return m_previewStore; }
 
     // ── 打开来源（文件夹 / 压缩包 / 文件 = 同一套：建序列 → 看）──────────────
     //   ★ QML 入口（拖放）给的是 `drop.urls` 的 **file: URL** ⇒ 这一版负责转成本地路径；
@@ -222,6 +229,8 @@ public:
     bool inputFromKeyboard() const { return m_inputFromKeyboard; }
     void setInputFromKeyboard(bool on);
     bool scanHidden() const;
+    bool previewStrip() const;
+    void setPreviewStrip(bool on);
     void setScanHidden(bool on);
     int  recurseDepth() const;
     void setRecurseDepth(int v);
@@ -252,6 +261,7 @@ Q_SIGNALS:
     void systemDarkChanged();
     void inputFromKeyboardChanged();
     void scanHiddenChanged();
+    void previewStripChanged();
     void recurseDepthChanged();
     void prefetchWindowChanged();
     void innerArchiveMaxMbChanged();
@@ -376,6 +386,7 @@ private:
     QString m_lastProgressDir;          // 进度文件对话框的起始目录（会话级）
     QString m_lastDialogDir;            // 打开对话框的起始目录（会话级）：上次成功选过的地方
     QString m_progressFile;             // 当前来源关联的进度文件（空 = 不自动保存）
+    std::shared_ptr<PreviewStore> m_previewStore = std::make_shared<PreviewStore>();
     QTimer *m_autosave = nullptr;       // 固定间隔的自动保存
     bool    m_progressDirty = false;    // 位置 / 版面 / 行变过（没变就不重写）
     //   文件里当前记着的位置（用来判断"真的变了没有"，避免每 30 s 重写一份一样的）

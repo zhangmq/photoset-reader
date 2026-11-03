@@ -60,6 +60,7 @@ class QTimer;
 
 #include "appsettings.h"   // ★ app::Layout：阅读版面 = 一份枚举（本类只"持有并投影"，不定义）
 #include "sequence.h"
+#include "previewprovider.h"
 
 namespace fetch {
 
@@ -158,6 +159,18 @@ public:
     //   ★ 加密压缩包（设计 22 §5.3）：用户提交了密码 ⇒ 把**所有"等密码"的坏因**清掉再重取。
     //     唯一调用点 = "提交密码"，**不做任何自动重试**。
     Q_INVOKABLE void retryNeedingPassword();
+    //   ★ 时间轴悬停预览（用户 2026-11-03）：以 `center` 为中心取邻近条目，按固定高度等比铺开，
+    //     返回 [{ index, w, h, url }]（url 是 `image://preview/…`）。GUI 线程调用；位置表交给 provider。
+    //     `heightPx` = 预览条高度；`maxWidthPx` = 窗口宽度（填满即停，最多 12 张）。
+    //   返回 { items: [...], focusX, focusW } —— **几何和条目一次算完**，避免 QML 侧
+    //   分几次赋值造成的中间态（用户 2026-11-03：框来回乱跳）
+    //   `gapPx` = 预览条**图片之间的间距**（由 QML 的 `Theme.spaceSm` 传进来，
+    //   不能在 C++ 里另写一个数 —— 否则布局和定位框的计算会差一点，用户 2026-11-03 指出）
+    Q_INVOKABLE QVariantMap previewStrip(int center, int heightPx, int maxWidthPx, int gapPx);
+    //   预览条里"第 index 条"的**显示宽度**（数据来自序列本身，不看预览条里有没有它）
+    Q_INVOKABLE int previewItemWidth(int index, int heightPx) const;
+    //   预览用的共享表（由 `UiModel` 持有、provider 读取）
+    void setPreviewStore(const std::shared_ptr<PreviewStore> &store) { m_previewStore = store; }
     //   把 pan 夹回当前 zoom/视口允许的范围（视口/dpr 变化后必须调，否则 VM 与渲染不一致）
     void clampPan();
     Q_INVOKABLE void zoomAtPoint(qreal factor, qreal anchorX, qreal anchorY);
@@ -327,6 +340,7 @@ private:
     QVector<Slot> m_slots;                   // 一张槽位表（池上限 = L + 1）
     //   坏因小表：条目 → 坏因。**不占** `L + 1` 的额度；**同一次查看内一直保留**
     //   （这就是"坏不重试"的依据）；换来源（`setSequence`）时清空。
+    std::shared_ptr<PreviewStore> m_previewStore;   // 预览位置表（provider 线程读）
     QHash<int, Bad> m_bad;
     QHash<int, int> m_badLevel;       // item → 密码层号（只对 Bad::NeedsPassword 有意义）
     int             m_promptedItem = -1;   // 已经为哪一条问过密码（不重复问）

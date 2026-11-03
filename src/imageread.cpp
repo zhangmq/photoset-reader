@@ -241,6 +241,13 @@ public:
     bool ok() const { return m_ok; }
     QSize size() { return m_ok ? m_r.size() : QSize(); }
     QImage read() { return m_ok ? toSrgb(m_r.read()) : QImage(); }
+    //   缩略图：**按目标尺寸解码**（下采样预处理，不是最终缩放）
+    QImage readScaled(const QSize &target)
+    {
+        if (!m_ok || !target.isValid()) return {};
+        m_r.setScaledSize(target);
+        return toSrgb(m_r.read());
+    }
 
 private:
     QByteArray   m_bytes;
@@ -313,6 +320,12 @@ QImage image(const Location &loc, int *passwordLevel)
 QSize imageSize(const Location &loc)
 {
     return imageSize(loc, nullptr);
+}
+
+QImage imageScaled(const Location &loc, const QSize &target)
+{
+    EntryReader r(loc);
+    return r.readScaled(target);
 }
 
 QSize imageSize(const Location &loc, int *passwordLevel)

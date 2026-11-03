@@ -90,6 +90,15 @@ Item {
             }
         }
 
+        SettingsRow {
+            label: qsTr("Timeline hover preview")
+            description: qsTr("Show neighbouring pages above the progress bar while hovering it")
+            Switch {
+                checked: ui.previewStrip
+                onToggled: ui.previewStrip = !ui.previewStrip
+            }
+        }
+
         // ── 以下三项是**新资源 / 重进查看屏时的默认值**（不是当前阅读态）──
         SettingsRow {
             label: qsTr("Default zoom")

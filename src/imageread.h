@@ -62,6 +62,10 @@ QImage image(const Location &loc, int *passwordLevel);
 QSize imageSize(const Location &loc);
 //   ★ 带出"密码层号"的版本（扫描期读图头失败 ⇒ 立刻要密码，设计 22 §5.1）
 QSize imageSize(const Location &loc, int *passwordLevel);
+//   ★ 缩略图用途：按目标尺寸**降采样解码**（`QImageReader::setScaledSize`，JPEG 走 shrink-on-load）。
+//     只给时间轴悬停预览这种"小图"用；主显示路径仍解码全图再走我们的缩放层（格式纪律）。
+//     返回空 = 读不到（容器打不开 / 成员不存在 / 密码不对）。
+QImage imageScaled(const Location &loc, const QSize &target);
 
 // 一张源图有几页（多页 TIFF 等）；1 = 普通单页图
 int pageCount(const QString &path);

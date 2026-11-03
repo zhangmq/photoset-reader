@@ -7,8 +7,8 @@ import AppUi
 //     · **已完成进度用主色**（`brand`）—— 原来只有一条灰轨道
 //     · **游标跟随鼠标当前位置**（hover 时），不是停在点击位置
 //     · **游标高不超过进度条高度**（原来整行 14 高，太高）
-//   几何照抄 vsr-player `ProgressSlider.qml`：行高 `osdTrackH`(14)、
-//   轨道贴底、hover/拖动时轨道加高（`osdTrackLineH` 4 → `osdTrackLineHoverH` 6）
+//   几何：行高 `osdTrackH`(14)、轨道贴底、**轨道高固定 `osdTrackLineH`(8)** ——
+//   2026-11-03 用户：加高一倍，且 hover 不再放大（原来的 4→6 伸缩去掉）
 Item {
     id: root
 
@@ -25,17 +25,24 @@ Item {
     readonly property real  hoverFrac: width > 0
                                        ? Math.max(0, Math.min(1, ma.mouseX / width))
                                        : 0
+    //   悬停预览用：鼠标指到的条目（预览条把这一页摆到窗口中线）。
+    //   ★ **锁存**：只在悬停期间更新；指针离开后保持上一次的值 —— 否则会退回"当前页"，
+    //     让预览条里的定位框瞬间失去目标、提前消失，打断过渡动画（用户 2026-11-03）。
+    property int hoverIndex: index
+    function indexAt(x) {
+        if (root.total <= 1)
+            return 0
+        return Math.round(Math.max(0, Math.min(1, x / width)) * (root.total - 1))
+    }
     implicitHeight: Theme.osdTrackH
 
-    Rectangle {   // 轨道（整条）
+    Rectangle {   // 轨道（整条）—— 高度固定，**hover 不再放大**（用户 2026-11-03）
         id: track
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: root.hovered || root.pressed ? Theme.osdTrackLineHoverH
-                                             : Theme.osdTrackLineH
+        height: Theme.osdTrackLineH
         color: Theme.overlayTrack
-        Behavior on height { NumberAnimation { duration: Theme.durFast } }
     }
     Rectangle {   // 已完成进度（主色）
         anchors.left: track.left
@@ -58,16 +65,15 @@ Item {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
 
-        function indexAt(x) {
-            if (root.total <= 1)
-                return 0
-            return Math.round(Math.max(0, Math.min(1, x / width)) * (root.total - 1))
-        }
+        //   悬停 / 移动时更新锁存的条目（**离开不动它**，见 hoverIndex 的说明）
+        onEntered: root.hoverIndex = root.indexAt(mouseX)
         // 显式声明 mouse 形参（QML 已弃用隐式注入）
-        onPressed: function (mouse) { root.seeked(indexAt(mouse.x)) }
+        onPressed: function (mouse) { root.seeked(root.indexAt(mouse.x)) }
         onPositionChanged: function (mouse) {
+            if (containsMouse)
+                root.hoverIndex = root.indexAt(mouse.x)
             if (pressed)
-                root.seeked(indexAt(mouse.x))
+                root.seeked(root.indexAt(mouse.x))
         }
     }
 
