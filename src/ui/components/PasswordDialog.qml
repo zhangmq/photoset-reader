@@ -11,12 +11,44 @@ import AppUi
 Popup {
     id: root
 
+    //   本项目风格的勾选框（自绘 indicator：Basic 风格的方块与令牌不搭）；两个勾选项共用一份实现
+    component LabeledCheck: CheckBox {
+        id: cb
+        spacing: Theme.spaceSm
+        contentItem: Text {
+            text: cb.text
+            font: cb.font
+            color: Theme.textSecondary
+            leftPadding: cb.indicator.width + cb.spacing
+            verticalAlignment: Text.AlignVCenter
+        }
+        indicator: Rectangle {
+            implicitWidth: 16
+            implicitHeight: 16
+            x: cb.leftPadding
+            y: parent.height / 2 - height / 2
+            radius: Theme.radiusXs
+            color: cb.checked ? Theme.brand : "transparent"
+            border.width: Theme.borderW
+            border.color: cb.checked ? Theme.brand : Theme.borderL4
+            Text {
+                anchors.centerIn: parent
+                visible: cb.checked
+                text: "✓"
+                color: Theme.brandFg
+            }
+        }
+    }
+
     property string title: qsTr("Password required")
     property string pathLabel: ""          // 哪个容器（相对来源根）
     property string errorText: ""          // "密码不正确" 之类（空 = 不显示）
     property bool   reuseDefault: true     // checkbox 的初始值
+    //   ★ **保存密码**（用户 2026-11-03）：只在"这条路能写进度文件"时给（打开进度文件 / 收藏）
+    property bool   showSavePassword: false
+    property bool   savePasswordDefault: false
 
-    signal submitted(string password, bool reuseForSubsequent)
+    signal submitted(string password, bool reuseForSubsequent, bool saveToFile)
     signal cancelled()
 
     modal: true
@@ -54,8 +86,9 @@ Popup {
         submittedFlag = true
         const pw = pwInput.text
         const reuse = reuseBox.checked
+        const save = saveBox.visible && saveBox.checked
         root.close()
-        root.submitted(pw, reuse)
+        root.submitted(pw, reuse, save)
     }
 
     Column {
@@ -113,36 +146,22 @@ Popup {
             }
         }
 
-        //   后续压缩包使用相同密码（自绘 indicator：Basic 风格那个黑方块与本项目令牌不搭）
-        CheckBox {
+        //   后续压缩包使用相同密码
+        LabeledCheck {
             id: reuseBox
             x: Theme.spaceLg
             checked: root.reuseDefault
             text: qsTr("Use the same password for subsequent archives")
-            spacing: Theme.spaceSm
-            contentItem: Text {
-                text: reuseBox.text
-                font: reuseBox.font
-                color: Theme.textSecondary
-                leftPadding: reuseBox.indicator.width + reuseBox.spacing
-                verticalAlignment: Text.AlignVCenter
-            }
-            indicator: Rectangle {
-                implicitWidth: 16
-                implicitHeight: 16
-                x: reuseBox.leftPadding
-                y: parent.height / 2 - height / 2
-                radius: Theme.radiusXs
-                color: reuseBox.checked ? Theme.brand : "transparent"
-                border.width: Theme.borderW
-                border.color: reuseBox.checked ? Theme.brand : Theme.borderL4
-                Text {
-                    anchors.centerIn: parent
-                    visible: reuseBox.checked
-                    text: "✓"
-                    color: Theme.brandFg
-                }
-            }
+        }
+
+        //   ★ 保存密码到进度文件：只有能写文件时才出现（打开进度文件 / 收藏那条路）
+        LabeledCheck {
+            id: saveBox
+            x: Theme.spaceLg
+            visible: root.showSavePassword
+            height: visible ? implicitHeight : 0
+            checked: root.savePasswordDefault
+            text: qsTr("Save the password in this progress file (plain text)")
         }
 
         Text {                                     // 错误行（"密码不正确"）

@@ -167,11 +167,19 @@ public:
                                              NOTIFY passwordPromptChanged)
     Q_PROPERTY(QString passwordPromptError   READ passwordPromptError
                                              NOTIFY passwordPromptChanged)
+    //   ★ **保存密码**勾选（用户 2026-11-03）：只有"这条路上真能写进度文件"时才给（打开进度文件 / 收藏）；
+    //     默认勾不勾 = **进度文件里还没存过这个容器的密码**。直接在扫描期（没有进度文件）时不给。
+    Q_PROPERTY(bool    passwordPromptCanSave READ passwordPromptCanSave
+                                             NOTIFY passwordPromptChanged)
+    Q_PROPERTY(bool    passwordPromptSaveDefault READ passwordPromptSaveDefault
+                                             NOTIFY passwordPromptChanged)
     //   本次会话**新输入、还没保存过**的密码（保存进度时要问一次）
     Q_PROPERTY(bool    hasUnsavedPasswords   READ hasUnsavedPasswords
                                              NOTIFY passwordPromptChanged)
     //   `reuseForSubsequent` = 弹框里勾了"后续压缩包使用相同密码"
-    Q_INVOKABLE void submitPassword(const QString &pw, bool reuseForSubsequent);
+    //   `saveToFile`：解码期弹框里勾了"保存密码" ⇒ 立刻写进关联的进度文件（用户 2026-11-03）
+    Q_INVOKABLE void submitPassword(const QString &pw, bool reuseForSubsequent,
+                                    bool saveToFile = false);
     Q_INVOKABLE void cancelPassword();
     Q_INVOKABLE void openProgressFile();
     Q_INVOKABLE bool openProgress(const QString &filePath);
@@ -274,6 +282,8 @@ private:
     bool passwordPromptVisible() const { return !m_pendingPasswordKey.isEmpty(); }
     QString passwordPromptPath() const { return m_passwordPromptPath; }
     QString passwordPromptError() const { return m_passwordPromptError; }
+    bool passwordPromptCanSave() const { return m_passwordPromptCanSave; }
+    bool passwordPromptSaveDefault() const { return m_passwordPromptSaveDefault; }
     bool hasUnsavedPasswords() const;
     //   弹框里的"哪个文件"：容器路径 → **相对来源**的显示文本（见 .cpp）
     QString passwordPromptLabel(const QString &key) const;
@@ -317,6 +327,8 @@ private:
     Sequence               *m_passwordOwner = nullptr;
     QString                 m_passwordPromptPath;
     QString                 m_passwordPromptError;
+    bool                    m_passwordPromptCanSave = false;      // 这条路上有进度文件可写
+    bool                    m_passwordPromptSaveDefault = false;  // 复选框默认值
     //   界面翻译：**只有一份**（换语言时摘掉旧的、装新的）。空 = 没有 .qm（源串即英文）。
     QTranslator *m_translator = nullptr;
     void applyLanguage();               // 按 m_settings.language() 装/摘翻译

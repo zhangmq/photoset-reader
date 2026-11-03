@@ -24,7 +24,9 @@ ApplicationWindow {
         id: passwordDialog
         pathLabel: ui.passwordPromptPath
         errorText: ui.passwordPromptError
-        onSubmitted: function (pw, reuse) { ui.submitPassword(pw, reuse) }
+        showSavePassword: ui.passwordPromptCanSave
+        savePasswordDefault: ui.passwordPromptSaveDefault
+        onSubmitted: function (pw, reuse, save) { ui.submitPassword(pw, reuse, save) }
         onCancelled: ui.cancelPassword()
     }
     Connections {

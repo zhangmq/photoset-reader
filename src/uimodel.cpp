@@ -611,6 +611,8 @@ void UiModel::checkPasswordNeeded()
     m_pendingPasswordItem = -1;          // 扫描期
     m_pendingPasswordKey = key;
     m_passwordOwner = owner;
+    m_passwordPromptCanSave = false;      // 扫描期还没有关联进度文件 ⇒ 没地方存
+    m_passwordPromptSaveDefault = false;
     const QString shown = passwordPromptLabel(key);
     m_passwordPromptPath = shown;
     //   试过才说"密码不正确"（第一次问的时候不能吓人）
@@ -621,7 +623,7 @@ void UiModel::checkPasswordNeeded()
     emit passwordPromptChanged();
 }
 
-void UiModel::submitPassword(const QString &pw, bool reuseForSubsequent)
+void UiModel::submitPassword(const QString &pw, bool reuseForSubsequent, bool saveToFile)
 {
     const QString key = m_pendingPasswordKey;
     if (key.isEmpty() || pw.isEmpty()) return;
@@ -665,12 +667,20 @@ void UiModel::submitPassword(const QString &pw, bool reuseForSubsequent)
     m_pendingPasswordKey.clear();
     m_passwordPromptPath.clear();
     m_passwordPromptError.clear();
+    m_passwordPromptCanSave = false;
+    m_passwordPromptSaveDefault = false;
     emit passwordPromptChanged();
     if (item >= 0 && m_src.seq && m_src.vm) {
         //   ★ 解码期（浏览进度文件）：只重填密码 + **重取这一条**（不重扫、不关来源）
         m_src.seq->syncItemPasswords();
         //   ★ 同一个包可能有多条都在等密码 ⇒ 全部重取（只重取一条会留下空白屏）
         m_src.vm->retryNeedingPassword();
+        //   ★ 勾了"保存密码" ⇒ **立刻写进关联的进度文件**（这条路没有别的保存入口）
+        if (saveToFile && !m_progressFile.isEmpty()) {
+            const bool ok = writeProgress(m_progressFile, /*quiet=*/true, /*savePasswords=*/true);
+            qCInfo(lcUi).noquote() << QStringLiteral("[ui] password saved to progress file: %1")
+                                      .arg(ok ? QStringLiteral("ok") : QStringLiteral("failed"));
+        }
         qCInfo(lcUi).noquote() << QStringLiteral("[ui] password submitted (retrying one item)");
         return;
     }
@@ -703,6 +713,8 @@ void UiModel::cancelPassword()
     m_pendingPasswordKey.clear();
     m_passwordPromptPath.clear();
     m_passwordPromptError.clear();
+    m_passwordPromptCanSave = false;
+    m_passwordPromptSaveDefault = false;
     emit passwordPromptChanged();
     if (owner && owner == m_rescanSeq) {
         //   ★ 后台「重新扫描」问的不想答 ⇒ 放弃这次重扫，**当前画面不动**
@@ -737,6 +749,13 @@ void UiModel::onPasswordRequired(int item, int level)
 
     m_pendingPasswordItem = item;
     m_pendingPasswordKey = key;
+    //   ★ 打开进度文件 / 收藏这条路**没有"保存进度"入口**（用户 2026-11-03）⇒ 在密码框里给一个
+    //     "保存密码"勾选：能写文件（有关联的进度文件）才给。
+    //   ★ 默认值（用户 2026-11-03 改定）：
+    //     · 文件里**没存过** ⇒ **不勾**（不替用户做主，他想存自己勾）；
+    //     · 文件里**已经存过**（密码错了才又弹）⇒ **勾上**（沿用他原先"要保存"的选择）。
+    m_passwordPromptCanSave = !m_progressFile.isEmpty();
+    m_passwordPromptSaveDefault = m_passwordPromptCanSave && m_src.seq->isPasswordSaved(key);
     const QString shown = passwordPromptLabel(key);
     m_passwordPromptPath = shown;
     //   ★ 判据只有一条：**这个容器表里已经有密码、却还被追问** ⇒ 那个密码是错的。
