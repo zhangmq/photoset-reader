@@ -669,7 +669,8 @@ void UiModel::submitPassword(const QString &pw, bool reuseForSubsequent)
     if (item >= 0 && m_src.seq && m_src.vm) {
         //   ★ 解码期（浏览进度文件）：只重填密码 + **重取这一条**（不重扫、不关来源）
         m_src.seq->syncItemPasswords();
-        m_src.vm->retry(item);
+        //   ★ 同一个包可能有多条都在等密码 ⇒ 全部重取（只重取一条会留下空白屏）
+        m_src.vm->retryNeedingPassword();
         qCInfo(lcUi).noquote() << QStringLiteral("[ui] password submitted (retrying one item)");
         return;
     }

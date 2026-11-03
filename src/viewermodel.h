@@ -152,9 +152,9 @@ public:
     Q_INVOKABLE void setViewport(qreal logicalW, qreal logicalH, qreal dpr);
     Q_INVOKABLE void applyFit();
     Q_INVOKABLE void panBy(qreal dx, qreal dy);
-    //   ★ 加密压缩包（设计 22 §5.3）：用户提交了密码 ⇒ **只清这一条的坏因**再重取一次。
+    //   ★ 加密压缩包（设计 22 §5.3）：用户提交了密码 ⇒ 把**所有"等密码"的坏因**清掉再重取。
     //     唯一调用点 = "提交密码"，**不做任何自动重试**。
-    Q_INVOKABLE void retry(int item);
+    Q_INVOKABLE void retryNeedingPassword();
     //   把 pan 夹回当前 zoom/视口允许的范围（视口/dpr 变化后必须调，否则 VM 与渲染不一致）
     void clampPan();
     Q_INVOKABLE void zoomAtPoint(qreal factor, qreal anchorX, qreal anchorY);

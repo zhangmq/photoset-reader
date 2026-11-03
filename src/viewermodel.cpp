@@ -909,12 +909,16 @@ void ViewerModel::markBad(int item, Bad why)
 //   每一轮开头都更新一次浮层（`updateLoading()`）⇒ 所有返回路径都更新到，没有早退漏掉。
 //   ★ 加密压缩包（设计 22 §5.3）：用户提交密码后，只清这一条的 `NeedsPassword`
 //     再判一次（重新派解码）。**只有"提交密码"会调它** —— 不是自动重试。
-void ViewerModel::retry(int item)
+void ViewerModel::retryNeedingPassword()
 {
-    if (item < 0) return;
-    const auto it = m_bad.constFind(item);
-    if (it == m_bad.constEnd() || it.value() != Bad::NeedsPassword) return;
-    m_bad.remove(item);
+    //   ★ 同一个容器往往**不止一条**因为它失败（预取/本屏几条都在等同一个包）⇒
+    //     拿到密码要**全部清掉**重新取，否则只重取"触发弹框的那一条"，
+    //     本屏另一条仍然停在 NeedsPassword ⇒ 画面空白，翻页才出来（用户 2026-11-03 实测）。
+    //     别的容器里的条目也会被重取一次：密码不对就再次失败、再次追问（符合"继续弹框即可"）。
+    for (auto it = m_bad.begin(); it != m_bad.end();) {
+        if (it.value() == Bad::NeedsPassword) it = m_bad.erase(it);
+        else ++it;
+    }
     judge();
 }
 
