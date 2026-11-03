@@ -1081,13 +1081,22 @@ bool UiModel::writeProgress(const QString &filePath, bool quiet, bool savePasswo
             && (m_src.seq->isPasswordSaved(rootKey) || savePasswords))
             d.meta.sourcePassword = m_src.seq->passwordToTry(rootKey);
     }
+    //   ★ 勾了「后续压缩包使用相同密码」（sticky）+ 同意保存 ⇒ **所有容器都写这个密码**
+    //     （用户 2026-11-03：既然这些包用同一个密码，就别只写当前这个、下次还得一个个输）。
+    //     具体容器的密码优先于 sticky（密码不一样的包不会被覆盖）。
+    const QString sticky = m_src.seq->passwordDefault();
     for (const auto &row : m_src.seq->containerRows()) {
         const QString &key = row.second;
-        if (!m_src.seq->hasStoredPassword(key)) continue;
-        if (!m_src.seq->isPasswordSaved(key) && !savePasswords) continue;
+        const bool known = m_src.seq->hasStoredPassword(key);
+        if (known && !m_src.seq->isPasswordSaved(key) && !savePasswords) continue;
+        if (!known && !(savePasswords && !sticky.isEmpty())) continue;
         if (row.first >= 0 && row.first < d.rows.size())
-            d.rows[row.first].password = m_src.seq->passwordToTry(key);
+            d.rows[row.first].password = known ? m_src.seq->passwordToTry(key) : sticky;
     }
+    //   源本身是加密容器、又没有具体密码 ⇒ 也写 sticky
+    if (d.meta.sourcePassword.isEmpty() && savePasswords && !sticky.isEmpty()
+        && m_src.seq->rootIsArchive())
+        d.meta.sourcePassword = sticky;
 
     QString err;
     if (!progressfile::write(filePath, d, &err)) {
