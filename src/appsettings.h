@@ -11,12 +11,13 @@ namespace app {
 //   ⚠️ 取值显式写死（库列存的就是它）⇒ 不许重排、不许改既有取值。
 enum class Layout { Single = 0, Double = 1 };
 
-// ★ 幻灯片间隔的**下限**（唯一事实源）：`ViewerModel` / `AppSettings` / `UiModel` 三处
-//   原本各自写 `qMax(50, …)`；2026-11-03 实测（`--bench-slideshow`，vol01 3288×2200 JPEG）：
-//   间隔 50 ms ⇒ 实际 18.7 fps（p50 51 ms），把下限放到 10 ms 后 10 ms 档能跑到 **61 fps**
-//   （p50 16 ms，解码才是瓶颈）—— 说明 50 ms 是**人为上限**，不是能力上限。
-//   语义不变：间隔仍只是**下限**（到点没备好就等，不堆积、不跳页）。
-inline constexpr int kMinSlideshowIntervalMs = 10;
+// ★ 幻灯片间隔的**下限**（唯一事实源）：`ViewerModel` / `AppSettings` / `UiModel` 三处共用。
+//   **不设人为下限，可以是 0**（用户 2026-11-03 定）：
+//   · 2026-11-03 实测（`--bench-slideshow`，vol01 3288×2200 JPEG）：50 ms ⇒ 18.7 fps；
+//     10 ms ⇒ 61 fps（p50 16 ms，解码成了瓶颈）—— 原来的 50 是**人为上限**，不是能力上限；
+//   · 所以干脆放到 0：语义仍是"**间隔是下限**"（`到期 = 请求时刻 + 间隔`，到点没备好就等，
+//     不堆积、不跳页）⇒ 0 的实际效果 = **每备好一张就立刻翻**，速度由解码 / 上屏 / 屏幕刷新率决定。
+inline constexpr int kMinSlideshowIntervalMs = 0;
 
 // ══ 应用设置（配置文件）════════════════════════════════════════
 //   设计：docs/design/11-应用ViewModel设计.md §二 / 14 §9.3 / §10

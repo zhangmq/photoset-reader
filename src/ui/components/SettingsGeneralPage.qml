@@ -58,11 +58,13 @@ Item {
 
         SettingsRow {
             label: qsTr("Default slideshow interval")
+            //   ★ 0 = 不设最小间隔（用户 2026-11-03）：实际速度受解码 / 上屏 / 屏幕刷新率限制
+            description: qsTr("0 = no minimum delay; the actual rate is limited by decoding and screen refresh rate")
             Row {
                 spacing: Theme.spaceXs
                 NumberField {
                     value: ui.slideshowIntervalMs
-                    from: 10          // 与 app::kMinSlideshowIntervalMs 一致（下限的唯一来源）
+                    from: 0           // 与 app::kMinSlideshowIntervalMs 一致（下限的唯一来源；0 = 不设限）
                     to: 60000
                     step: 10
                     suffix: "ms"

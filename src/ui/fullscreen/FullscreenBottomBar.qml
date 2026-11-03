@@ -266,8 +266,10 @@ Item {
                 id: intervalBtn
                 anchors.verticalCenter: parent.verticalCenter
                 glyph: Theme.icInterval
-                tooltip: root.intervalIsPreset ? qsTr("Speed: %1 ms").arg(root.intervalMs)
-                                               : qsTr("Speed: %1 ms (custom)").arg(root.intervalMs)
+                //   ★ 说明"0 = 不设最小间隔"（用户 2026-11-03）：实际速度受解码 / 刷新率限制
+                tooltip: (root.intervalIsPreset ? qsTr("Speed: %1 ms").arg(root.intervalMs)
+                                                : qsTr("Speed: %1 ms (custom)").arg(root.intervalMs))
+                         + " · " + qsTr("no minimum (0 = fastest); limited by decoding and refresh rate")
                 enabled: root.overlaysVisible
                 onTriggered: intervalMenu.visible ? intervalMenu.close() : intervalMenu.open()
             }

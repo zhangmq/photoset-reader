@@ -97,7 +97,8 @@ void AppSettings::load()
                    .arg(kSchemaVersion);
     }
     m_themeMode     = o.value(QStringLiteral("themeMode")).toInt(m_themeMode);
-    m_intervalMs    = qMax(50, o.value(QStringLiteral("intervalMs")).toInt(m_intervalMs));
+    //   ★ 下限走**唯一事实源**（曾经在这里硬写 50 ⇒ 存了 0 读回来变 50）
+    m_intervalMs    = qMax(kMinSlideshowIntervalMs, o.value(QStringLiteral("intervalMs")).toInt(m_intervalMs));
     m_fitMode       = o.value(QStringLiteral("defaultFitMode")).toInt(m_fitMode);
     m_layout        = qBound(0, o.value(QStringLiteral("defaultLayout")).toInt(m_layout), 1);
     m_loop          = qBound(0, o.value(QStringLiteral("defaultLoop")).toInt(m_loop), 2);
