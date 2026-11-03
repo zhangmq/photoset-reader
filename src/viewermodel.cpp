@@ -89,6 +89,15 @@ void ViewerModel::preload(const Sequence::Item &imageMeta, int slot)
     }).detach();
 }
 
+//   设置里改「预取窗口」：**即时生效**，不重建 viewmodel、不重扫。
+void ViewerModel::setPrefetchWindow(int prefetchLength)
+{
+    const int v = qMax(2, prefetchLength);
+    if (v == m_length) return;
+    m_length = v;
+    judge();                     // 按新窗口派活（多要的照派；少要的不回收）
+}
+
 // ══ 结果回主线程 ════════════════════════════════════════════════════════════
 //   先比记号，再比"这个槽现在还等不等这一条"；任一条不符 ⇒ **直接丢**（白干，不算数）。
 //   解码失败（空图）⇒ **坏因写进小表**（不可读），并**释放那个槽**（坏不占槽位额度）。

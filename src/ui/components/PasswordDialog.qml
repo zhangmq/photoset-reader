@@ -119,7 +119,6 @@ Popup {
             checked: root.reuseDefault
             text: qsTr("Use the same password for subsequent archives")
             spacing: Theme.spaceSm
-            font.pixelSize: Theme.fontSm
             contentItem: Text {
                 text: reuseBox.text
                 font: reuseBox.font
@@ -141,7 +140,6 @@ Popup {
                     visible: reuseBox.checked
                     text: "✓"
                     color: Theme.brandFg
-                    font.pixelSize: 12
                 }
             }
         }

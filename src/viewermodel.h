@@ -108,6 +108,9 @@ class ViewerModel : public QObject
 
 public:
     explicit ViewerModel(int prefetchLength, QObject *parent = nullptr);
+    //   ★ 预取长度是**运行时参数**（设置里改它不该重建 reader，更不该重扫来源）：
+    //     改完立刻按新窗口派活。变短不会回收已派发的，等它们回来自然空出。
+    void setPrefetchWindow(int prefetchLength);
     ~ViewerModel() override;
 
     ViewerModel(const ViewerModel &) = delete;
@@ -309,7 +312,7 @@ private:
     static constexpr int kMaxPerScreen = 2;
     static constexpr int kStartForward = 6;  // `f` 的起始值
 
-    const int m_length;                      // 预取长度 L（构造参数）
+    int m_length;                            // 预取长度 L（构造给初值；设置改了可即时更新）
     const Sequence *m_seq = nullptr;         // 来源（非拥有；只有主线程读）
     std::shared_ptr<Poster> m_poster;        // 工作线程 post 回来的落点（见上）
 

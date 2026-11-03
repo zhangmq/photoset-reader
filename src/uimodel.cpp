@@ -247,7 +247,6 @@ void UiModel::openPath(const QString &path, int index)
     if (m_sessionProbe) m_sessionProbe->start();
     //   `--index N`：扫描是异步的 ⇒ 记下来，等条目够了再跳（见 onSequenceChanged）
     m_pendingJump = index;
-    m_pendingChain.clear();
     if (m_pendingJump >= 0 && m_src.vm && m_src.seq && m_src.seq->count() > m_pendingJump) {
         m_src.vm->jump(m_pendingJump);
         m_pendingJump = -1;
@@ -306,23 +305,6 @@ void UiModel::installViewer(Source s)
     if (old.vm) releaseLater(old);   // ★ 再让旧组延迟释放
 }
 
-// 设置类变化 ⇒ 换一组（"重建 = 换实现，不是换来源" ⇒ 位置带过去）
-void UiModel::rebuildViewer()
-{
-    if (!m_src.vm) return;              // 还没建过来源 ⇒ 没什么可重建
-    //   ★ 重新扫描后条目集合可能变（文件增删）⇒ **不能按旧下标跳**，按 label 链 + 页号找回
-    //     （新序列是异步长出来的：见 `onSequenceChanged` 里的 pending 处理）
-    const int cursor = m_src.vm->cursor();
-    m_pendingChain = m_src.seq ? m_src.seq->chainAt(cursor) : QStringList();
-    m_pendingPage = m_src.seq ? m_src.seq->pageAt(cursor) : 0;
-    m_pendingJump = -1;
-    buildViewer();
-    if (!m_src.vm) return;
-    if (m_pendingChain.isEmpty())
-        m_src.vm->jump(qMax(0, cursor));      // 没有链（空序列）⇒ 退回按下标
-    markProgressDirty();                      // 磁盘内容可能变了 ⇒ 让自动保存重写一次
-}
-
 // ── 序列 / viewer 的通知（**只在 GUI 线程**）─────────────────────────────
 // 会话序列：**本类是唯一消费者** —— 发布钩子唤醒（合并成一次）⇒ 一次 drain 到空 ⇒ 通知
 void UiModel::pumpSession()
@@ -344,20 +326,6 @@ void UiModel::onSequenceChanged()
             m_pendingJump = -1;
         } else if (m_src.seq->scanFinished()) {
             m_pendingJump = -1;
-        }
-    }
-    //   重新扫描后的"按链找回位置"：条目够了就跳一次；扫完还找不到就放弃
-    if (!m_pendingChain.isEmpty() && m_src.vm && m_src.seq) {
-        if (m_src.seq->count() > 0) {
-            const int idx = m_src.seq->indexOfChain(m_pendingChain, m_pendingPage);
-            if (idx >= 0) {
-                m_src.vm->jump(idx);
-                m_pendingChain.clear();
-            } else if (m_src.seq->scanFinished()) {
-                m_pendingChain.clear();
-            }
-        } else if (m_src.seq->scanFinished()) {
-            m_pendingChain.clear();
         }
     }
     refreshScanning();               // 顶栏 spin / 已发现数
@@ -539,7 +507,8 @@ void UiModel::setScanHidden(bool on)
     if (m_settings.scanHidden() == on) return;
     m_settings.setScanHidden(on);
     emit scanHiddenChanged();
-    rebuildViewer();                         // 等价于重扫（语义不变）
+    //   ★ 扫描参数**只在建序列时用一次** ⇒ 下一次打开来源 / 手动「重新扫描」时生效，
+    //     改它不重建（用户 2026-11-03：设置项不该触发 rebuildViewer）。
 }
 
 int UiModel::recurseDepth() const { return m_settings.recurseDepth(); }
@@ -550,7 +519,7 @@ void UiModel::setRecurseDepth(int v)
     if (m_settings.recurseDepth() == v) return;
     m_settings.setRecurseDepth(v);
     emit recurseDepthChanged();
-    rebuildViewer();                         // 等价于重扫（语义不变）
+    //   ★ 同上：递归深度只在建序列时用一次 ⇒ 下一次打开来源 / 手动「重新扫描」时生效。
 }
 
 int UiModel::prefetchWindow() const { return m_settings.prefetchWindow(); }
@@ -561,7 +530,9 @@ void UiModel::setPrefetchWindow(int v)
     if (m_settings.prefetchWindow() == v) return;
     m_settings.setPrefetchWindow(v);
     emit prefetchWindowChanged();
-    rebuildViewer();                         // 预取长度是 viewer 的**构造参数**
+    //   ★ 设置值是全局的、由本类持有；viewer 只**用即时值** ⇒ 直接交给它，
+    //     不重建（重建 = 重扫来源，既慢又会把密码表带丢，用户 2026-11-03）。
+    if (m_src.vm) m_src.vm->setPrefetchWindow(v);
 }
 
 int UiModel::innerArchiveMaxMb() const { return m_settings.innerArchiveMaxMb(); }
@@ -632,7 +603,9 @@ void UiModel::checkPasswordNeeded()
         shown = QFileInfo(m_path).fileName() + key.mid(root.size());
     m_passwordPromptPath = shown;
     //   试过才说"密码不正确"（第一次问的时候不能吓人）
-    m_passwordPromptError = m_attempted.contains(key) ? tr("Wrong password") : QString();
+    //   ★ 判据只有一条：**这个容器表里已经有密码、却还被追问** ⇒ 那个密码是错的。
+    //     第一次问（表里没密码 / 只剩 sticky 候选）不吓人。
+    m_passwordPromptError = owner->passwordToTry(key).isEmpty() ? QString() : tr("Wrong password");
     qCInfo(lcUi).noquote() << QStringLiteral("[ui] password required: %1").arg(shown);
     emit passwordPromptChanged();
 }
@@ -641,7 +614,6 @@ void UiModel::submitPassword(const QString &pw, bool reuseForSubsequent)
 {
     const QString key = m_pendingPasswordKey;
     if (key.isEmpty() || pw.isEmpty()) return;
-    m_attempted.insert(key);
     Sequence *owner = m_passwordOwner;
     m_passwordOwner = nullptr;
     //   ★ 后台「重新扫描」那条序列问的 ⇒ 写回它、重启它（不碰当前会话序列）
@@ -759,7 +731,10 @@ void UiModel::onPasswordRequired(int item, int level)
     else if (key.startsWith(root + QLatin1String("!/")))
         shown = QFileInfo(m_path).fileName() + key.mid(root.size());
     m_passwordPromptPath = shown;
-    m_passwordPromptError = m_attempted.contains(key) ? tr("Wrong password") : QString();
+    //   ★ 判据只有一条：**这个容器表里已经有密码、却还被追问** ⇒ 那个密码是错的。
+    //     第一次问（表里没密码 / 只剩 sticky 候选）不吓人。
+    m_passwordPromptError = m_src.seq->passwordToTry(key).isEmpty() ? QString()
+                                                                    : tr("Wrong password");
     qCInfo(lcUi).noquote() << QStringLiteral("[ui] password required (while browsing): %1").arg(shown);
     emit passwordPromptChanged();
 }
@@ -1176,7 +1151,6 @@ bool UiModel::openProgress(const QString &filePath)
         m_src.vm->jump(qMax(0, idx));
     }
     m_pendingJump = -1;
-    m_pendingChain.clear();
     startTrackingProgress(filePath);                   // 之后按间隔 / 切来源自动保存
     snapshotSavedState(d.meta, d.rows.size());         // 文件里记着的就是这份
     if (m_sessionProbe) m_sessionProbe->stop();        // 恢复的序列已经收尾，不需要探测

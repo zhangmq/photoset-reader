@@ -308,7 +308,9 @@ Item {
         anchors.centerIn: parent
         spacing: Theme.spaceSm
         z: 1
-        visible: ui.viewer !== null && ui.viewer.totalPages === 0
+        //   ★ loading 浮层（转圈）出现时**不要**同时显示这块空占位 —— 两者都居中，会叠在一起
+        //     （用户 2026-11-03：等图时"spin 和空占位重叠"）
+        visible: ui.viewer !== null && ui.viewer.totalPages === 0 && !ui.viewer.loading
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: ui.scanning ? qsTr("Scanning…") : qsTr("Nothing to show here")

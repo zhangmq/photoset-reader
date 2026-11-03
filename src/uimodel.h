@@ -257,7 +257,6 @@ private:
     };
 
     void buildViewer();                 // 用 m_path 新建一组；emit viewerChanged；旧组延迟释放
-    void rebuildViewer();               // 设置类变化 ⇒ 换一组（带上位置）
     void installViewer(Source s);       // 接线 + 换绑 + 旧组延迟释放
     void releaseLater(const Source &s); // 旧组：随旧 ViewerModel 的析构释放其余成员
     static void releaseNow(Source &s);
@@ -308,7 +307,6 @@ private:
     // ★★ 运行期设置的**唯一实例**（没有单例、没有第二个副本）
     AppSettings m_settings;
     // ── 加密压缩包：弹框**瞬态**（密码表住在 `Sequence` 里 —— 密码随来源）────────
-    QSet<QString>           m_attempted;        // 试过的 key（用来显示"密码不正确"）
     int                     m_pendingPasswordItem = -1;   // 解码期：等密码的条目（-1 = 扫描期）
     void onPasswordRequired(int item, int level);         // 解码期检测（设计 22 §5.3）
     QString                 m_pendingPasswordKey;   // 正在等密码的容器（空 = 没在等）
@@ -350,9 +348,6 @@ private:
     int  m_discovered = 0;
     //   CLI `--index N`：打开时序列可能还没扫出来 ⇒ 先记下来，等条目够了再跳（一次）
     int     m_pendingJump = -1;
-    //   重新扫描后按 **label 链 + 页号** 找回位置（新序列是异步长出来的，等条目够了再跳）
-    QStringList m_pendingChain;
-    int         m_pendingPage = 0;
     QString m_lastProgressDir;          // 进度文件对话框的起始目录（会话级）
     QString m_lastDialogDir;            // 打开对话框的起始目录（会话级）：上次成功选过的地方
     QString m_progressFile;             // 当前来源关联的进度文件（空 = 不自动保存）
