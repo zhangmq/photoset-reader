@@ -163,7 +163,9 @@ int main(int argc, char *argv[])
     //   **系统对话框**（KDE 下就是 KFileWidget）。这个插件已静态导入，见 CMakeLists。
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORMTHEME"))
         qputenv("QT_QPA_PLATFORMTHEME", "xdgdesktopportal");
-#else
+#elif defined(Q_OS_UNIX)
+    //   ★ 这套平台主题只对 Linux 桌面有意义（KDE / portal）；Windows 上没有这些插件，
+    //     设了只会多一条 "could not find platform theme" 警告。
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORMTHEME")) {
         const bool kde = qgetenv("XDG_CURRENT_DESKTOP").contains("KDE");
         qputenv("QT_QPA_PLATFORMTHEME", kde ? "kde" : "xdgdesktopportal");

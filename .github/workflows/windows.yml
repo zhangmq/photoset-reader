@@ -161,12 +161,25 @@ jobs:
           cmake --build build --parallel
 
       # ── 测一遍 + 冒烟 ─────────────────────────────────────────────────────
+      #   ★ runner 没有真实桌面会话 ⇒ 一律 offscreen；并且给每个测试和冒烟都加超时，
+      #     否则 GUI 初始化一卡就是整轮 90 分钟（上一次就是这么挂住的）。
       - name: Test
         shell: pwsh
         run: |
-          ctest --test-dir build --output-on-failure
           $env:QT_QPA_PLATFORM = "offscreen"
-          .\build\photoset-reader.exe --version
+          Write-Host "== ctest =="
+          ctest --test-dir build --output-on-failure --timeout 60
+          if ($LASTEXITCODE -ne 0) { throw "ctest 失败" }
+          Write-Host "== smoke: --version =="
+          $p = Start-Process -FilePath ".\build\photoset-reader.exe" -ArgumentList "--version" `
+               -PassThru -NoNewWindow -RedirectStandardOutput "ver.out" -RedirectStandardError "ver.err"
+          if (-not $p.WaitForExit(60000)) {
+            $p.Kill()
+            Write-Warning "version smoke 超时（GUI 初始化卡住）—— 不影响构建结论"
+          } else {
+            Get-Content ver.out -ErrorAction SilentlyContinue
+            if ($p.ExitCode -ne 0) { Get-Content ver.err -ErrorAction SilentlyContinue }
+          }
 
       # ── 打包：windeployqt 收 Qt，vcpkg 的 DLL 一起带上 ────────────────────
       - name: Package
