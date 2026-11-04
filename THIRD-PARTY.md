@@ -59,7 +59,7 @@ Combined Work 用你选定的条款发布（原文：*You may convey a Combined 
 | (a) | 每份副本**显著声明**用了这个库、且库与其使用受 LGPL 约束 | 本文件随每个包分发（`/usr/share/doc/photoset-reader/THIRD-PARTY.md`） |
 | (b) | **随附 GPL-3.0 与 LGPL-3.0 全文** | 仓库里在 `LICENSES/`；安装后与 `LICENSE`、本文件同目录（`GPL-3.0-only.txt` / `LGPL-3.0-only.txt`） |
 | (c) | 若程序**运行期显示版权声明**，其中要含库的版权声明 | 本程序**不在界面里显示版权声明** ⇒ 不适用 |
-| (d)(0) | 提供 **Minimal Corresponding Source** + **可重新链接的应用代码** | ① Qt **未作任何修改**，Minimal Corresponding Source 就是上游 Qt 6.12.0：`scripts/build-static-qt.sh` 里记录了源码地址与全部 configure 参数，可据此重建同一份静态 Qt；② 应用侧源码按 MIT 全部公开，配同一脚本即可完整重链接；③ 需要静态中间产物（`.a` / 目标文件）时，向仓库提 issue 即可提供 |
+| (d)(0) | 提供 **Minimal Corresponding Source** + **可重新链接的应用代码** | 两者都是**源码 + 构建脚本**：① Qt **未作任何修改**，Minimal Corresponding Source 就是上游 Qt 6.12.0 —— `scripts/build-static-qt.sh` 记录了源码地址、模块清单与全部 configure 参数，可据此重建同一份静态 Qt；② 应用侧源码按 MIT 全部公开，同一脚本即可把应用与改过的 Qt 重新链接成新的可执行文件（GPL-3.0 §6 的 "Corresponding Source" 本身就包含控制编译与安装的脚本） |
 | (e) | Installation Information（**仅**当 GPL §6 要求时） | §6 只针对 **User Product（消费类设备）**，桌面 AppImage 不属于 ⇒ 不适用；重链接步骤仍按 (d)(0) 给出 |
 
 **为什么这不影响本项目的 MIT 授权**：LGPL 约束的只是**被链接的那个库**及其可替换性，
