@@ -144,6 +144,7 @@ void UiModel::setLanguage(const QString &code)
 //     "标签中文、值还是英文"（用户 2026-11-02 实测到）。
 static void applyMessageLocale(const QString &code)
 {
+#ifdef LC_MESSAGES
     if (code.isEmpty()) {          // 跟随系统 ⇒ 回到环境变量
         setlocale(LC_MESSAGES, "");
         return;
@@ -156,6 +157,11 @@ static void applyMessageLocale(const QString &code)
             return;
     }
     setlocale(LC_MESSAGES, "C");   // 目标 locale 没装 ⇒ 值退回英文（标签仍按翻译走）
+#else
+    //   ★ Windows 的 CRT 没有 `LC_MESSAGES`；那边的 libexif 也不带 gettext 目录
+    //     ⇒ 这些值本来就是英文，没什么可切的。
+    Q_UNUSED(code);
+#endif
 }
 
 void UiModel::applyLanguage()
