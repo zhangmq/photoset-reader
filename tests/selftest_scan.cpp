@@ -12,7 +12,10 @@
 #include <QThread>
 #include <QVector>
 
-#include <unistd.h>
+//   `symlink()` 只有 POSIX 有（见下面的 `Q_OS_UNIX` 分支），头文件同理
+#ifdef Q_OS_UNIX
+#  include <unistd.h>
+#endif
 
 #include "sequence.h"
 

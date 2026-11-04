@@ -1,7 +1,7 @@
 #include "imageread.h"
 #include "logging.h"
 
-#include "archive.h"
+#include "archivesource.h"
 
 #include <QBuffer>
 #include <QColorSpace>

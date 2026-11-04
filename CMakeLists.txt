@@ -10,7 +10,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml QuickControls2 Widgets ShaderTools DBus Concurrent)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml QuickControls2 Widgets ShaderTools Concurrent)
+#   ★ QtDBus 只有 Unix 有（幻灯片期间的屏幕抑制用它）⇒ 只在 Unix 上找、只在 Unix 上链
+if(UNIX)
+    find_package(Qt6 REQUIRED COMPONENTS DBus)
+endif()
 #   ★ LinguistTools **可选**：有就用 `qt_add_lrelease()`，没有（例如最小化静态 Qt）就退回
 #     系统中的 `lrelease6`/`lrelease` 生成 `.qm` —— 打包/发版不该因为缺一个宿主工具而失败。
 find_package(Qt6 QUIET COMPONENTS LinguistTools)
@@ -32,13 +36,30 @@ qt_policy(SET QTP0001 NEW)
 enable_testing()
 
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(LIBARCHIVE REQUIRED libarchive)
-# EXIF 解析：libexif（LGPL-2.1，动态链接）—— Qt 不向外暴露任何 EXIF 标签（见设计 17 §二）
-pkg_check_modules(LIBEXIF REQUIRED libexif)
-# HEIC/AVIF 的 Exif/ICC 在 BMFF box 表里：用 libheif（LGPL-3.0）按需取，不自己解容器
-#   ★ 不用 Exiv2（GPL-2.0+）—— 项目要能按宽松许可分发（用户 2026-10-21 定案）
-pkg_check_modules(LIBHEIF REQUIRED libheif)
+# ── 第三方库：Linux 走 pkg-config；Windows（vcpkg）没有 pkg-config ⇒ 走 find_*
+#   ★ 头文件名多试几种：vcpkg / 上游 / 发行版的安装位置与库名并不统一。
+if(WIN32)
+    find_path(LIBARCHIVE_INCLUDE_DIR NAMES archive.h REQUIRED)
+    find_library(LIBARCHIVE_LIBRARY NAMES archive libarchive REQUIRED)
+    find_path(LIBEXIF_INCLUDE_DIR NAMES libexif/exif-data.h REQUIRED)
+    find_library(LIBEXIF_LIBRARY NAMES libexif exif REQUIRED)
+    find_path(LIBHEIF_INCLUDE_DIR NAMES libheif/heif.h REQUIRED)
+    find_library(LIBHEIF_LIBRARY NAMES heif libheif REQUIRED)
+    set(LIBARCHIVE_LIBRARIES ${LIBARCHIVE_LIBRARY})
+    set(LIBEXIF_LIBRARIES     ${LIBEXIF_LIBRARY})
+    set(LIBHEIF_LIBRARIES     ${LIBHEIF_LIBRARY})
+    set(LIBARCHIVE_INCLUDE_DIRS ${LIBARCHIVE_INCLUDE_DIR})
+    set(LIBEXIF_INCLUDE_DIRS    ${LIBEXIF_INCLUDE_DIR})
+    set(LIBHEIF_INCLUDE_DIRS    ${LIBHEIF_INCLUDE_DIR})
+else()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LIBARCHIVE REQUIRED libarchive)
+    # EXIF 解析：libexif（LGPL-2.1，动态链接）—— Qt 不向外暴露任何 EXIF 标签（见设计 17 §二）
+    pkg_check_modules(LIBEXIF REQUIRED libexif)
+    # HEIC/AVIF 的 Exif/ICC 在 BMFF box 表里：用 libheif（LGPL-3.0）按需取，不自己解容器
+    #   ★ 不用 Exiv2（GPL-2.0+）—— 项目要能按宽松许可分发（用户 2026-10-21 定案）
+    pkg_check_modules(LIBHEIF REQUIRED libheif)
+endif()
 find_package(ZLIB REQUIRED)
 
 # libunrar：只读 RAR 用途；无 pkg-config，手动找
@@ -68,7 +89,7 @@ add_library(ibcore STATIC
     src/cpuscaleritem.cpp
     src/cpuscaleritem.h
     src/archive.cpp
-    src/archive.h
+    src/archivesource.h
     src/dirwalker.cpp
     src/dirwalker.h
     src/natural.cpp
@@ -114,7 +135,8 @@ qt_add_shaders(ibcore "gpuscale_shaders"
 )
 
 target_link_libraries(ibcore PUBLIC
-    Qt6::Core Qt6::Gui Qt6::Quick Qt6::Qml Qt6::QuickControls2 Qt6::Widgets Qt6::DBus Qt6::Concurrent
+    Qt6::Core Qt6::Gui Qt6::Quick Qt6::Qml Qt6::QuickControls2 Qt6::Widgets Qt6::Concurrent
+    $<$<BOOL:${UNIX}>:Qt6::DBus>
     Qt6::GuiPrivate
     ${LIBARCHIVE_LIBRARIES}
     ${LIBEXIF_LIBRARIES}
@@ -124,6 +146,8 @@ target_link_libraries(ibcore PUBLIC
     ${UNRAR_LIBRARY})
 target_include_directories(ibcore PUBLIC ${LIBARCHIVE_INCLUDE_DIRS} ${LIBEXIF_INCLUDE_DIRS}
                                         ${LIBHEIF_INCLUDE_DIRS} ${UNRAR_INCLUDE_DIR})
+#   `IB_HAVE_DBUS`：`uimodel.cpp` 的屏幕抑制只在有 QtDBus 的平台编译（Windows 没有）
+target_compile_definitions(ibcore PUBLIC $<$<BOOL:${UNIX}>:IB_HAVE_DBUS>)
 
 # ══ testsupport：测试脚手架**独立成库**（设计 14 §11）════════════════════════
 #   `check` / `waitFor` / `TempFixture` / `pipetest` / 套件入口 —— 只有**测试**该碰它，
@@ -134,13 +158,7 @@ add_library(testsupport STATIC
     tests/testsupport.cpp
     tests/testsupport.h
 )
-target_include_directories(testsupport PUBLIC ${CMAKE_SOURCE_DIR}/tests)
-# 套件源在 `tests/`，`#include "sequence.h"` 这类要能找到 `src/` 下的项目头。
-#   ★ 用 `-iquote`（只进**双引号包含**链）而**不是** `-I`：`src/` 一旦进 `-I`，
-#     我们的 `src/archive.h` 就会把 libarchive 的 `<archive.h>` 顶掉（`-I` 先于系统目录
-#     被搜索）—— main.cpp 里 `qmlRegisterType` 一处已有同一个坑的注释。
-#     `-iquote` 只影响 `#include "..."`，正好只给项目头用，不动 `<archive.h>`。
-target_compile_options(testsupport PUBLIC "SHELL:-iquote ${CMAKE_SOURCE_DIR}/src")
+target_include_directories(testsupport PUBLIC ${CMAKE_SOURCE_DIR}/tests ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(testsupport PUBLIC ibcore)
 
 #   自检用的 headless GL / raw GL 驱动（`headlessgl.*` / `rawgldriver.*`）与 GPU 等价性探针
@@ -168,6 +186,9 @@ target_link_libraries(photoset-reader PRIVATE ibcore)
 #   ★ 翻译 `.qm` 已编进可执行（见下），**不需要**装 translations 目录。
 include(GNUInstallDirs)
 install(TARGETS photoset-reader RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+#   Linux 专属的桌面集成：`.desktop` / MIME / hicolor 图标。
+#   Windows 没有这套（分发形态是 exe + DLL 闭包，见 packaging/），装了只是垃圾。
+if(UNIX)
 install(FILES assets/photoset-reader.desktop
         DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
 #   `.prsave` 的自定义 MIME（shared-mime-info）；装完要 `update-mime-database`（见 scripts/install.sh）
@@ -192,6 +213,7 @@ endforeach()
 install(FILES assets/icons/photoset-reader.svg
         DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps"
         RENAME photoset-reader.svg)
+endif()   # if(UNIX)：桌面集成到此为止
 install(FILES LICENSE THIRD-PARTY.md THIRD-PARTY.en.md
         DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 #   ★ LGPL §4(b) 要求随二进制附上 GPL 与 LGPL 全文（Qt 在 AppImage 里是静态链入的）

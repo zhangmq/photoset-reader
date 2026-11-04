@@ -2,7 +2,7 @@
 #include "logging.h"
 
 #include "appsettings.h"
-#include "archive.h"                // ArchiveSource::isArchive（"是不是压缩包"的唯一实现）
+#include "archivesource.h"                // ArchiveSource::isArchive（"是不是压缩包"的唯一实现）
 #include "natural.h"                // imageSuffixes()：图片扩展名的唯一列表
 #include "gpuscale.h"
 #include "progressfile.h"
@@ -11,8 +11,10 @@
 #include "viewermodel.h"
 
 #include <QDateTime>
-#include <QDBusConnection>
-#include <QDBusMessage>
+#ifdef IB_HAVE_DBUS
+#  include <QDBusConnection>
+#  include <QDBusMessage>
+#endif
 #include <QDir>
 #include <QLocale>
 
@@ -879,8 +881,11 @@ int UiModel::discoveredCount() const
 
 //   幻灯片 = 长时间无人操作地看图 ⇒ 别让屏幕在播放中途休眠。
 //   走桌面标准的 ScreenSaver 接口（KDE/GNOME 都实现）；没有会话总线就静默跳过。
+//   ★ 只有 Linux 有这套接口（QtDBus 模块在 Windows 上不存在）⇒ 其余平台不抑制，
+//     交给系统自己的电源策略。
 void UiModel::updateScreenSaverInhibit()
 {
+#ifdef IB_HAVE_DBUS
     const bool want = m_src.vm && m_src.vm->playing();
     if (!QDBusConnection::sessionBus().isConnected())
         return;
@@ -904,6 +909,7 @@ void UiModel::updateScreenSaverInhibit()
         QDBusConnection::sessionBus().call(msg, QDBus::NoBlock);
         m_inhibitCookie = 0;
     }
+#endif
 }
 
 void UiModel::refreshScanning()

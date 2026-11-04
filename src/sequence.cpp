@@ -1,7 +1,7 @@
 #include "sequence.h"
 #include "logging.h"
 
-#include "archive.h"
+#include "archivesource.h"
 #include "dirwalker.h"
 #include "natural.h"
 #include "sevenzcheck.h"

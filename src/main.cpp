@@ -29,7 +29,7 @@
 #include "cpuscaleritem.h"
 #include "logging.h"
 #include "gpuscaleritem.h"
-#include "archive.h"
+#include "archivesource.h"
 
 #include "natural.h"
 #include "uimodel.h"

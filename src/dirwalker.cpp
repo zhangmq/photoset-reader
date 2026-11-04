@@ -1,6 +1,6 @@
 #include "dirwalker.h"
 
-#include "archive.h"
+#include "archivesource.h"
 #include "natural.h"
 
 #include <QDir>

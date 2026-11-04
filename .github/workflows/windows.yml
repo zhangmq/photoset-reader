@@ -1,0 +1,130 @@
+name: windows
+
+#   ★ 目的：在 GitHub 托管的 Windows runner 上**真的用 MSVC 编一遍**，
+#     让 Windows 移植的编译期问题（头文件 / 库名 / CMake 胶水）早暴露，
+#     顺带产出可下载的 exe + DLL 闭包。真机画质仍需在 Windows 上目检（runner 没有 GPU）。
+#
+#   依赖来源：
+#     · Qt 6.12 —— aqtinstall（公开镜像，不需要 Qt 账号）
+#     · libarchive / libexif / libheif / liblzma / zlib —— vcpkg（runner 预装）
+#     · libunrar —— 上游源码 + 自带 UnRARDll.vcxproj（vcpkg 没有这个 port）
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "LICENSES/**"
+  workflow_dispatch:
+
+env:
+  QT_VERSION: "6.12.0"
+  QT_ARCH: "win64_msvc2022_64"
+  UNRAR_VERSION: "7.1.6"
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      #   MSVC 只在 Windows runner 上有：这一步把 cl / link / msbuild 放进 PATH
+      - name: MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # ── Qt（缓存命中就跳过下载；aqt 装出来约 2 GB）────────────────────────
+      - name: Cache Qt
+        id: qt-cache
+        uses: actions/cache@v4
+        with:
+          path: C:\Qt
+          key: qt-${{ env.QT_VERSION }}-${{ env.QT_ARCH }}-shadertools-imageformats
+
+      - name: Install Qt (aqt)
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check aqtinstall
+          python -m aqt install-qt windows desktop $env:QT_VERSION $env:QT_ARCH `
+            -m qtshadertools qtimageformats -O C:\Qt
+
+      # ── 第三方库（vcpkg）──────────────────────────────────────────────────
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\vcpkg\installed
+            C:\Users\runneradmin\AppData\Local\vcpkg\archives
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('.github/workflows/windows.yml') }}
+
+      - name: vcpkg install dependencies
+        shell: pwsh
+        run: |
+          $vcpkg = Join-Path $env:VCPKG_INSTALLATION_ROOT "vcpkg.exe"
+          & $vcpkg install libarchive libexif libheif liblzma zlib --triplet x64-windows
+
+      # ── libunrar：上游源码 + 它自己的 vcxproj（工具集覆盖成 v143）─────────
+      - name: Build libunrar
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://www.rarlab.com/rar/unrarsrc-$env:UNRAR_VERSION.tar.gz" -OutFile unrar.tar.gz
+          tar -xzf unrar.tar.gz
+          Push-Location unrar
+          msbuild UnRARDll.vcxproj /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /m
+          #   产物名两种写法都见过（unrar.lib / UnRAR.lib），取到哪个用哪个
+          $lib = Get-ChildItem -Recurse -Filter *.lib | Select-Object -First 1
+          $dll = Get-ChildItem -Recurse -Filter unrar.dll | Select-Object -First 1
+          if (-not $lib) { throw "libunrar: 找不到 import library" }
+          New-Item -ItemType Directory -Force -Path ..\unrar-prefix\lib, ..\unrar-prefix\include\unrar | Out-Null
+          Copy-Item $lib.FullName ..\unrar-prefix\lib\unrar.lib
+          Copy-Item dll.hpp ..\unrar-prefix\include\unrar\dll.hpp
+          if ($dll) { Copy-Item $dll.FullName ..\unrar-prefix\lib\unrar.dll }
+          Pop-Location
+          Get-ChildItem -Recurse unrar-prefix | Select-Object FullName
+
+      # ── 配置 + 构建 ───────────────────────────────────────────────────────
+      - name: Configure and build
+        shell: pwsh
+        run: |
+          $unrar = Join-Path $env:GITHUB_WORKSPACE "unrar-prefix"
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DCMAKE_PREFIX_PATH="C:\Qt\$env:QT_VERSION\msvc2022_64" `
+            -DUNRAR_LIBRARY="$unrar\lib\unrar.lib" `
+            -DUNRAR_INCLUDE_DIR="$unrar\include"
+          cmake --build build --parallel
+
+      # ── 测一遍 + 冒烟 ─────────────────────────────────────────────────────
+      - name: Test
+        shell: pwsh
+        run: |
+          ctest --test-dir build --output-on-failure
+          $env:QT_QPA_PLATFORM = "offscreen"
+          .\build\photoset-reader.exe --version
+
+      # ── 打包：windeployqt 收 Qt，vcpkg 的 DLL 一起带上 ────────────────────
+      - name: Package
+        shell: pwsh
+        run: |
+          $stage = "stage"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item build\photoset-reader.exe $stage
+          & "C:\Qt\$env:QT_VERSION\msvc2022_64\bin\windeployqt.exe" `
+            --release --no-opengl-sw --no-translations --qmldir src\ui "$stage\photoset-reader.exe"
+          #   我们自己的第三方 DLL（windeployqt 不管）
+          Copy-Item "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" $stage
+          Copy-Item unrar-prefix\lib\unrar.dll $stage
+          Copy-Item LICENSE, THIRD-PARTY.md, THIRD-PARTY.en.md, LICENSES\*.txt $stage
+          Compress-Archive -Path "$stage\*" -DestinationPath photoset-reader-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: photoset-reader-windows-x64
+          path: photoset-reader-windows-x64.zip
+          retention-days: 30
