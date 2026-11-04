@@ -36,7 +36,7 @@ ctest --test-dir build --output-on-failure
 命令行：
 
 ```
-photoset-reader [<路径>] [--fullscreen] [--log-level <级别>]
+photoset-reader [<路径>] [--fullscreen] [--log-level <级别>] [--log-file <文件>]
 ```
 
 | 用法 | 含义 |
@@ -44,6 +44,7 @@ photoset-reader [<路径>] [--fullscreen] [--log-level <级别>]
 | `<路径>` | 打开文件夹 / 压缩包 / 图片 / `.prsave` 进度文件；不给 = 空窗口（可直接拖放） |
 | `--fullscreen` | 启动即全屏 |
 | `--log-level debug\|info\|warning\|error\|off` | 本次运行的日志级别（覆盖设置，不写盘） |
+| `--log-file <文件>` | 日志**同时**追加写到这个文件（报 bug 用；Windows 下没有控制台也能带日志） |
 | `-h` / `-v` | 帮助 / 版本 |
 
 产品本体**不含任何测试/验收开关**（截图、探针、开发定时器都已移除）。

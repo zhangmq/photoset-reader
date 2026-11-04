@@ -47,4 +47,12 @@ void init();
 //   —— **只在第一次打**，避免刷屏。线程安全（内部只护一个字符串集合，锁里不做 I/O）。
 bool firstTime(const QString &key);
 
+// ══ `--log-file <路径>`：把日志**同时**写进文件（追加、一行一条）════════════════
+//   用途：Windows 产品是 GUI 子系统（没有控制台），Wine 下更是什么都看不到 ——
+//   给一个文件路径，就能把"启动 → 操作 → 退出"的日志原样带走。
+//   · 打不开（目录不存在 / 没权限）返回 false 并填 `error`，**不影响** stderr；
+//   · 每条日志 = 一次 `write()` 系统调用（追加语义）。**不加锁、不在锁里做 I/O**；
+//     多线程并发时行与行之间可能乱序，但单行不会被写坏。
+bool setLogFile(const QString &path, QString *error = nullptr);
+
 } // namespace iblog

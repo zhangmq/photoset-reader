@@ -213,6 +213,11 @@ int main(int argc, char *argv[])
                                                   " (overrides the setting; not persisted)"),
                                    QStringLiteral("level"));
     parser.addOption(logLevelOpt);
+    QCommandLineOption logFileOpt(QStringLiteral("log-file"),
+                                  QStringLiteral("Also append logs to this file"
+                                                 " (for bug reports; no console needed)"),
+                                  QStringLiteral("file"));
+    parser.addOption(logFileOpt);
     parser.process(app);
 
 #ifdef Q_OS_UNIX
@@ -231,6 +236,16 @@ int main(int argc, char *argv[])
         std::signal(SIGHUP, onQuitSignal);    // 终端挂断
     }
 #endif
+
+    //   `--log-file`：**尽早**打开（越早的日志越有用）；打不开只警告，不影响启动。
+    if (parser.isSet(logFileOpt)) {
+        QString err;
+        if (!iblog::setLogFile(parser.value(logFileOpt), &err)) {
+            qCWarning(lcApp).noquote()
+                << QStringLiteral("[app] cannot write --log-file %1: %2")
+                       .arg(parser.value(logFileOpt), err);
+        }
+    }
 
     //   `--log-level`：**尽早**落地（启动早期的日志也按它过滤）；`UiModel` 构造会按设置再设一次，
     //   所以构造完要**再覆盖回来**（见下面的 `uiLogOverride`）。

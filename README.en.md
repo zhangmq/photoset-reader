@@ -40,7 +40,7 @@ ctest --test-dir build --output-on-failure
 Command line:
 
 ```
-photoset-reader [<path>] [--fullscreen] [--log-level <level>]
+photoset-reader [<path>] [--fullscreen] [--log-level <level>] [--log-file <file>]
 ```
 
 | Usage | Meaning |
@@ -48,6 +48,7 @@ photoset-reader [<path>] [--fullscreen] [--log-level <level>]
 | `<path>` | Open a folder / archive / image / `.prsave` progress file; omit for an empty window (drops accepted) |
 | `--fullscreen` | Start in fullscreen |
 | `--log-level debug\|info\|warning\|error\|off` | Log level for this run (overrides the setting, not persisted) |
+| `--log-file <file>` | Also append logs to this file (for bug reports; works without a console on Windows) |
 | `-h` / `-v` | Help / version |
 
 The shipped binary contains **no test/acceptance switches** (screenshot, probes and dev timers were removed).

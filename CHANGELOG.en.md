@@ -62,6 +62,20 @@ First alpha (pre-release). Two forms: **AppImage** (self-contained) and a **syst
 
 Staging area for upcoming changes (merged into the matching version when releasing).
 
+### Added
+
+- **`--log-file <file>`**: logs are also appended to a file (timestamp + category + level).
+  The Windows build is a GUI-subsystem binary with no console, and under Wine nothing is visible at
+  all — this is how a bug report carries its logs.
+
+### Fixed
+
+- **GPU scaling failed on Windows**: the tap loop used `texture()` (implicit derivatives), which made
+  HLSL fail with `X3511 unable to unroll loop` → pipeline creation failed → D3D device lost.
+  Switched to `textureLod(..., 0.0)`.
+- **Double-clicking on Windows opened a console window first**: the app target is now a GUI subsystem
+  binary (`WIN32_EXECUTABLE`).
+
 When the first stable version ships, add a section under `Added / Changed / Fixed`, for example:
 
 ```markdown

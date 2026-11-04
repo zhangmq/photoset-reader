@@ -1,11 +1,20 @@
 #include "logging.h"
 
 #include <QByteArray>
+#include <QCoreApplication>
+#include <QDateTime>
+#include <QFile>
 #include <QLoggingCategory>
 #include <QMutex>
 #include <QSet>
 #include <QString>
 #include <QStringLiteral>
+
+#ifdef Q_OS_WIN
+#  include <io.h>
+#else
+#  include <unistd.h>
+#endif
 
 // ══ 分类的定义（名字见 logging.h 的声明）═════════════════════════════════════
 //   ★ 第三个参数 = **该分类的默认最低级别**：即使没有人调过 `iblog::init()`
@@ -99,6 +108,83 @@ bool firstTime(const QString &key)
     if (seen.contains(key))
         return false;
     seen.insert(key);
+    return true;
+}
+
+// ══ 文件日志（`--log-file`）═══════════════════════════════════════════════════
+//   ★ 为什么要自己装 handler：Windows 产品是 **GUI 子系统**（没有控制台），
+//     Wine 下连重定向都拿不到输出 ⇒ 没有文件就没法排障。
+//   ★ 为什么要用 `write()` 而不是 `QFile::write()`：后者在多线程下没有保证；
+//     而"一条日志 = 一次 write"配合 O_APPEND 就是线程安全的（不撕裂），
+//     也满足项目纪律：**不在锁里做 I/O**。
+namespace {
+
+QFile *g_logFile = nullptr;            // 生命周期 = 进程
+QtMessageHandler g_prevHandler = nullptr;
+
+const char *levelTag(QtMsgType t)
+{
+    switch (t) {
+    case QtDebugMsg:    return "debug";
+    case QtInfoMsg:     return "info";
+    case QtWarningMsg:  return "warning";
+    case QtCriticalMsg: return "error";
+    case QtFatalMsg:    return "fatal";
+    }
+    return "info";
+}
+
+void logToFile(QtMsgType type, const QMessageLogContext &ctx, const QString &msg)
+{
+    if (g_logFile && g_logFile->isOpen()) {
+        const int fd = g_logFile->handle();
+        if (fd >= 0) {
+            const QByteArray line =
+                QByteArrayLiteral("[")
+                + QDateTime::currentDateTime().toString(Qt::ISODateWithMs).toUtf8()
+                + QByteArrayLiteral("] [") + (ctx.category ? ctx.category : "default")
+                + QByteArrayLiteral("] [") + levelTag(type) + QByteArrayLiteral("] ")
+                + msg.toUtf8() + '\n';
+            const char *p = line.constData();
+            qsizetype left = line.size();
+            while (left > 0) {
+#ifdef Q_OS_WIN
+                const int n = ::_write(fd, p, int(left));
+#else
+                const long n = long(::write(fd, p, size_t(left)));
+#endif
+                if (n <= 0)
+                    break;
+                p += n;
+                left -= n;
+            }
+        }
+    }
+    if (g_prevHandler)   // 其余输出（stderr）照旧
+        g_prevHandler(type, ctx, msg);
+}
+
+} // namespace
+
+bool setLogFile(const QString &path, QString *error)
+{
+    if (path.isEmpty())
+        return true;
+    auto *f = new QFile(path);
+    if (!f->open(QIODevice::WriteOnly | QIODevice::Append)) {
+        if (error) *error = f->errorString();
+        delete f;
+        return false;
+    }
+    delete g_logFile;      // 重复调用 ⇒ 换文件
+    g_logFile = f;
+    if (!g_prevHandler)
+        g_prevHandler = qInstallMessageHandler(logToFile);
+
+    //   开头写一行分隔：同一个文件被多次运行追加时能分清边界
+    logToFile(QtInfoMsg, QMessageLogContext(),
+              QStringLiteral("[app] ---- log started (pid %1) ----")
+                  .arg(QCoreApplication::applicationPid()));
     return true;
 }
 
