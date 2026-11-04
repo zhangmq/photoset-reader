@@ -58,8 +58,18 @@ photoset-reader [<路径>] [--fullscreen] [--log-level <级别>]
 
 ## 安装
 
-> ⚠️ **预编译包尚未发布**（当前 `0.1.0` 是开发版）：AppImage 与"完整依赖版"要等正式发版。
-> **现在只能用源码构建安装。**
+**预编译包（alpha）**：从 [Releases](https://github.com/zhangmq/photoset-reader/releases) 下载，
+两种形态二选一：
+
+| 形态 | 文件 | 用法 |
+|---|---|---|
+| **AppImage**（自带依赖） | `photoset-reader-0.1.0-alpha.1-x86_64.AppImage` | `chmod +x` 后直接运行；需要 FUSE（没有就 `--appimage-extract-and-run`） |
+| **系统依赖版**（要求系统已装 Qt 6 与第三方库） | `photoset-reader-0.1.0-alpha.1-linux-system-deps.tar.zst` | 解压后 `./install.sh`（默认装到 `~/.local`，`--prefix` 可改，`--uninstall` 卸载） |
+
+系统依赖版里的 `install.sh` 会：检查运行期依赖（缺了按发行版给安装命令）→ 复制文件 →
+把 `.desktop` 的 `Exec=` 改成绝对路径 → 重建桌面/ MIME 数据库 → 把 `.prsave` 设为默认交给本应用。
+
+源码安装（开发用）：
 
 ```bash
 git clone https://github.com/zhangmq/photoset-reader.git
@@ -91,7 +101,8 @@ libarchive、libexif、libheif、liblzma、zlib、libunrar。
 3. `cmake --build build && ctest --test-dir build --output-on-failure`，
    再跑 `./scripts/update-translations.sh --check` 与 `./scripts/render-icons.sh --check`；
 4. 打包：`./scripts/package-appimage.sh` 与 `./scripts/package-linux.sh`（产物文件名自动带版本）；
-5. `git tag v x.y.z` 并推送。
+5. 打 tag 并推送：`git tag v0.1.0-alpha.1 && git push origin main --tags`，然后
+   `gh release create v0.1.0-alpha.1 dist/*.AppImage dist/*-system-deps.tar.zst --prerelease`。
 
 ## 已知限制
 

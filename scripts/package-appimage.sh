@@ -17,6 +17,8 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DEPS=${DEPS:-$ROOT/.tmp/deps}
 #   版本号：**只从 CMakeLists.txt 读**（与 --version 同源）
 VERSION=$(sed -n 's/^project(photoset-reader VERSION \([0-9][0-9.]*\).*/\1/p' "$ROOT/CMakeLists.txt")
+SUFFIX=$(sed -n 's/^set(PHOTOSET_VERSION_SUFFIX "\([^"]*\)".*/\1/p' "$ROOT/CMakeLists.txt")
+VERSION="${VERSION}${SUFFIX}"
 [ -n "$VERSION" ] || { echo "读不到版本号（CMakeLists.txt 的 project(... VERSION）" >&2; exit 1; }
 OUT=${OUT:-$ROOT/dist/photoset-reader-${VERSION}-x86_64.AppImage}
 BIN=$ROOT/build-static/photoset-reader

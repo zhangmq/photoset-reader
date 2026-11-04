@@ -58,8 +58,18 @@ The user guide lives in the **wiki**: <https://github.com/zhangmq/photoset-reade
 
 ## Install
 
-> ⚠️ **No prebuilt packages yet** (`0.1.0` is a development build). AppImage and the portable
-> tarball will ship with the first release; for now build from source.
+**Prebuilt packages (alpha)**: grab one from [Releases](https://github.com/zhangmq/photoset-reader/releases):
+
+| Form | File | How |
+|---|---|---|
+| **AppImage** (self-contained) | `photoset-reader-0.1.0-alpha.1-x86_64.AppImage` | `chmod +x`, then run it; needs FUSE (otherwise `--appimage-extract-and-run`) |
+| **System-deps tarball** (needs Qt 6 + third-party libs installed) | `photoset-reader-0.1.0-alpha.1-linux-system-deps.tar.zst` | unpack, then `./install.sh` (defaults to `~/.local`; `--prefix` / `--uninstall`) |
+
+The tarball's `install.sh` checks runtime dependencies (printing distro-specific install commands when
+something is missing), copies the files, rewrites the `.desktop` `Exec=` to an absolute path, rebuilds
+the desktop/MIME databases and makes `.prsave` files open with the app.
+
+From source (for development):
 
 ```bash
 git clone https://github.com/zhangmq/photoset-reader.git

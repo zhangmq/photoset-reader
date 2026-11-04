@@ -18,11 +18,63 @@ cd "$ROOT"
 [ -x "$BIN" ] || { echo "先构建：cmake --build build"; exit 1; }
 #   版本号：**只从 CMakeLists.txt 读**（单一来源；--version 打的是同一个）
 VERSION=$(sed -n 's/^project(photoset-reader VERSION \([0-9][0-9.]*\).*/\1/p' "$ROOT/CMakeLists.txt")
+SUFFIX=$(sed -n 's/^set(PHOTOSET_VERSION_SUFFIX "\([^"]*\)".*/\1/p' "$ROOT/CMakeLists.txt")
+VERSION="${VERSION}${SUFFIX}"
 [ -n "$VERSION" ] || { echo "读不到版本号（CMakeLists.txt 的 project(... VERSION）" >&2; exit 1; }
+#   ★ `--system-deps`：打**系统依赖版**（Qt 与第三方库用系统已装的；包内含 `install.sh`）。
+#     默认模式仍是"自带 Qt + 第三方依赖"的完整便携版。
+MODE=full
+ARGS=()
+for a in "$@"; do
+  case "$a" in
+    --system-deps) MODE=system-deps ;;
+    *) ARGS+=("$a") ;;
+  esac
+done
+set -- "${ARGS[@]+"${ARGS[@]}"}"
+
 OUT=${1:-dist/photoset-reader-${VERSION}-linux}
 
 QTQML=$(qmake6 -query QT_INSTALL_QML 2>/dev/null || echo /usr/lib/qt6/qml)
 QTPLUG=$(qmake6 -query QT_INSTALL_PLUGINS 2>/dev/null || echo /usr/lib/qt6/plugins)
+
+if [ "$MODE" = system-deps ]; then
+  OUT=${1:-dist/photoset-reader-${VERSION}-linux-system-deps}
+  rm -rf "$OUT"
+  echo "== 打系统依赖版：$OUT =="
+  #   文件全部来自 `cmake --install` 的暂存树；`Exec=` 先用仓库里的原始写法（裸命令），
+  #   安装脚本会按**实际前缀**改写成绝对路径。
+  STAGE="$OUT"
+  mkdir -p "$STAGE/bin" "$STAGE/share/applications" "$STAGE/share/mime/packages" \
+           "$STAGE/share/icons/hicolor" "$STAGE/share/doc/photoset-reader"
+  install -m755 build/photoset-reader "$STAGE/bin/photoset-reader"
+  strip --strip-unneeded "$STAGE/bin/photoset-reader" 2>/dev/null || true
+  install -m644 assets/photoset-reader.desktop "$STAGE/share/applications/photoset-reader.desktop"
+  install -m644 assets/photoset-reader-mime.xml "$STAGE/share/mime/packages/photoset-reader.xml"
+  #   图标：assets 下是平铺的 PNG，按 hicolor 结构摆放
+  for f in assets/icons/photoset-reader-*.png; do
+    sz=$(basename "$f" .png | sed 's/.*-//')
+    mkdir -p "$STAGE/share/icons/hicolor/${sz}x${sz}/apps"
+    cp "$f" "$STAGE/share/icons/hicolor/${sz}x${sz}/apps/photoset-reader.png"
+  done
+  [ -f assets/icons/photoset-reader.svg ] && {
+    mkdir -p "$STAGE/share/icons/hicolor/scalable/apps"
+    cp assets/icons/photoset-reader.svg "$STAGE/share/icons/hicolor/scalable/apps/photoset-reader.svg"
+  }
+  install -m644 LICENSE THIRD-PARTY.md "$STAGE/share/doc/photoset-reader/"
+  install -m644 CHANGELOG.md README.md "$STAGE/"
+  install -m755 packaging/install-release.sh "$STAGE/install.sh"
+  log=$(mktemp)
+  QT_FORCE_STDERR_LOGGING=1 QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
+    XDG_CONFIG_HOME="$PWD/.tmp/pkg-xdg" timeout 8 "$STAGE/bin/photoset-reader" .testdata/vol01 >"$log" 2>&1 || true
+  BAD=$(grep -c '^qml:' "$log" || true)
+  rm -f "$log"
+  TAR="dist/photoset-reader-${VERSION}-linux-system-deps.tar.zst"
+  mkdir -p dist
+  tar -cf - -C "$(dirname "$STAGE")" "$(basename "$STAGE")" | zstd -19 -T0 -q -o "$TAR" -f
+  echo "  包：$TAR（$(( $(stat -c%s "$TAR") / 1024 )) KB），qml 告警 $BAD 条"
+  exit 0
+fi
 
 rm -rf "$OUT"
 mkdir -p "$OUT/bin" "$OUT/lib/qt6/plugins/platforms" "$OUT/lib/qt6/plugins/imageformats" "$OUT/lib/qt6/qml"

@@ -1,12 +1,19 @@
 cmake_minimum_required(VERSION 3.21)
 #   版本号**唯一来源**（打包脚本从这里读、C++ 用 PHOTOSET_VERSION 编译进去、`--version` 打它）
 project(photoset-reader VERSION 0.1.0 LANGUAGES CXX)
+#   ★ 预发布后缀（用户 2026-11-04）：`-alpha.1` / `-beta.2` …；**空 = 正式版**。
+#     `--version` 与打包产物名都带上它（版本号仍只有 `project(... VERSION)` 一个来源）。
+set(PHOTOSET_VERSION_SUFFIX "-alpha.1" CACHE STRING
+    "Pre-release suffix appended to the version (empty for a final release)")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml QuickControls2 Widgets ShaderTools DBus LinguistTools Concurrent)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml QuickControls2 Widgets ShaderTools DBus Concurrent)
+#   ★ LinguistTools **可选**：有就用 `qt_add_lrelease()`，没有（例如最小化静态 Qt）就退回
+#     系统中的 `lrelease6`/`lrelease` 生成 `.qm` —— 打包/发版不该因为缺一个宿主工具而失败。
+find_package(Qt6 QUIET COMPONENTS LinguistTools)
 # QRhi / QShader（rhi/*.h 在 Qt 的私有包含路径下；QQuickRhiItem 文档也是这么要求的）
 find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
 # 7z 头解析要用 liblzma（判 solid 用；不参与解码路径）
@@ -142,7 +149,7 @@ target_link_libraries(testsupport PUBLIC ibcore)
 # 开发期便利：把 .testdata/vol01 作为默认目录传给程序（可用 -d 覆盖）
 target_compile_definitions(ibcore PUBLIC
     DEFAULT_TEST_DIR="${CMAKE_SOURCE_DIR}/.testdata/vol01"
-    PHOTOSET_VERSION="${PROJECT_VERSION}"
+    PHOTOSET_VERSION="${PROJECT_VERSION}${PHOTOSET_VERSION_SUFFIX}"
 )
 
 
@@ -202,13 +209,34 @@ qt_add_resources(photoset-reader "appicon"
 #     （vsr-player 是放磁盘 + 运行时找目录，我们只有一份可执行，编进去更省事）。
 #   · 新增语言 = 往 `i18n/` 放一份 `<程序名>_<语言>.ts`（GLOB 自动接上），代码零改动。
 file(GLOB IB_TS_FILES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/i18n/*.ts")
-if(IB_TS_FILES)
+if(IB_TS_FILES AND Qt6LinguistTools_FOUND)
     qt_add_lrelease(photoset-reader
         TS_FILES ${IB_TS_FILES}
         QM_FILES_OUTPUT_VARIABLE IB_QM_FILES)
     foreach(qm IN LISTS IB_QM_FILES)
         get_filename_component(qm_name "${qm}" NAME)
         set_source_files_properties("${qm}" PROPERTIES QT_RESOURCE_ALIAS "${qm_name}")
+    endforeach()
+    qt_add_resources(photoset-reader "i18n"
+        PREFIX "/i18n"
+        FILES ${IB_QM_FILES})
+elseif(IB_TS_FILES)
+    #   ★ 没有 Qt LinguistTools：用宿主 `lrelease` 手工生成 `.qm`（静态版 / 精简打包场景）
+    find_program(IB_LRELEASE NAMES lrelease6 lrelease)
+    if(NOT IB_LRELEASE)
+        message(FATAL_ERROR "i18n：需要 Qt LinguistTools 或系统中的 lrelease6/lrelease 来编译 .ts")
+    endif()
+    message(STATUS "i18n：使用 ${IB_LRELEASE} 生成 .qm（未找到 Qt LinguistTools）")
+    set(IB_QM_FILES)
+    foreach(ts IN LISTS IB_TS_FILES)
+        get_filename_component(ts_name "${ts}" NAME_WE)
+        set(qm "${CMAKE_CURRENT_BINARY_DIR}/i18n/${ts_name}.qm")
+        add_custom_command(OUTPUT "${qm}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/i18n"
+            COMMAND "${IB_LRELEASE}" "${ts}" -qm "${qm}"
+            DEPENDS "${ts}" VERBATIM)
+        set_source_files_properties("${qm}" PROPERTIES GENERATED TRUE QT_RESOURCE_ALIAS "${ts_name}.qm")
+        list(APPEND IB_QM_FILES "${qm}")
     endforeach()
     qt_add_resources(photoset-reader "i18n"
         PREFIX "/i18n"
