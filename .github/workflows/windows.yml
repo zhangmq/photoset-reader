@@ -287,7 +287,10 @@ jobs:
           }
 
           #   ── 冒烟：**用打包好的目录**跑一次，缺 DLL / 缺平台插件会立刻露出来 ──
-          $env:QT_QPA_PLATFORM = "offscreen"
+          #   ★ 必须先把 `qoffscreen.dll` 放进 stage：windeployqt 只部署 `qwindows.dll`，
+          #     指定 offscreen 却没有插件时，Qt 会弹**模态错误框**把进程挂住（实测超时）。
+          $off = "C:\Qt\$env:QT_VERSION\msvc2022_64\plugins\platforms\qoffscreen.dll"
+          if (Test-Path $off) { Copy-Item $off "$stage\platforms\" -Force; $env:QT_QPA_PLATFORM = "offscreen" }
           $p = Start-Process -FilePath "$stage\photoset-reader.exe" -ArgumentList "--version" `
                -PassThru -NoNewWindow -RedirectStandardOutput "stage-ver.out" -RedirectStandardError "stage-ver.err"
           if (-not $p.WaitForExit(60000)) { $p.Kill(); throw "打包后冒烟超时" }
