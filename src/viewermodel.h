@@ -127,6 +127,9 @@ public:
     void setSequence(const Sequence *seq);   // 来源（非拥有）
     void sequenceChanged();                  // 序列长进了
     Q_INVOKABLE void stepPage(int delta);    // ±1 屏（前进量由序列按版面算）
+    //   ★ 初始位置（在 `setSequence` 之前给）：恢复进度 / 从第 N 条开始，
+    //     **初始化时就在那儿**，不需要装载完再 `jump()`（用户 2026-11-04）。
+    void setStartPosition(int imageIndex);
     Q_INVOKABLE void jump(int imageIndex);   // 跳到某一条（时间轴拖 / 浏览里选中）
     Q_INVOKABLE void stepFolder(int delta);  // ★ 给 QML 的同一件事（`delta` = ±1）
     Q_INVOKABLE void togglePlaying();        // ★ 幻灯片：播放 ⇄ 暂停（`Space` / ⏯）
@@ -378,6 +381,7 @@ private:
 
     int    m_pos    = 0;                     // 位置：用户指到的那一条（屏 = 它所在的那一屏）
     int    m_cursor = 0;                     // 上屏那一屏的起点（只在 `screen` 里写）
+    int    m_startIndex = 0;                 // `setSequence` 之后要落在哪一条（一次性）
     QImage m_imageA, m_imageB;               // 上屏内容（坏的位置 / 没有第二个位置 = 空图）
     int    m_keyCount = 0;                   // 本屏位置数（1 或 2），无屏 = 0
     app::Layout m_layout = app::Layout::Single;   // ★ 版面 = 一份枚举（默认单幅）

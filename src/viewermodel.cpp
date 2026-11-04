@@ -149,8 +149,12 @@ void ViewerModel::setSequence(const Sequence *seq)
     m_promptedItem = -1;
     m_inFlight = 0;
     m_skipped  = 0;
-    m_pos      = 0;
-    m_cursor   = 0;
+    //   ★ 初始位置由上层在**装序列之前**给（`setStartPosition`）：恢复进度/从第 N 条开始
+    //     都是"初始化时就在那儿"，不是装载完再跳一次（用户 2026-11-04）。
+    const int n = m_seq ? m_seq->count() : 0;
+    m_pos      = (n > 0) ? qBound(0, m_startIndex, n - 1) : 0;
+    m_cursor   = m_pos;
+    m_startIndex = 0;                // 一次性：之后换序列默认还是第 0 条
     resetShare();                    // 换来源 ⇒ 回到起始
     emit currentChanged();           // 条目总数变了（QML 的 count / totalPages 跟它）
     judge();
@@ -733,6 +737,11 @@ void ViewerModel::stepPage(int delta)
     const int next = nextScreen(start, dir);      // 到头 ⇒ -1（位置不动）
     if (next < 0) return judge();
     act(next, dir);
+}
+
+void ViewerModel::setStartPosition(int imageIndex)
+{
+    m_startIndex = qMax(0, imageIndex);
 }
 
 void ViewerModel::jump(int imageIndex)

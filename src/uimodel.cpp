@@ -295,14 +295,12 @@ void UiModel::buildViewer()
     s.vm = new fetch::ViewerModel(m_settings.prefetchWindow(), nullptr);
     s.vm->setPreviewStore(m_previewStore);      // 时间轴预览：位置表归本类，provider 读它
     connect(s.vm, &fetch::ViewerModel::playingChanged, this, &UiModel::updateScreenSaverInhibit);
+    // 打开 ⇒ 看第 0 条：初始位置默认 0，装序列时就已经判屏（扫描还在跑时由 `loading` 表达）
     installViewer(s);
-    // 打开 ⇒ 看第 0 条（"进入查看 = jump"）：一进来就有画面
-    //   （扫描还在跑时由 viewer 的 `loading` 表达）
-    s.vm->jump(0);
 }
 
 // 换 viewer（**接线只在这里**）：装新组 → emit viewerChanged → 旧组延迟释放
-void UiModel::installViewer(Source s)
+void UiModel::installViewer(Source s, int startIndex, int layout)
 {
     //   视图态复位由 viewer 自己在上屏时做（`zoomLocked` 时保留）——不再从上层挂连接。
     // ★ 幻灯片：间隔由上层（设置）下发；到头等瞬时提示由上层转发到 `notify`
@@ -319,8 +317,11 @@ void UiModel::installViewer(Source s)
     const Source old = m_src;
     m_src = s;
     emit viewerChanged();            // ★ 先让 QML 换绑到新 viewer
+    //   ★ 顺序：**先摆好初始状态**（起始位置 / 版面），再装序列 —— 装序列那一刻就按它判屏，
+    //     所以不需要"装完再 `jump()`"（用户 2026-11-04）。
+    if (m_src.vm) m_src.vm->setStartPosition(startIndex);
+    applyViewerDefaults(layout);     // ★ 新建 viewer ⇒ 起一份阅读态（版面可被进度覆盖）
     if (m_src.vm) m_src.vm->setSequence(m_src.seq);
-    applyViewerDefaults();           // ★ 新建 viewer ⇒ 按全局默认起一份阅读态
     if (old.vm) releaseLater(old);   // ★ 再让旧组延迟释放
 }
 
@@ -481,13 +482,13 @@ void UiModel::setDefaultLoop(int v)
 }
 
 // 新建 viewer ⇒ 把全局默认下发一次（之后 UI 怎么改都只改 viewer）
-void UiModel::applyViewerDefaults()
+void UiModel::applyViewerDefaults(int layout)
 {
     fetch::ViewerModel *vm = m_src.vm;
     if (!vm) return;
     vm->setFitMode(m_settings.defaultFitMode());          // 触发一次 applyFit（zoom 由 fit 算）
     vm->setIntervalMs(m_settings.intervalMs());
-    vm->setDoublePage(m_settings.defaultLayout() == 1);
+    vm->setDoublePage((layout >= 0 ? layout : m_settings.defaultLayout()) == 1);
     vm->setLoopMode(m_settings.defaultLoop());
     vm->setScaleAlgorithm(m_settings.scaleAlgorithm());
     vm->setOsdVisible(false);                             // OSD 是偶发使用，每次进来默认关
@@ -1255,12 +1256,10 @@ bool UiModel::openProgress(const QString &filePath)
     s.vm = new fetch::ViewerModel(m_settings.prefetchWindow(), nullptr);
     s.vm->setPreviewStore(m_previewStore);      // 时间轴预览：位置表归本类，provider 读它
     m_path = QDir::cleanPath(d.meta.sourcePath);   // ★ 统一形态
-    installViewer(s);
-    if (m_src.vm) {
-        m_src.vm->setDoublePage(d.meta.layout == 1);        // ★ 先还原版面，再按 chain/page 定位
-        const int idx = m_src.seq->indexOfChain(d.meta.chain, d.meta.page);
-        m_src.vm->jump(qMax(0, idx));
-    }
+    //   ★ 恢复 = **初始化时就落在进度位置**（位置 + 版面一起交给 `installViewer`），
+    //     不再"装完再 `jump()`"（用户 2026-11-04：那会先闪 1/总数）。
+    const int idx = qMax(0, s.seq->indexOfChain(d.meta.chain, d.meta.page));
+    installViewer(s, idx, d.meta.layout);
     m_pendingJump = -1;
     startTrackingProgress(filePath);                   // 之后按间隔 / 切来源自动保存
     snapshotSavedState(d.meta, d.rows.size());         // 文件里记着的就是这份

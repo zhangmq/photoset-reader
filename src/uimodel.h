@@ -284,14 +284,15 @@ private:
     };
 
     void buildViewer();                 // 用 m_path 新建一组；emit viewerChanged；旧组延迟释放
-    void installViewer(Source s);       // 接线 + 换绑 + 旧组延迟释放
+    //   `startIndex` = 初始位置；`layout` = -1 用全局默认版面，否则用进度里记的版面
+    void installViewer(Source s, int startIndex = 0, int layout = -1);       // 接线 + 换绑 + 旧组延迟释放
     void releaseLater(const Source &s); // 旧组：随旧 ViewerModel 的析构释放其余成员
     static void releaseNow(Source &s);
 
     // 会话序列：本类是唯一消费者（发布钩子 → 合并成一次 queued 投递 → 一次 drain 到空）
     void pumpSession();
     void onSequenceChanged();           // 序列长了 / 收尾了 ⇒ 通知 viewer
-    void applyViewerDefaults();         // 新建 viewer ⇒ 把全局默认下发一次
+    void applyViewerDefaults(int layout = -1);         // 新建 viewer ⇒ 把全局默认下发一次
     //   进度文件：把当前来源写成 `filePath`（保存的两条路 + 自动保存共用这一份实现）
     bool writeProgress(const QString &filePath, bool quiet = false,
                        bool savePasswords = false);
