@@ -13,9 +13,10 @@ qt_add_executable(ib-iconpicker
     ${CMAKE_SOURCE_DIR}/src/iconpicker.cpp
     ${CMAKE_SOURCE_DIR}/src/iconpicker.h
 )
-# `-iquote`（只进双引号包含链）而不是 `-I`：`src/` 一旦进 `-I`，我们的
-# `src/archive.h` 就会把 libarchive 的 `<archive.h>` 顶掉（见根 CMakeLists 同一处注释）。
-target_compile_options(ib-iconpicker PRIVATE "SHELL:-iquote ${CMAKE_SOURCE_DIR}/src")
+#   `src/` 进 include 路径即可：项目的 `archive.h` 已改名 `archivesource.h`
+#   （2026-11-05），不会再顶掉 libarchive 的 `<archive.h>`；
+#   也不用 `-iquote` —— MSVC 不认它，会把 `src` 当成源文件（`c1xx: C1083`）。
+target_include_directories(ib-iconpicker PRIVATE ${CMAKE_SOURCE_DIR}/src)
 # `ibcore`：拿 `app::UiModel`（`Theme.qml` 要看 `ui.themeMode` / `ui.systemDark`）——
 #   工具只用它的主题状态（`store = nullptr`，不碰真库）；Qt 的 Quick/Qml 由它 PUBLIC 带过来。
 target_link_libraries(ib-iconpicker PRIVATE ibcore Qt6::Quick Qt6::Qml)
