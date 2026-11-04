@@ -17,18 +17,8 @@ namespace app {
 
 QString AppSettings::filePath() const
 {
-    // 自检/测试可用环境变量指到临时文件，避免碰用户的真配置
-    //   （与测试里其他临时文件同一约定）
-    const QByteArray override = qgetenv("PHOTOSET_SETTINGS_FILE");
-    if (!override.isEmpty())
-        return QString::fromLocal8Bit(override);
-    // 开发期：PHOTOSET_CONFIG_DIR 指定目录；否则用应用名推导的 ~/.config/photoset-reader/
-    const QByteArray dirOverride = qgetenv("PHOTOSET_CONFIG_DIR");
-    if (!dirOverride.isEmpty())
-        return QString::fromLocal8Bit(dirOverride) + QStringLiteral("/settings.json");
-    const QByteArray fileOverride = qgetenv("PHOTOSET_SETTINGS_FILE");
-    if (!fileOverride.isEmpty())
-        return QString::fromLocal8Bit(fileOverride);
+    //   路径一律走标准位置（`~/.config/photoset-reader/`）；测试隔离用标准的
+    //   `XDG_CONFIG_HOME`（`QStandardPaths` 自己认），产品不再有私有 env 后门（用户 2026-11-04）。
     const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
     return dir + QStringLiteral("/settings.json");
 }

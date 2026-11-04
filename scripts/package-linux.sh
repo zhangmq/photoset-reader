@@ -126,23 +126,23 @@ else
   echo "  ⚠️ 无 patchelf，未重写 RPATH（运行需 LD_LIBRARY_PATH）"
 fi
 
-# ⑦ 自检：离屏跑一次，确认能起、能出图、0 条 qml 警告
+# ⑦ 自检：离屏起一次，确认能启动、能打开来源、0 条 qml 警告
+#   （`--shot` 已从产品移除 —— 用户 2026-11-04；这里不再截图，只看"起得来 + 无 qml 告警"）
 SMOKE_DIR=".testdata/vol01"
 if [ -d "$SMOKE_DIR" ]; then
-  SHOT=$(mktemp /tmp/photoset-smoke-XXXX.png)
   LOG=$(mktemp /tmp/photoset-smoke-XXXX.log)
   QT_FORCE_STDERR_LOGGING=1 QT_PLUGIN_PATH="$OUT/lib/qt6/plugins" \
     QML2_IMPORT_PATH="$OUT/lib/qt6/qml" LD_LIBRARY_PATH="$OUT/lib" \
     QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
-    "$OUT/bin/photoset-reader" -d "$SMOKE_DIR" --shot "$SHOT" --delay 2500 >"$LOG" 2>&1 || true
+    timeout 8 "$OUT/bin/photoset-reader" "$SMOKE_DIR" >"$LOG" 2>&1 || true
   BAD=$(grep -c '^qml:' "$LOG" || true)
-  if [ -s "$SHOT" ] && [ "$BAD" -eq 0 ]; then
-    echo "  自检：截图成功，qml 警告 0 条"
+  if [ "$BAD" -eq 0 ]; then
+    echo "  自检：启动正常，qml 警告 0 条"
   else
-    echo "  ✗ 自检失败：截图 $( [ -s "$SHOT" ] && echo 有 || echo 无 )，qml 警告 $BAD 条"
+    echo "  ✗ 自检失败：qml 警告 $BAD 条"
     tail -20 "$LOG"
   fi
-  rm -f "$SHOT" "$LOG"
+  rm -f "$LOG"
 else
   echo "  （没有 $SMOKE_DIR，跳过自检）"
 fi

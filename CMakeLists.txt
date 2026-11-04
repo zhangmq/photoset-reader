@@ -60,12 +60,6 @@ add_library(ibcore STATIC
     # CPU 缩放项：Smooth (Qt) 这一项 + 软件后端降级都走它（设计 16 §五）
     src/cpuscaleritem.cpp
     src/cpuscaleritem.h
-    src/gpuscalecheck.cpp
-    src/gpuscalecheck.h
-    src/rawgldriver.cpp
-    src/rawgldriver.h
-    src/headlessgl.cpp
-    src/headlessgl.h
     src/archive.cpp
     src/archive.h
     src/dirwalker.cpp
@@ -142,18 +136,8 @@ target_include_directories(testsupport PUBLIC ${CMAKE_SOURCE_DIR}/tests)
 target_compile_options(testsupport PUBLIC "SHELL:-iquote ${CMAKE_SOURCE_DIR}/src")
 target_link_libraries(testsupport PUBLIC ibcore)
 
-# 开发/CI 用的 headless GL 引导（src/headlessgl.cpp）：EGL surfaceless + 软件栅格器。
-# 生产路径不需要它（真机 Qt Quick 自己建 RHI），所以缺 EGL 只是功能退化为"不可用"。
-if(UNIX AND NOT APPLE)
-    find_library(EGL_LIBRARY NAMES EGL)
-    find_library(GL_LIBRARY NAMES GL)
-    if(EGL_LIBRARY AND GL_LIBRARY)
-        target_link_libraries(ibcore PUBLIC ${EGL_LIBRARY} ${GL_LIBRARY})
-        target_compile_definitions(ibcore PUBLIC GPUWIRE_HAVE_EGL=1)
-    else()
-        message(STATUS "未找到 libEGL/libGL —— headless GL 引导与 raw GL 自检驱动不可用")
-    endif()
-endif()
+#   自检用的 headless GL / raw GL 驱动（`headlessgl.*` / `rawgldriver.*`）与 GPU 等价性探针
+#   （`gpuscalecheck.*`）已随 `--gpuscale-probe` 一起删除（用户 2026-11-04：测试不进产品）。
 
 # 开发期便利：把 .testdata/vol01 作为默认目录传给程序（可用 -d 覆盖）
 target_compile_definitions(ibcore PUBLIC
@@ -163,20 +147,10 @@ target_compile_definitions(ibcore PUBLIC
 
 
 # ══ 应用：只剩启动 + 解析 + dispatch（设计 14 §10）═══════════════════════════
-#   实现分四处：`src/devcli.{h,cpp}`（dev CLI：探针 / 预载基准 / 双实例 / `--dev-*`）、
-#               `src/devbench.{h,cpp}`（探针：`--gpuscale-probe`，跑完即退；
-#                 底层在 `gpuscalecheck.cpp`）、
-#               `src/screenshot.{h,cpp}`（`--shot` 截图机制；原名 `debugview.{h,cpp}`，
-#                 随旧调试一屏（`debugview`）删除后改名保留）、
-#               `src/main.cpp`（启动 + 参数解析 + dispatch）。
+#   产品 CLI = "打开路径（位置参数）+ --fullscreen"（用户 2026-11-04 定：
+#   测试 / 验收开关一律不进产品；探针、截图、bench 那批文件已删除）。
 qt_add_executable(photoset-reader
     src/main.cpp
-    src/devcli.cpp
-    src/devcli.h
-    src/devbench.cpp
-    src/devbench.h
-    src/screenshot.cpp
-    src/screenshot.h
 )
 # ★ 套件全部搬去 `tests/`（T0 第四批）后，应用**不再链 `testsupport`**（设计 14 §11）：
 #   `main.cpp` 里 0 个 `run*SelfTest` / 0 个套件 dispatch；dev CLI 与截图机制自带工具函数。
@@ -278,7 +252,6 @@ function(ib_add_qml_resources target)
         src/ui/components/SettingsImagePage.qml
         src/ui/components/SettingsSystemPage.qml
         src/ui/components/SettingsShortcutsPage.qml
-        src/ui/debug/IconPicker.qml
         src/ui/fullscreen/FullscreenView.qml
         src/ui/fullscreen/FullscreenTopBar.qml
         src/ui/fullscreen/FullscreenBottomBar.qml
@@ -295,6 +268,13 @@ function(ib_add_qml_resources target)
         set_source_files_properties("${CMAKE_SOURCE_DIR}/${f}"
             PROPERTIES QT_RESOURCE_ALIAS "${f}")
         list(APPEND qml_files_abs "${CMAKE_SOURCE_DIR}/${f}")
+    endforeach()
+    #   ★ 额外文件（`ARGN`）：工具自己的页面，**只进工具那个目标**的模块（不进产品）。
+    #     别名取文件名 ⇒ 落在模块根，类型名 = 文件名（如 `IconPicker`）。
+    foreach(f IN LISTS ARGN)
+        get_filename_component(_name "${f}" NAME)
+        set_source_files_properties("${f}" PROPERTIES QT_RESOURCE_ALIAS "${_name}")
+        list(APPEND qml_files_abs "${f}")
     endforeach()
     qt_add_qml_module(${target}
         URI AppUi

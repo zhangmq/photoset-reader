@@ -42,14 +42,6 @@ ApplicationWindow {
     FullscreenView {
         id: viewerView
         anchors.fill: parent
-        // ── 调试（dev CLI `--debug-settings`；值 = main.cpp 在 **QML 加载前**注入的上下文属性）──
-        //   `devOpenSettings` 默认 false / `devSettingsTab` 默认 0 ⇒ **正常运行时零行为变化**。
-        debugOpenSettings: devOpenSettings
-        debugSettingsTab: devSettingsTab
-        debugOpenIntervalPopup: devShowIntervalPopup
-        debugOpenContextMenu: devContextMenu      // 开发自检：启动即打开右键菜单（截图用）
-        debugDialog: devDialog                    // 开发自检：启动即打开某个对话框（截图用）
-
         // ★「收藏」（★）的规则见设计 18 §7 —— 段 2 接「保存阅读进度」；本段按钮只占位
     }
 

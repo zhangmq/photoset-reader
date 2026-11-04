@@ -92,9 +92,7 @@ UiModel::UiModel(QObject *parent)
     //   自动保存（用户 2026-11-01）：**只对"已关联进度文件"的来源**生效，固定间隔写一次；
     //   切来源 / 退出前再补一次（见 `dropSource` / `~UiModel`）
     m_autosave = new QTimer(this);
-    //   自检用：`PHOTOSET_AUTOSAVE_MS` 可把间隔调小（不设 = 默认 30 s；正式行为不受影响）
-    const int autosaveOverride = qEnvironmentVariableIntValue("PHOTOSET_AUTOSAVE_MS");
-    m_autosave->setInterval(autosaveOverride > 0 ? autosaveOverride : kAutosaveMs);
+    m_autosave->setInterval(kAutosaveMs);
     connect(m_autosave, &QTimer::timeout, this, &UiModel::autosaveProgress);
 
     //   收藏夹列表（QML 的 `ui.favorites`）：目录 = 收藏夹；只列文件名，内容按需读
@@ -899,8 +897,7 @@ void UiModel::refreshScanning()
     } else if (!now && m_scanning && m_scanStartedMs > 0) {
         const qint64 ms = QDateTime::currentMSecsSinceEpoch() - m_scanStartedMs;
         m_scanStartedMs = 0;
-        const int override = qEnvironmentVariableIntValue("PHOTOSET_SCAN_TOAST_MS");
-        const qint64 threshold = override > 0 ? override : kScanToastMinMs;
+        const qint64 threshold = kScanToastMinMs;
         if (ms >= threshold)
             notify(tr("Scan finished: %1 files").arg(m_src.seq ? m_src.seq->count() : 0));
     }

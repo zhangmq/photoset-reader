@@ -34,9 +34,6 @@
 #include "natural.h"
 #include "uimodel.h"
 #include "previewprovider.h"
-#include "screenshot.h"
-#include "devcli.h"
-#include "devbench.h"
 
 #ifndef DEFAULT_TEST_DIR
 #define DEFAULT_TEST_DIR ""
@@ -202,99 +199,13 @@ int main(int argc, char *argv[])
     parser.addHelpOption();
     //   `--version`：报 程序名 + 版本 + Qt 版本（报 bug 时第一句话就要这个）
     parser.addVersionOption();
-    QCommandLineOption dirOpt({QStringLiteral("d"), QStringLiteral("dir")},
-                              QStringLiteral("Image folder, archive or file"), QStringLiteral("path"),
-                              QString());   // ★ 默认空：只有**显式传 -d** 才打开来源，否则窗口空白
-    QCommandLineOption shotOpt(QStringLiteral("shot"),
-                               QStringLiteral("Render one frame to this PNG and exit (self-check)"),
-                               QStringLiteral("png"));
-    QCommandLineOption delayOpt(QStringLiteral("delay"),
-                                QStringLiteral("Delay before the screenshot in ms (default 2500)"),
-                                QStringLiteral("ms"), QStringLiteral("2500"));
-    QCommandLineOption idxOpt(QStringLiteral("index"),
-                              QStringLiteral("Jump to item N when opening the source"),
-                              QStringLiteral("n"), QStringLiteral("-1"));
-    QCommandLineOption seekOpt(QStringLiteral("seek-test"),
-                               QStringLiteral("Jump to page N and report the result"),
-                               QStringLiteral("n"), QStringLiteral("-1"));
-    QCommandLineOption gpuProbeOpt(QStringLiteral("gpuscale-probe"),
-                                   QStringLiteral("Diagnostic: push a known 8x8 image through the GPU 1:1 pass and print pixels"));
-    // 开发期：**强制走 CPU 缩放**（= 假装软件后端）——在有 GPU 的机器上验收降级画面用
-    QCommandLineOption forceCpuOpt(QStringLiteral("force-cpu-scale"),
-                                   QStringLiteral("Debug: force CPU scaling (Smooth (Qt))"));
-    // ── 调试：启动即打开设置对话框（仅开发用，不在正式 CLI 范畴）──
-    //   ★ 接线（2026-10-14 本批）：值经上下文属性 `devOpenSettings` / `devSettingsTab`
-    //     在 **QML 加载之前**注入 `Main.qml`，再由它喂两屏各自的 `debugOpenSettings`
-    //     （两屏都**只在当前屏**打开自己的对话框）。默认 false / 0 ⇒ 正常运行时零行为变化。
-    //     ⚠️ 必须"加载前"给值：各屏是 `Component.onCompleted` 里开对话框的，加载后再置属性无效。
-    //   ★ **必须是裸开关**：`QCommandLineParser` **没有"可选值"**这个概念 —— 带
-    //     `valueName` 的选项会**吞掉下一个 token**（实测 `--debug-settings --shot x.png`
-    //     把 `--shot` 当成了它的值 ⇒ 截图路径拿不到、进程不退出）。页签因此单列一个选项。
-    //   ★ 页签 QML 侧**支持**：`SettingsDialog.tab`（0常规/1图像/2系统/3快捷键）。
-    QCommandLineOption debugSettingsOpt(QStringLiteral("debug-settings"),
-                                        QStringLiteral("Debug: open the settings dialog on startup"));
-    QCommandLineOption debugSettingsTabOpt(QStringLiteral("debug-settings-tab"),
-                                           QStringLiteral("Debug: which settings tab to open"
-                                                          "（0常规/1图像/2系统/3快捷键）"),
-                                           QStringLiteral("tab"), QStringLiteral("0"));
-    // ── 验收用（截图 / 临时探针；不参与正常使用）──
-    QCommandLineOption probeArcOpt(QStringLiteral("probe-archive"),
-                                   QStringLiteral("Probe: measure the cost of archive dataAt(i)"),
-                                   QStringLiteral("path"));
-    QCommandLineOption probeLaOpt(QStringLiteral("probe-libarchive"),
-                                  QStringLiteral("Probe libarchive for random access support"),
-                                  QStringLiteral("path"));
-    QCommandLineOption osdOpt(QStringLiteral("show-osd"),
-                              QStringLiteral("Open the info panel before the screenshot"));
-    QCommandLineOption popupOpt(QStringLiteral("show-interval-popup"),
-                                QStringLiteral("Open the slideshow-interval popup before the screenshot"));
-    // ── 开发期专用（**只为验收截图**）──
-    QCommandLineOption devContextMenuOpt(QStringLiteral("dev-context-menu"),
-                                         QStringLiteral("Debug: open the context menu on startup (screenshots)"));
-    QCommandLineOption devSaveFavOpt(QStringLiteral("dev-save-favorites"),
-                                     QStringLiteral("Debug: save progress to favorites shortly after opening"));
-    QCommandLineOption devOpenProgressOpt(QStringLiteral("dev-open-progress"),
-                                          QStringLiteral("Debug: open this progress file on startup"),
-                                          QStringLiteral("path"));
-    QCommandLineOption devCancelScanOpt(QStringLiteral("dev-cancel-scan"),
-                                        QStringLiteral("Debug: cancel the scan after opening (incomplete state)"));
-    QCommandLineOption devRescanOpt(QStringLiteral("dev-rescan"),
-                                    QStringLiteral("Debug: rescan once after opening"));
-    QCommandLineOption devDialogOpt(QStringLiteral("dev-dialog"),
-                                    QStringLiteral("Debug: open a specific dialog on startup"
-                                                   "（scan-not-done / cancel-scan / unfavorite）"),
-                                    QStringLiteral("name"));
-    QCommandLineOption benchVerOpt(QStringLiteral("bench-slideshow"),
-                                   QStringLiteral("Measure slideshow throughput at this interval (ms)"),
-                                   QStringLiteral("ms"));
-    QCommandLineOption benchSecOpt(QStringLiteral("bench-seconds"),
-                                   QStringLiteral("Measurement window for --bench-slideshow (default 5)"),
-                                   QStringLiteral("s"), QStringLiteral("5"));
-    QCommandLineOption devNotifyOpt(QStringLiteral("dev-notify"),
-                                    QStringLiteral("Debug: show a toast on startup"),
-                                    QStringLiteral("text"));
-    parser.addOption(dirOpt);
-    parser.addOption(shotOpt);
-    parser.addOption(delayOpt);
-    parser.addOption(idxOpt);
-    parser.addOption(probeArcOpt);
-    parser.addOption(probeLaOpt);
-    parser.addOption(popupOpt);
-    parser.addOption(osdOpt);
-    parser.addOption(seekOpt);
-    parser.addOption(devNotifyOpt);
-    parser.addOption(benchVerOpt);
-    parser.addOption(benchSecOpt);
-    parser.addOption(devContextMenuOpt);
-    parser.addOption(devSaveFavOpt);
-    parser.addOption(devOpenProgressOpt);
-    parser.addOption(devCancelScanOpt);
-    parser.addOption(devRescanOpt);
-    parser.addOption(devDialogOpt);
-    parser.addOption(debugSettingsOpt);
-    parser.addOption(debugSettingsTabOpt);
-    parser.addOption(gpuProbeOpt);
-    parser.addOption(forceCpuOpt);
+    //   ★ 产品 CLI 只有"打开路径 + 全屏"（用户 2026-11-04 定）：测试/验收开关一律不进产品。
+    //     路径走**位置参数**（launcher / 文件管理器的 `%F` 就是这么传的），不再有 `-d`。
+    QCommandLineOption fullscreenOpt(QStringLiteral("fullscreen"),
+                                     QStringLiteral("Start in full screen"));
+    parser.addOption(fullscreenOpt);
+    parser.addPositionalArgument(QStringLiteral("path"),
+                                 QStringLiteral("Image folder, archive or file to open"));
     parser.process(app);
 
 #ifdef Q_OS_UNIX
@@ -314,15 +225,10 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    if (parser.isSet(probeArcOpt))
-        return devcli::runArchiveProbe(parser.value(probeArcOpt));
-    if (parser.isSet(probeLaOpt))
-        return devcli::runLibarchiveProbe(parser.value(probeLaOpt));
-
-    //   来源 = `-d <路径>`，或**一个位置参数** —— 文件管理器按 .desktop 的
+    //   来源 = **一个位置参数** —— 文件管理器按 .desktop 的
     //   `Exec=photoset-reader %F` 启动我们时，路径就是以位置参数传进来的。
-    QString dir = parser.value(dirOpt);
-    if (dir.isEmpty() && !parser.positionalArguments().isEmpty())
+    QString dir;
+    if (!parser.positionalArguments().isEmpty())
         dir = parser.positionalArguments().first();
     const bool hasSource = !dir.isEmpty();
     if (hasSource) {
@@ -338,13 +244,10 @@ int main(int argc, char *argv[])
     }
 
     // ── 单实例（用户 2026-11-02 选 A）：已有实例 ⇒ 把路径转发过去，自己退出 ──
-    //   开发自检可用 `PHOTOSET_NO_SINGLE_INSTANCE=1` 关掉（要同时跑两个实例截图时用）。
-    if (qEnvironmentVariableIsEmpty("PHOTOSET_NO_SINGLE_INSTANCE")) {
-        if (forwardToRunningInstance(hasSource ? dir : QString(), !hasSource)) {
-            qCInfo(lcApp).noquote() << QStringLiteral("[app] forwarded to running instance: %1")
-                                        .arg(hasSource ? dir : QStringLiteral("activate only"));
-            return 0;
-        }
+    if (forwardToRunningInstance(hasSource ? dir : QString(), !hasSource)) {
+        qCInfo(lcApp).noquote() << QStringLiteral("[app] forwarded to running instance: %1")
+                                    .arg(hasSource ? dir : QStringLiteral("activate only"));
+        return 0;
     }
 
     // 解码分配上限（防解压炸弹，但要容得下我们的合法素材）
@@ -384,15 +287,6 @@ int main(int argc, char *argv[])
     //   CPU 缩放项：**Smooth (Qt) 这一项**与**软件后端降级**都用它（设计 16 §五）
     qmlRegisterType<CpuScalerItem>("AppUi", 1, 0, "CpuScalerItem");
 
-    // ── bench / 探针（**跑完即退**）：解析留在本文件，实现与装配在 `src/devbench.cpp` ──
-    //   `main.cpp` 只把 `QCommandLineOption` 的取值装进请求结构（判"给没给"用 `xxxSet`）。
-    devbench::Request bench;
-    bench.gpuProbe = parser.isSet(gpuProbeOpt);
-
-    // ── bench / 探针跑完即退（不建 VM、不碰设置）──
-    if (bench.wanted())
-        return devbench::runBench(bench);
-
     // ── 全局 VM 装配（放在所有"跑完即退"的路径之后）──────────
     //   ★ **全局只有一个 VM** = `app::UiModel`（QML 里的 `ui`）——viewer（`ui.viewer.*`）由它持有；
     //     它自己就是 QML 侧的类型信息不需要额外注册（只有一个界面之后没有枚举要给 QML 读）。
@@ -416,60 +310,7 @@ int main(int argc, char *argv[])
     // 命令行 `-d <路径>` = **打开来源**（文件夹 / 压缩包 / 文件同一套）；
     //   `--index N` 定位到第 N 条（不给 = 第 0 条）。只有一个界面 ⇒ 不需要再切屏。
     if (hasSource)
-        ui->openPath(dir, parser.value(idxOpt).toInt());
-
-    // ── 开发期专用 CLI（**只为验收截图**）──
-    //   `--dev-notify <text>`：启动后弹一条瞬时提示（验收浮层用）
-    //   ★ 实现整段在 `src/devcli.cpp`（本文件只解析 + 转发）
-    devcli::DevRequest dev;
-    dev.notifySet = parser.isSet(devNotifyOpt);
-    dev.notify    = parser.value(devNotifyOpt);
-    devcli::runDevCommands(dev, ui);
-
-    // ── `--debug-settings`（开发期）：**在 QML 加载前**把值注入上下文属性 ──────────
-    //   两屏各自的 `debugOpenSettings` / `debugSettingsTab` 由 `Main.qml` 从这里喂
-    //   （每屏只在自己的 `Component.onCompleted` 开自己的对话框 —— 时机就在加载期）。
-    //   ★ 默认 false / 0 ⇒ 正常运行时**零行为变化**。
-    engine.rootContext()->setContextProperty(QStringLiteral("devOpenSettings"),
-                                             parser.isSet(debugSettingsOpt));
-    engine.rootContext()->setContextProperty(QStringLiteral("devSettingsTab"),
-                                             parser.value(debugSettingsTabOpt).toInt());
-    //   ★ `--show-interval-popup`（截图自检用）：同样默认 false ⇒ 正常运行时零行为变化；
-    //     由阅读屏自己在可见时把"切换速度"菜单打开（旧实现调的是已删除的旧 QML 方法）。
-    engine.rootContext()->setContextProperty(QStringLiteral("devShowIntervalPopup"),
-                                             parser.isSet(popupOpt));
-    engine.rootContext()->setContextProperty(QStringLiteral("devContextMenu"),
-                                             parser.isSet(devContextMenuOpt));
-    engine.rootContext()->setContextProperty(QStringLiteral("devDialog"),
-                                             parser.value(devDialogOpt));
-    if (parser.isSet(devOpenProgressOpt)) {
-        QTimer::singleShot(600, ui, [ui, p = parser.value(devOpenProgressOpt)] {
-            qCInfo(lcApp).noquote() << QStringLiteral("[app] dev: open progress file: %1")
-                                        .arg(ui->openProgress(p) ? QStringLiteral("ok")
-                                                                 : QStringLiteral("failed"));
-        });
-    }
-    if (parser.isSet(devRescanOpt)) {
-        const int at = qEnvironmentVariableIntValue("PHOTOSET_DEV_RESCAN_MS");
-        QTimer::singleShot(at > 0 ? at : 800, ui, [ui] {
-            qCInfo(lcApp).noquote() << QStringLiteral("[app] dev: rescan requested");
-            ui->rescanSource();
-        });
-    }
-    if (parser.isSet(devCancelScanOpt)) {
-        const int at = qEnvironmentVariableIntValue("PHOTOSET_DEV_CANCEL_MS");
-        QTimer::singleShot(at > 0 ? at : 300, ui, [ui] {
-            ui->cancelScan();
-            qCInfo(lcApp).noquote() << QStringLiteral("[app] dev: scan stop requested");
-        });
-    }
-    if (parser.isSet(devSaveFavOpt)) {
-        QTimer::singleShot(1200, ui, [ui] {
-            qCInfo(lcApp).noquote() << QStringLiteral("[app] dev: save progress to favorites: %1")
-                                        .arg(ui->saveProgressToFavorites(false) ? QStringLiteral("ok")
-                                                                           : QStringLiteral("failed"));
-        });
-    }
+        ui->openPath(dir);
 
     engine.load(QUrl(QStringLiteral("qrc:/qt/qml/AppUi/src/ui/Main.qml")));
     if (engine.rootObjects().isEmpty()) {
@@ -529,22 +370,11 @@ int main(int argc, char *argv[])
         });
         QObject::connect(win, &QQuickWindow::sceneGraphInitialized, ui, probeBackend);
         probeBackend();          // 已经初始化过的情况（例如窗口已 expose）
-        if (parser.isSet(forceCpuOpt)) {
-            qCInfo(lcApp).noquote()
-                << QStringLiteral("[app] --force-cpu-scale: using software backend (CPU scaling)");
-            ui->setSoftwareBackend(true);
-        }
     }
 
-    if (parser.isSet(benchVerOpt))
-        devcli::runSlideshowBench(ui, parser.value(benchVerOpt).toInt(),
-                                  qMax(1, parser.value(benchSecOpt).toInt()));
-
-    const QString shot = parser.value(shotOpt);
-    if (!shot.isEmpty())
-        screenshot::setupShot(app, engine, shot, parser.value(delayOpt).toInt(),
-                        parser.value(idxOpt).toInt(),
-                        parser.isSet(popupOpt), parser.isSet(osdOpt), parser.value(seekOpt).toInt(), ui);
+    //   `--fullscreen`：窗口已建好、QML 的绑定也接好了 —— 此时改状态会触发 QML 侧同步
+    if (parser.isSet(fullscreenOpt))
+        ui->setWindowFullscreen(true);
 
     const int rc = app.exec();
     //   ★ 预览缩略图的批量解码跑在全局线程池里：退出前**有界等待**，避免进程退出时

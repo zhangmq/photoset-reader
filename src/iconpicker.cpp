@@ -16,7 +16,7 @@
 // ══ 图标挑选工具 `ib-iconpicker`（开发用；设计 14 §11.1）════════════════════
 //   原 `image-browser --debug-view iconpicker` 模式的独立目标版：
 //   ★ 候选图标表（QML 字符串）与应用 CLI 里的**一字不差**（只搬不改），
-//     QML 页仍是 `src/ui/debug/IconPicker.qml`（模块 `AppUi`）。
+//     QML 页在 `tools/IconPicker.qml`（模块 `AppTools`；Theme 等仍来自 `AppUi`）。
 //   ★ `Theme.qml` 要看 `ui.themeMode` / `ui.systemDark` ⇒ 这里按**调试视图的老接法**
 //     建一个 `UiModel` 挂成上下文属性 `ui`（它不建来源、不碰用户的任何库 ——
 //     库在 2026-10-31 随「图集库」删除；`GpuScalerItem` 那类没用到就不注册）。
@@ -81,7 +81,7 @@ int runIconPicker(int argc, char *argv[])
         qCWarning(lcApp).noquote() << QStringLiteral("[app] QML load failed");
         return 1;
     }
-    qCInfo(lcApp).noquote() << QStringLiteral("[app] icon picker loaded: src/ui/debug/IconPicker.qml");
+    qCInfo(lcApp).noquote() << QStringLiteral("[app] icon picker loaded: qrc:/qt/qml/AppTools/IconPicker.qml");
     return app.exec();
 }
 

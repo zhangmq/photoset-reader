@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ══ 单次启动，只留关键日志（排查用）════════════════════════════════════════════
 #   ./scripts/capture-log.sh                  # 跟平时一样启动
-#   ./scripts/capture-log.sh -d ~/漫画         # 也可以直接带参数
+#   ./scripts/capture-log.sh ~/漫画            # 也可以直接带路径（位置参数）
 #
 #   只做一件事：开着 debug 跑**一次**应用，把**关键行**写进当前目录的
 #   photoset-log-<时间>.log —— 退出后把那个文件发我即可。

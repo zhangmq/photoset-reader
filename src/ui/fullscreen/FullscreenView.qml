@@ -14,10 +14,6 @@ import AppUi
 Item {
     id: root
 
-    property string debugImage: ""          // ⚠️ 已不用（画面换成 GPU 项后不吃路径）——旧调试机架遗留
-    property bool   debugForceUi: false     // 调试：强制显示浮层（离屏没有鼠标热区）
-    property bool   debugOpenSettings: false   // 调试：截图时自动打开设置
-    property int    debugSettingsTab: 0        // 调试：设置弹框开在哪一页（0常规/1图像/2系统/3快捷键）
     // ★ 2026-10-31：只剩查看界面 + **右键菜单**；本视图不再对顶栏/底栏发动作信号
     //   （打开 / 保存 / 缩放算法 / 设置 全在菜单里，见文件末尾 `contextMenu`）。
 
@@ -97,17 +93,9 @@ Item {
     //   ★ 显示条件（用户 2026-11-04 定稿）：
     //     底栏 = 指针在底栏（轨道+控制条）内、或**预览条在屏**（不是"指针在预览条里"）；
     //     预览条 = 指针在进度条 或 预览条内（见 `FullscreenBottomBar.previewStrip.visible`）。
-    readonly property bool showUi: root.debugForceUi
-                                   || (!root.cursorHidden
-                                       && (topBar.mouseInRegion || bottomBar.mouseInRegion
-                                           || bottomBar.popupOpen || bottomBar.previewStripVisible))
-    Component.onCompleted: {
-        if (root.debugOpenSettings) {
-            settingsDialog.tab = root.debugSettingsTab
-            settingsDialog.open()
-        }
-        root.openIntervalPopupIfAsked()      // 开发自检：`--show-interval-popup`
-    }
+    readonly property bool showUi: !root.cursorHidden
+                                   && (topBar.mouseInRegion || bottomBar.mouseInRegion
+                                       || bottomBar.popupOpen || bottomBar.previewStripVisible)
 
     // ── 设置对话框（两屏同一实现；当前阶段单纯 UI）──
     SettingsDialog {
@@ -493,15 +481,6 @@ Item {
         function onScreenChanged() { root.pushViewport() }
     }
 
-    //   ★ 开发自检（`--show-interval-popup`）：阅读屏可见时把"切换速度"菜单打开（截图用）
-    property bool debugOpenIntervalPopup: false
-    function openIntervalPopupIfAsked() {
-        if (debugOpenIntervalPopup && bottomBar)
-            bottomBar.openIntervalMenu()
-    }
-    onVisibleChanged: if (visible) openIntervalPopupIfAsked()
-    onDebugOpenIntervalPopupChanged: if (debugOpenIntervalPopup) openIntervalPopupIfAsked()
-
     // ══ 右键菜单（用户 2026-10-31）════════════════════════════════════════════
     //   参考 vsr-player `ContextMenu.qml`（鼠标位置弹出 / 条目数组 / 分组）；
     //   外观与交互一律走我们的 `PopupMenu`（DSH 令牌：menuFill / borderL4 / radiusLg / hoverFill）。
@@ -705,40 +684,6 @@ Item {
         acceptText: qsTr("Remove favorite")
         danger: true
         onAccepted: ui.removeFavorite()
-    }
-
-    //   开发自检（`--dev-dialog <name>`）：启动后打开指定对话框（截图用；默认空 ⇒ 零行为变化）
-    property string debugDialog: ""
-    Timer {
-        interval: 300
-        repeat: false
-        running: root.debugDialog !== ""
-        onTriggered: {
-            if (root.debugDialog === "scan-not-done")     scanNotDoneDialog.open()
-            else if (root.debugDialog === "cancel-scan")  cancelScanDialog.open()
-            else if (root.debugDialog === "unfavorite")   unfavoriteDialog.open()
-            else if (root.debugDialog === "incomplete-save") incompleteSaveDialog.open()
-            else if (root.debugDialog === "favorites")    favoritesPopup.open()
-        }
-    }
-
-    //   开发自检（`--dev-context-menu`）：启动后把菜单打开在画布上一个固定点（截图用）。
-    //   默认 false ⇒ 正常运行时零行为变化。
-    property bool debugOpenContextMenu: false
-    Timer {
-        interval: 250
-        repeat: false
-        running: root.debugOpenContextMenu
-        onTriggered: {
-            root.openContextMenu(canvas, 320, 240)
-            // 截图也看二级面板：把第一项带 `submenu` 的行展开
-            for (let i = 0; i < contextMenu.items.length; ++i) {
-                if (contextMenu.items[i].submenu) {
-                    contextMenu.subRow = i
-                    break
-                }
-            }
-        }
     }
 
     // ── 键盘（全屏是快捷键面）──

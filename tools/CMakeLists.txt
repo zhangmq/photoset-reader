@@ -20,5 +20,7 @@ target_compile_options(ib-iconpicker PRIVATE "SHELL:-iquote ${CMAKE_SOURCE_DIR}/
 #   工具只用它的主题状态（`store = nullptr`，不碰真库）；Qt 的 Quick/Qml 由它 PUBLIC 带过来。
 target_link_libraries(ib-iconpicker PRIVATE ibcore Qt6::Quick Qt6::Qml)
 
-# QML 模块（AppUi：Theme + IconPicker）+ 图标字体资源（`iconFont` 用）
-ib_add_qml_resources(ib-iconpicker)
+# QML 模块（AppUi：Theme + 组件 + 主界面）+ 工具自己的页面 + 图标字体资源（`iconFont` 用）
+#   ★ `IconPicker.qml` 作为**额外文件**只编译进这个工具的模块 —— 产品的 `AppUi` 里没有它
+#     （用户 2026-11-04：开发工具的页面不进产品）。
+ib_add_qml_resources(ib-iconpicker "${CMAKE_CURRENT_SOURCE_DIR}/IconPicker.qml")

@@ -94,4 +94,4 @@ case ":$PATH:" in
        echo "  export PATH=\"$PREFIX/bin:\$PATH\"" ;;
 esac
 echo
-echo "✓ 完成。启动：photoset-reader -d <文件夹|压缩包|图片>"
+echo "✓ 完成。启动：photoset-reader <文件夹|压缩包|图片>"

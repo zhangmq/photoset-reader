@@ -53,9 +53,11 @@ QString TempFixture::useLibraryDb(const QString &name)
 
 QString TempFixture::useSettingsFile(const QString &name)
 {
-    const QString p = m_dir.filePath(name);
-    qputenv("PHOTOSET_SETTINGS_FILE", p.toLocal8Bit());
-    return p;
+    //   用**标准** XDG 配置目录做隔离（产品里不再有私有的设置文件 env 后门）
+    qputenv("XDG_CONFIG_HOME", m_dir.path().toLocal8Bit());
+    const QString dir = m_dir.filePath(QStringLiteral("photoset-reader"));
+    QDir().mkpath(dir);
+    return dir + QStringLiteral("/") + name;
 }
 
 } // namespace testsupport

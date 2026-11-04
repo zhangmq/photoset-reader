@@ -2,7 +2,7 @@
 
 // ══ 图标挑选工具 `ib-iconpicker`（开发用；设计 14 §11.1）════════════════════
 //   从应用 CLI 的 `--debug-view iconpicker` **独立成目标**：自带 `main()`、
-//   加载保留的 `src/ui/debug/IconPicker.qml`（QML 页保留），**不是测试**
+//   加载 `tools/IconPicker.qml`（独立工具的页面，只编译进 `ib-iconpicker`），**不是测试**
 //   （不进 `tests/`、不挂 `add_test`）。
 //   ★ QML 资源（AppUi 模块 + 图标字体）随本目标挂载；实现见
 //     `src/iconpicker.cpp`。
