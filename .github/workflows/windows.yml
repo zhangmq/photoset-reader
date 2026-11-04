@@ -30,19 +30,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      #   MSVC 只在 Windows runner 上有：这一步把 cl / link / msbuild 放进 PATH
+      #   MSVC 只在 Windows runner 上有：这一步把 cl / link / msbuild 放进 PATH。
+      #   ★ 固定 17.0（VS 2022 / v143）—— Qt 6.12 的 `win64_msvc2022_64` 就是用它编的；
+      #     不固定的话 runner 会挑到更新的 VS，工具集与 Qt 不一致。
       - name: MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
+          vsversion: "17.0"
           arch: x64
 
-      # ── Qt（缓存命中就跳过下载；aqt 装出来约 2 GB）────────────────────────
+      # ── Qt（缓存命中就跳过下载；装出来约 1.5 GB）──────────────────────────
       - name: Cache Qt
         id: qt-cache
         uses: actions/cache@v4
         with:
           path: C:\Qt
-          key: qt-${{ env.QT_VERSION }}-${{ env.QT_ARCH }}-shadertools-imageformats
+          key: qt-6.12.0-msvc2022_64-v1
 
       - name: Install Qt
         if: steps.qt-cache.outputs.cache-hit != 'true'
@@ -87,7 +90,7 @@ jobs:
           path: |
             C:\vcpkg\installed
             C:\Users\runneradmin\AppData\Local\vcpkg\archives
-          key: vcpkg-${{ runner.os }}-${{ hashFiles('.github/workflows/windows.yml') }}
+          key: vcpkg-x64-windows-v1
 
       - name: vcpkg install dependencies
         shell: pwsh
@@ -102,11 +105,19 @@ jobs:
           Invoke-WebRequest "https://www.rarlab.com/rar/unrarsrc-$env:UNRAR_VERSION.tar.gz" -OutFile unrar.tar.gz
           tar -xzf unrar.tar.gz
           Push-Location unrar
-          msbuild UnRARDll.vcxproj /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /m
+          #   ★ vcxproj 里写的是 Windows SDK 8.1 + 工具集 v140_xp，两者 runner 上都没有
+          #     ⇒ 必须显式压成 10.0 + v143，否则 MSB8036。
+          msbuild UnRARDll.vcxproj /p:Configuration=Release /p:Platform=x64 `
+            /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /m
+          if ($LASTEXITCODE -ne 0) { throw "libunrar: msbuild 失败" }
           #   产物名两种写法都见过（unrar.lib / UnRAR.lib），取到哪个用哪个
-          $lib = Get-ChildItem -Recurse -Filter *.lib | Select-Object -First 1
+          $lib = Get-ChildItem -Recurse -Path build -Include unrar.lib,UnRAR.lib -File |
+                 Select-Object -First 1
           $dll = Get-ChildItem -Recurse -Filter unrar.dll | Select-Object -First 1
-          if (-not $lib) { throw "libunrar: 找不到 import library" }
+          if (-not $lib) {
+            Get-ChildItem -Recurse -Path build -Filter *.lib | Select-Object FullName
+            throw "libunrar: 找不到 import library"
+          }
           New-Item -ItemType Directory -Force -Path ..\unrar-prefix\lib, ..\unrar-prefix\include\unrar | Out-Null
           Copy-Item $lib.FullName ..\unrar-prefix\lib\unrar.lib
           Copy-Item dll.hpp ..\unrar-prefix\include\unrar\dll.hpp
