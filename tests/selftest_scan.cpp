@@ -16,6 +16,13 @@
 #ifdef Q_OS_UNIX
 #  include <unistd.h>
 #endif
+//   Windows 的"隐藏"是**文件属性**（`FILE_ATTRIBUTE_HIDDEN`），点开头的名字不算隐藏 ——
+//   夹具要按各平台的定义打标记，否则 `scanHidden=false` 的判定对不上。
+#ifdef Q_OS_WIN
+#  define WIN32_LEAN_AND_MEAN
+#  define NOMINMAX
+#  include <windows.h>
+#endif
 
 #include "sequence.h"
 
@@ -55,8 +62,22 @@ static int runScanSelfTest()
         return ::symlink(target.toLocal8Bit().constData(),
                          linkPath.toLocal8Bit().constData()) == 0;
 #else
+        //   Windows 上不建符号链接（要特权）⇒ 环夹具**整块跳过**，不算夹具失败。
+        //   其余规则照测；环那条断言在空目录上同样成立。
         Q_UNUSED(target); Q_UNUSED(linkPath);
-        return false;
+        qInfo().noquote() << QStringLiteral("[scanselftest] 跳过：符号链接环（非 POSIX 平台）");
+        return true;
+#endif
+    };
+    //   把"隐藏"按平台写进夹具：POSIX 靠名字（点开头），Windows 靠文件属性。
+    auto mkHidden = [](const QString &path) -> bool {
+#ifdef Q_OS_WIN
+        const QString native = QDir::toNativeSeparators(path);
+        return ::SetFileAttributesW(reinterpret_cast<LPCWSTR>(native.utf16()),
+                                    FILE_ATTRIBUTE_HIDDEN) != 0;
+#else
+        Q_UNUSED(path);
+        return true;
 #endif
     };
 
@@ -69,6 +90,10 @@ static int runScanSelfTest()
     fixtureOk = mkFile(rootS + QStringLiteral("/sub/q1.png")) && fixtureOk;
     fixtureOk = mkFile(rootS + QStringLiteral("/sub/q2.png")) && fixtureOk;
     fixtureOk = mkFile(rootS + QStringLiteral("/.hidden/h.png")) && fixtureOk;
+    //   ★ 隐藏标记：Windows 上必须打属性（点名字在那边不算隐藏）
+    fixtureOk = mkHidden(rootS + QStringLiteral("/.hiddenfile.png")) && fixtureOk;
+    fixtureOk = mkHidden(rootS + QStringLiteral("/.hidden")) && fixtureOk;
+    fixtureOk = mkHidden(rootS + QStringLiteral("/.hidden/h.png")) && fixtureOk;
     fixtureOk = mkFile(rootS + QStringLiteral("/deep/l1/l2/l3/deep.png")) && fixtureOk;   // 层 4
     fixtureOk = mkFile(rootS + QStringLiteral("/deep/l1/l2/l3/l4/l5/tooDeep.png")) && fixtureOk; // 层 6
     fixtureOk = mkFile(rootS + QStringLiteral("/loop/li.png")) && fixtureOk;
