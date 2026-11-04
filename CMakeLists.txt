@@ -194,6 +194,9 @@ install(FILES assets/icons/photoset-reader.svg
         RENAME photoset-reader.svg)
 install(FILES LICENSE THIRD-PARTY.md
         DESTINATION "${CMAKE_INSTALL_DOCDIR}")
+#   ★ LGPL §4(b) 要求随二进制附上 GPL 与 LGPL 全文（Qt 在 AppImage 里是静态链入的）
+install(FILES LICENSES/GPL-3.0-only.txt LICENSES/LGPL-3.0-only.txt
+        DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 
 # ══ 应用图标：编进资源（窗口图标 / X11 任务栏用；桌面入口与 hicolor 由安装规则铺）══
 qt_add_resources(photoset-reader "appicon"

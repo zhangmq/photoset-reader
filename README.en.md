@@ -111,5 +111,7 @@ cmake --install build --prefix "$HOME/.local"
 
 Released under the **MIT** license, see [LICENSE](LICENSE).
 
-Third-party components and their licenses (including notes on LGPL dynamic linking and the UnRAR
-notice) are listed in [THIRD-PARTY.md](THIRD-PARTY.md).
+Third-party components and their licenses are listed in [THIRD-PARTY.md](THIRD-PARTY.md): dynamically
+linked LGPL components (libexif / libheif), the **LGPL §4 obligations for the statically linked Qt**
+inside the AppImage (including how to relink), and the UnRAR notice.
+The full GPL-3.0 / LGPL-3.0 texts live in [LICENSES/](LICENSES/) and ship with every binary package.

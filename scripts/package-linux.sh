@@ -62,6 +62,8 @@ if [ "$MODE" = system-deps ]; then
     cp assets/icons/photoset-reader.svg "$STAGE/share/icons/hicolor/scalable/apps/photoset-reader.svg"
   }
   install -m644 LICENSE THIRD-PARTY.md "$STAGE/share/doc/photoset-reader/"
+  install -m644 LICENSES/GPL-3.0-only.txt LICENSES/LGPL-3.0-only.txt \
+    "$STAGE/share/doc/photoset-reader/"
   install -m644 CHANGELOG.md README.md "$STAGE/"
   install -m755 packaging/install-release.sh "$STAGE/install.sh"
   log=$(mktemp)
@@ -201,7 +203,8 @@ fi
 
 # ⑧ 许可 / 第三方声明 / 桌面入口 / 图标（对外分发必须随附的东西）
 mkdir -p "$OUT/share/doc/photoset-reader" "$OUT/share/applications"
-cp LICENSE THIRD-PARTY.md "$OUT/share/doc/photoset-reader/"
+cp LICENSE THIRD-PARTY.md LICENSES/GPL-3.0-only.txt LICENSES/LGPL-3.0-only.txt \
+   "$OUT/share/doc/photoset-reader/"
 cp assets/photoset-reader.desktop "$OUT/share/applications/"
 for _sz in 16 24 32 48 64 128 256 512; do
   mkdir -p "$OUT/share/icons/hicolor/${_sz}x${_sz}/apps"

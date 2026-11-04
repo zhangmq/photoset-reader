@@ -114,4 +114,6 @@ libarchive、libexif、libheif、liblzma、zlib、libunrar。
 
 本项目按 **MIT** 发布，见 [LICENSE](LICENSE)。
 
-运行时依赖的第三方组件与许可（含 LGPL 动态链接说明、UnRAR 声明）见 [THIRD-PARTY.md](THIRD-PARTY.md)。
+运行时依赖的第三方组件与许可见 [THIRD-PARTY.md](THIRD-PARTY.md)：动态链接的 LGPL 组件（libexif / libheif）、
+AppImage 里**静态链入的 Qt 所对应的 LGPL §4 义务**（含重新链接途径）、UnRAR 声明。
+GPL-3.0 / LGPL-3.0 全文在 [LICENSES/](LICENSES/)，随每个二进制包分发。
