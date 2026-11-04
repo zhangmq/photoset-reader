@@ -161,25 +161,39 @@ jobs:
           cmake --build build --parallel
 
       # ── 测一遍 + 冒烟 ─────────────────────────────────────────────────────
-      #   ★ runner 没有真实桌面会话 ⇒ 一律 offscreen；并且给每个测试和冒烟都加超时，
-      #     否则 GUI 初始化一卡就是整轮 90 分钟（上一次就是这么挂住的）。
+      #   ★ 不走 ctest：它在超时后只报 "Timeout"，看不到测试自己打到哪一步。
+      #     这里逐个跑、逐个超时、把最后 30 行输出打出来。
+      #   ★ offscreen：runner 没有真实桌面会话。
       - name: Test
         shell: pwsh
         run: |
           $env:QT_QPA_PLATFORM = "offscreen"
-          Write-Host "== ctest =="
-          ctest --test-dir build --output-on-failure --timeout 60
-          if ($LASTEXITCODE -ne 0) { throw "ctest 失败" }
+          $failed = @()
+          foreach ($t in "ib-test-scan", "ib-test-progress", "ib-test-meta") {
+            Write-Host "== $t =="
+            $p = Start-Process -FilePath ".\build\$t.exe" -PassThru -NoNewWindow `
+                 -RedirectStandardOutput "$t.out" -RedirectStandardError "$t.err"
+            if (-not $p.WaitForExit(120000)) {
+              $p.Kill()
+              Write-Host "TIMEOUT after 120s"
+              $failed += $t
+            } elseif ($p.ExitCode -ne 0 -and $p.ExitCode -ne 77) {
+              Write-Host "exit code $($p.ExitCode)"
+              $failed += $t
+            }
+            Get-Content "$t.out" -ErrorAction SilentlyContinue | Select-Object -Last 30
+            Get-Content "$t.err" -ErrorAction SilentlyContinue | Select-Object -Last 10
+          }
           Write-Host "== smoke: --version =="
           $p = Start-Process -FilePath ".\build\photoset-reader.exe" -ArgumentList "--version" `
                -PassThru -NoNewWindow -RedirectStandardOutput "ver.out" -RedirectStandardError "ver.err"
           if (-not $p.WaitForExit(60000)) {
             $p.Kill()
-            Write-Warning "version smoke 超时（GUI 初始化卡住）—— 不影响构建结论"
+            Write-Warning "version smoke 超时（GUI 初始化卡住）"
           } else {
             Get-Content ver.out -ErrorAction SilentlyContinue
-            if ($p.ExitCode -ne 0) { Get-Content ver.err -ErrorAction SilentlyContinue }
           }
+          if ($failed.Count -gt 0) { throw "测试未通过：$($failed -join ', ')" }
 
       # ── 打包：windeployqt 收 Qt，vcpkg 的 DLL 一起带上 ────────────────────
       - name: Package
