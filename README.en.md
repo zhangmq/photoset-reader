@@ -111,5 +111,5 @@ cmake --install build --prefix "$HOME/.local"
 
 Released under the **MIT** license, see [LICENSE](LICENSE).
 
-Third-party components and their licenses: [THIRD-PARTY.md](THIRD-PARTY.md).
+Third-party components and their licenses: [THIRD-PARTY.en.md](THIRD-PARTY.en.md).
 Full GPL-3.0 / LGPL-3.0 texts: [LICENSES/](LICENSES/).
