@@ -171,6 +171,9 @@ jobs:
           #   ★ Qt 日志默认被吞（Windows 上走 OutputDebugString）—— 不加这个，测试
           #     失败时一行输出都看不到（AGENTS.md「坑」第 1 条）。
           $env:QT_FORCE_STDERR_LOGGING = "1"
+          #   控制台按 UTF-8，否则中文输出全是问号
+          chcp 65001 | Out-Null
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
           #   ★ 测试可执行也要能找到第三方 DLL（vcpkg 的 bin 不在 PATH 上）
           #     否则进程起不来：exit code -1073741515 = 0xC0000135 STATUS_DLL_NOT_FOUND
           $env:PATH = "C:\vcpkg\installed\x64-windows\bin;$env:GITHUB_WORKSPACE\unrar-prefix\lib;C:\Qt\$env:QT_VERSION\msvc2022_64\bin;$env:PATH"
@@ -187,8 +190,9 @@ jobs:
               Write-Host "exit code $($p.ExitCode)"
               $failed += $t
             }
-            Get-Content "$t.out" -ErrorAction SilentlyContinue | Select-Object -Last 30
-            Get-Content "$t.err" -ErrorAction SilentlyContinue | Select-Object -Last 10
+            #   测试输出很短，全打出来（只打尾部会把失败的条目漏掉）
+            Get-Content "$t.out" -ErrorAction SilentlyContinue
+            Get-Content "$t.err" -ErrorAction SilentlyContinue
           }
           Write-Host "== smoke: --version =="
           $p = Start-Process -FilePath ".\build\photoset-reader.exe" -ArgumentList "--version" `
