@@ -276,6 +276,16 @@ jobs:
           }
           if (Test-Path "unrar-prefix\lib\unrar.dll") { Copy-Item unrar-prefix\lib\unrar.dll $stage -Force }
 
+          #   ── ICU：Qt6Core.dll 硬导入 `icuuc.dll`（Qt 6.12 起），windeployqt 不拷 ──
+          $qtRoot = "C:\Qt\$env:QT_VERSION\msvc2022_64"
+          $icu = Get-ChildItem $qtRoot -Recurse -Include icu*.dll, icu*.dat -ErrorAction SilentlyContinue
+          if ($icu) {
+            Copy-Item $icu.FullName $stage -Force
+            Write-Host "ICU（来自 Qt）：$(($icu.Name | Sort-Object -Unique) -join ', ')"
+          } else {
+            Write-Warning "Qt 目录里找不到 ICU 文件；where icuuc.dll -> $((where.exe icuuc.dll) -join '; ')"
+          }
+
           #   ── VC++ 运行时：windeployqt **不拷**，但目标机没装可再发行包就起不来 ──
           $crt = Get-ChildItem -Path "$env:VCToolsRedistDir\x64" -Filter "Microsoft.VC*.CRT" -Directory |
                  Select-Object -First 1
