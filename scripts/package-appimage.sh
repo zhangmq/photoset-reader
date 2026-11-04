@@ -118,7 +118,7 @@ cp "$ROOT/assets/icons/photoset-reader-256.png" "$APPDIR/photoset-reader.png"
 # 许可与第三方声明（AppImage 内也要有：对外分发必须随附）
 #   ★ Qt 在这里是静态链入的 ⇒ LGPL §4(b) 要求同时附上 GPL 与 LGPL 全文
 mkdir -p "$APPDIR/usr/share/doc/photoset-reader"
-cp "$ROOT/LICENSE" "$ROOT/THIRD-PARTY.md" \
+cp "$ROOT/LICENSE" "$ROOT/THIRD-PARTY.md" "$ROOT/THIRD-PARTY.en.md" \
    "$ROOT/LICENSES/GPL-3.0-only.txt" "$ROOT/LICENSES/LGPL-3.0-only.txt" \
    "$APPDIR/usr/share/doc/photoset-reader/"
 

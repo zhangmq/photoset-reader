@@ -192,7 +192,7 @@ endforeach()
 install(FILES assets/icons/photoset-reader.svg
         DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps"
         RENAME photoset-reader.svg)
-install(FILES LICENSE THIRD-PARTY.md
+install(FILES LICENSE THIRD-PARTY.md THIRD-PARTY.en.md
         DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 #   ★ LGPL §4(b) 要求随二进制附上 GPL 与 LGPL 全文（Qt 在 AppImage 里是静态链入的）
 install(FILES LICENSES/GPL-3.0-only.txt LICENSES/LGPL-3.0-only.txt

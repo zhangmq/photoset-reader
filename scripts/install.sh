@@ -80,7 +80,7 @@ fi
 echo "  可执行：  $PREFIX/bin/photoset-reader"
 echo "  桌面入口：$PREFIX/share/applications/photoset-reader.desktop"
 echo "  图标：    $PREFIX/share/icons/hicolor/{16..512}x…/apps/photoset-reader.png"
-echo "  许可：    $PREFIX/share/doc/photoset-reader/{LICENSE,THIRD-PARTY.md,GPL-3.0-only.txt,LGPL-3.0-only.txt}"
+echo "  许可：    $PREFIX/share/doc/photoset-reader/{LICENSE,THIRD-PARTY.md,THIRD-PARTY.en.md,GPL-3.0-only.txt,LGPL-3.0-only.txt}"
 
 # ── ④ 桌面集成（只在用户目录前缀时自动做；系统前缀由桌面环境自己扫）──────
 if [[ $DESKTOP -eq 1 && "$PREFIX" == "$HOME"* ]]; then

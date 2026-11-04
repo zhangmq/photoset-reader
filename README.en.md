@@ -94,7 +94,7 @@ cmake --install build --prefix "$HOME/.local"
 ## Release
 
 1. bump `project(photoset-reader VERSION x.y.z)` in `CMakeLists.txt` (the only place a version lives);
-2. add an entry to [CHANGELOG.md](CHANGELOG.md);
+2. add an entry to [CHANGELOG.md](CHANGELOG.md) (keep [CHANGELOG.en.md](CHANGELOG.en.md) in sync);
 3. `ctest`, `./scripts/update-translations.sh --check`, `./scripts/render-icons.sh --check`;
 4. `./scripts/package-appimage.sh` and `./scripts/package-linux.sh` (output names carry the version);
 5. tag and push.
@@ -111,7 +111,5 @@ cmake --install build --prefix "$HOME/.local"
 
 Released under the **MIT** license, see [LICENSE](LICENSE).
 
-Third-party components and their licenses are listed in [THIRD-PARTY.md](THIRD-PARTY.md): dynamically
-linked LGPL components (libexif / libheif), the **LGPL §4 obligations for the statically linked Qt**
-inside the AppImage (including how to relink), and the UnRAR notice.
-The full GPL-3.0 / LGPL-3.0 texts live in [LICENSES/](LICENSES/) and ship with every binary package.
+Third-party components and their licenses: [THIRD-PARTY.md](THIRD-PARTY.md).
+Full GPL-3.0 / LGPL-3.0 texts: [LICENSES/](LICENSES/).

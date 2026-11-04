@@ -97,7 +97,7 @@ libarchive、libexif、libheif、liblzma、zlib、libunrar。
 ## 发布
 
 1. 改 `CMakeLists.txt` 的 `project(photoset-reader VERSION x.y.z)` —— **版本号只有这一处**；
-2. 在 [CHANGELOG.md](CHANGELOG.md) 加一节；
+2. 在 [CHANGELOG.md](CHANGELOG.md) 加一节（英文版 [CHANGELOG.en.md](CHANGELOG.en.md) 同步）；
 3. `cmake --build build && ctest --test-dir build --output-on-failure`，
    再跑 `./scripts/update-translations.sh --check` 与 `./scripts/render-icons.sh --check`；
 4. 打包：`./scripts/package-appimage.sh` 与 `./scripts/package-linux.sh`（产物文件名自动带版本）；
@@ -114,6 +114,4 @@ libarchive、libexif、libheif、liblzma、zlib、libunrar。
 
 本项目按 **MIT** 发布，见 [LICENSE](LICENSE)。
 
-运行时依赖的第三方组件与许可见 [THIRD-PARTY.md](THIRD-PARTY.md)：动态链接的 LGPL 组件（libexif / libheif）、
-AppImage 里**静态链入的 Qt 所对应的 LGPL §4 义务**（含重新链接途径）、UnRAR 声明。
-GPL-3.0 / LGPL-3.0 全文在 [LICENSES/](LICENSES/)，随每个二进制包分发。
+第三方组件与许可见 [THIRD-PARTY.md](THIRD-PARTY.md)；GPL-3.0 / LGPL-3.0 全文见 [LICENSES/](LICENSES/)。

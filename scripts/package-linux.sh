@@ -61,10 +61,10 @@ if [ "$MODE" = system-deps ]; then
     mkdir -p "$STAGE/share/icons/hicolor/scalable/apps"
     cp assets/icons/photoset-reader.svg "$STAGE/share/icons/hicolor/scalable/apps/photoset-reader.svg"
   }
-  install -m644 LICENSE THIRD-PARTY.md "$STAGE/share/doc/photoset-reader/"
+  install -m644 LICENSE THIRD-PARTY.md THIRD-PARTY.en.md "$STAGE/share/doc/photoset-reader/"
   install -m644 LICENSES/GPL-3.0-only.txt LICENSES/LGPL-3.0-only.txt \
     "$STAGE/share/doc/photoset-reader/"
-  install -m644 CHANGELOG.md README.md "$STAGE/"
+  install -m644 CHANGELOG.md CHANGELOG.en.md README.md README.en.md "$STAGE/"
   install -m755 packaging/install-release.sh "$STAGE/install.sh"
   log=$(mktemp)
   QT_FORCE_STDERR_LOGGING=1 QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
@@ -203,7 +203,8 @@ fi
 
 # ⑧ 许可 / 第三方声明 / 桌面入口 / 图标（对外分发必须随附的东西）
 mkdir -p "$OUT/share/doc/photoset-reader" "$OUT/share/applications"
-cp LICENSE THIRD-PARTY.md LICENSES/GPL-3.0-only.txt LICENSES/LGPL-3.0-only.txt \
+cp LICENSE THIRD-PARTY.md THIRD-PARTY.en.md \
+   LICENSES/GPL-3.0-only.txt LICENSES/LGPL-3.0-only.txt \
    "$OUT/share/doc/photoset-reader/"
 cp assets/photoset-reader.desktop "$OUT/share/applications/"
 for _sz in 16 24 32 48 64 128 256 512; do
