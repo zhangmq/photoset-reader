@@ -223,9 +223,17 @@ static int runScanSelfTest()
         while (sq.drain()) { }
         check(sq.scanFinished() && sq.state() == Sequence::State::Scaned,
               QStringLiteral("⑤ 加入来源（根目录无图，子目录 %1 张）且扫描照常结束").arg(innerN));
-        check(firstBeforeFinish && firstProgress > 0 && firstProgress < innerN,
-              QStringLiteral("⑤ **第一批从子目录拿到**：扫完前已发现 %1 张（< %2）")
-                  .arg(firstProgress).arg(innerN));
+        //   ★ 这条是**时序**断言：只有在"扫描还没结束"时观察到部分发现才算验证过。
+        //     机器够快（Windows runner 只建 40 个小文件）时，第一轮 drain 之前扫描就已经
+        //     结束 ⇒ 这个性质**观测不到**，此时报"跳过"而不是失败（2026-11-05，Windows CI 实测）。
+        if (!firstBeforeFinish) {
+            qInfo().noquote()
+                << QStringLiteral("[scanselftest] 跳过 ⑤ 增量发现：扫描在第一次 drain 前就结束，无法观测");
+        } else {
+            check(firstProgress > 0 && firstProgress < innerN,
+                  QStringLiteral("⑤ **第一批从子目录拿到**：扫完前已发现 %1 张（< %2）")
+                      .arg(firstProgress).arg(innerN));
+        }
         const QStringList ks = pathsOf(sq);
         check(ks.size() == innerN && sq.containers().size() == 1,
               QStringLiteral("⑤ 最终 %1 条图 + 1 个容器（note.txt 不算，实际 %2 / %3）")
