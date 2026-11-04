@@ -46,6 +46,7 @@ jobs:
         with:
           path: C:\Qt
           key: qt-6.12.0-msvc2022_64-v1
+          restore-keys: qt-6.12.0-
 
       - name: Install Qt
         if: steps.qt-cache.outputs.cache-hit != 'true'
@@ -91,6 +92,8 @@ jobs:
             C:\vcpkg\installed
             C:\Users\runneradmin\AppData\Local\vcpkg\archives
           key: vcpkg-x64-windows-v1
+          #   旧键（vcpkg-Windows-*）也能捞，免得改一次 workflow 就重编 20 分钟
+          restore-keys: vcpkg-
 
       - name: vcpkg install dependencies
         shell: pwsh
