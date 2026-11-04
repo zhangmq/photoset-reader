@@ -31,12 +31,11 @@ jobs:
       - uses: actions/checkout@v4
 
       #   MSVC 只在 Windows runner 上有：这一步把 cl / link / msbuild 放进 PATH。
-      #   ★ 固定 17.0（VS 2022 / v143）—— Qt 6.12 的 `win64_msvc2022_64` 就是用它编的；
-      #     不固定的话 runner 会挑到更新的 VS，工具集与 Qt 不一致。
+      #   ★ 不锁 VS 版本（runner 镜像会换，锁了反而找不到）；unrar 那一步也**不用 msbuild**，
+      #     所以工具集编号不需要猜。
       - name: MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
-          vsversion: "17.0"
           arch: x64
 
       # ── Qt（缓存命中就跳过下载；装出来约 1.5 GB）──────────────────────────
@@ -108,24 +107,21 @@ jobs:
           Invoke-WebRequest "https://www.rarlab.com/rar/unrarsrc-$env:UNRAR_VERSION.tar.gz" -OutFile unrar.tar.gz
           tar -xzf unrar.tar.gz
           Push-Location unrar
-          #   ★ vcxproj 里写的是 Windows SDK 8.1 + 工具集 v140_xp，两者 runner 上都没有
-          #     ⇒ 必须显式压成 10.0 + v143，否则 MSB8036。
-          msbuild UnRARDll.vcxproj /p:Configuration=Release /p:Platform=x64 `
-            /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /m
-          if ($LASTEXITCODE -ne 0) { throw "libunrar: msbuild 失败" }
-          #   产物名两种写法都见过（unrar.lib / UnRAR.lib），取到哪个用哪个
-          $lib = Get-ChildItem -Recurse -Path build -Include unrar.lib,UnRAR.lib -File |
-                 Select-Object -First 1
-          $dll = Get-ChildItem -Recurse -Filter unrar.dll | Select-Object -First 1
-          if (-not $lib) {
-            Get-ChildItem -Recurse -Path build -Filter *.lib | Select-Object FullName
-            throw "libunrar: 找不到 import library"
-          }
-          New-Item -ItemType Directory -Force -Path ..\unrar-prefix\lib, ..\unrar-prefix\include\unrar | Out-Null
-          Copy-Item $lib.FullName ..\unrar-prefix\lib\unrar.lib
-          Copy-Item dll.hpp ..\unrar-prefix\include\unrar\dll.hpp
-          if ($dll) { Copy-Item $dll.FullName ..\unrar-prefix\lib\unrar.dll }
+          #   ★ 不用 msbuild：vcxproj 钉死 Windows SDK 8.1 + 工具集 v140_xp，
+          #     runner 上两样都没有，而工具集编号又随镜像变。
+          #     源文件清单从 vcxproj 里取（<ClCompile Include>），宏照它的 5 个设置。
+          [xml]$proj = Get-Content UnRARDll.vcxproj
+          $srcs = @($proj.SelectNodes("//*[local-name()='ClCompile']") |
+                    ForEach-Object { $_.Include } | Where-Object { $_ })
+          Write-Host "libunrar: $($srcs.Count) 个源文件"
+          cl /nologo /MP /O2 /EHsc /MT /DRARDLL /DUNRAR /DSILENT $srcs `
+            /link /DLL /DEF:dll.def /OUT:unrar.dll /IMPLIB:unrar.lib
+          if ($LASTEXITCODE -ne 0) { throw "libunrar: 编译失败" }
           Pop-Location
+          New-Item -ItemType Directory -Force -Path unrar-prefix\lib, unrar-prefix\include\unrar | Out-Null
+          Copy-Item unrar\unrar.lib unrar-prefix\lib\unrar.lib
+          Copy-Item unrar\unrar.dll unrar-prefix\lib\unrar.dll
+          Copy-Item unrar\dll.hpp unrar-prefix\include\unrar\dll.hpp
           Get-ChildItem -Recurse unrar-prefix | Select-Object FullName
 
       # ── 配置 + 构建 ───────────────────────────────────────────────────────
