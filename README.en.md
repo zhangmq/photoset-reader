@@ -8,12 +8,18 @@ Just another image viewer, focused on fast browsing of **manga** or **very large
 
 ## Features
 
-- **Progress saving**: keep progress in the built-in favorites, or save it as a progress file.
-- **Slideshow**: intervals below 500 ms are supported, currently clamped to 50 ms and up (it can
-  probably go faster), useful for replaying burst sequences.
+- **Progress saving**: built-in favorites, or a `.prsave` progress file (double-click it in your
+  file manager to jump straight back).
+- **Timeline hover preview**: hovering the progress bar shows thumbnails of the neighbouring pages;
+  click one to jump there (can be turned off in settings).
+- **Slideshow**: interval 0–60000 ms (`0` = no minimum delay; the real rate is limited by decoding
+  and the screen refresh rate), presets 100 ms / 0.5 / 1 / 2 / 3 / 4 / 5 s; `[` `]` step by magnitude
+  (10 / 50 / 500 / 1000 ms).
 - **Image scaling algorithms**: currently Nearest, Smooth (Qt), Bicubic, Lanczos 2 and Lanczos 3.
 - **Image formats**: JPEG, PNG, GIF, BMP, WebP, TIFF, ICO, TGA, SVG, AVIF, JXL, QOI, PNM.
-- **Archive formats**: ZIP/CBZ, RAR/CBR, 7Z/CB7, TAR/CBT.
+- **Archive formats**: ZIP/CBZ, RAR/CBR, 7Z/CB7, TAR/CBT (solid archives are not supported: they
+  cannot be read randomly).
+- **Log level**: Settings → System → Log level (default `warning`), or `--log-level` for one run.
 
 ## Platforms
 
@@ -28,8 +34,23 @@ Requires CMake ≥ 3.21, C++20, Qt 6, libarchive, libexif, libheif, liblzma, zli
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j"$(nproc)"
 ctest --test-dir build --output-on-failure
-./build/photoset-reader -d <folder|archive|image>
+./build/photoset-reader <folder|archive|image>   # positional; launchers/file managers use this
 ```
+
+Command line:
+
+```
+photoset-reader [<path>] [--fullscreen] [--log-level <level>]
+```
+
+| Usage | Meaning |
+|---|---|
+| `<path>` | Open a folder / archive / image / `.prsave` progress file; omit for an empty window (drops accepted) |
+| `--fullscreen` | Start in fullscreen |
+| `--log-level debug\|info\|warning\|error\|off` | Log level for this run (overrides the setting, not persisted) |
+| `-h` / `-v` | Help / version |
+
+The shipped binary contains **no test/acceptance switches** (screenshot, probes and dev timers were removed).
 
 ## Documentation
 

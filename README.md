@@ -8,11 +8,14 @@
 
 ## 功能
 
-- **进度保存**：可使用内置收藏夹，或存为进度文件。
-- **幻灯片**：间隔支持 500 ms 以下的设置，目前限制在 50 ms 以上（可能可以更快），可用于连拍镜头回放。
+- **进度保存**：内置收藏夹，或存成 `.prsave` 进度文件（在文件管理器里双击即可恢复）。
+- **时间轴悬停预览**：鼠标停在进度条上，显示邻近页面缩略图；点缩略图直接跳转（可在设置里关）。
+- **幻灯片**：间隔 0–60000 ms（`0` = 不设最小间隔，实际速度受解码与屏幕刷新率限制），
+  预设 100 ms / 0.5 / 1 / 2 / 3 / 4 / 5 s，`[` `]` 按量级步进（10 / 50 / 500 / 1000 ms）。
 - **图像缩放算法**：目前支持 Nearest、Smooth (Qt)、Bicubic、Lanczos 2、Lanczos 3。
 - **文件格式支持**：JPEG、PNG、GIF、BMP、WebP、TIFF、ICO、TGA、SVG、AVIF、JXL、QOI、PNM。
-- **压缩文件支持**：ZIP/CBZ、RAR/CBR、7Z/CB7、TAR/CBT。
+- **压缩文件支持**：ZIP/CBZ、RAR/CBR、7Z/CB7、TAR/CBT（solid 包不支持，因为无法随机读）。
+- **日志级别**：设置 → 系统 → 日志级别（默认 `warning`），或用 `--log-level` 临时覆盖一次。
 
 ## 平台
 
@@ -27,8 +30,23 @@
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j"$(nproc)"
 ctest --test-dir build --output-on-failure
-./build/photoset-reader -d <目录|压缩包|图片>
+./build/photoset-reader <目录|压缩包|图片>   # 位置参数；launcher / 文件管理器也是这条
 ```
+
+命令行：
+
+```
+photoset-reader [<路径>] [--fullscreen] [--log-level <级别>]
+```
+
+| 用法 | 含义 |
+|---|---|
+| `<路径>` | 打开文件夹 / 压缩包 / 图片 / `.prsave` 进度文件；不给 = 空窗口（可直接拖放） |
+| `--fullscreen` | 启动即全屏 |
+| `--log-level debug\|info\|warning\|error\|off` | 本次运行的日志级别（覆盖设置，不写盘） |
+| `-h` / `-v` | 帮助 / 版本 |
+
+产品本体**不含任何测试/验收开关**（截图、探针、开发定时器都已移除）。
 
 ## 文档
 
