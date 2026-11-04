@@ -24,7 +24,7 @@
 
 ## 构建（Linux）
 
-依赖：CMake ≥ 3.21、C++20、Qt 6、libarchive、libexif、libheif、liblzma、zlib、libunrar。
+依赖：CMake ≥ 3.21、C++20、Qt 6（含 Concurrent）、libarchive、libexif、libheif、liblzma、zlib、libunrar。
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
