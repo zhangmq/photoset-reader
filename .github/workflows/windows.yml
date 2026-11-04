@@ -44,13 +44,41 @@ jobs:
           path: C:\Qt
           key: qt-${{ env.QT_VERSION }}-${{ env.QT_ARCH }}-shadertools-imageformats
 
-      - name: Install Qt (aqt)
+      - name: Install Qt
         if: steps.qt-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          python -m pip install --disable-pip-version-check aqtinstall
-          python -m aqt install-qt windows desktop $env:QT_VERSION $env:QT_ARCH `
-            -m qtshadertools qtimageformats -O C:\Qt
+          #   ★ 不用 aqtinstall：它 3.3.0 还不认 Qt 6.12 的仓库布局
+          #     （找 `qt6_6120/qt6_6120/Updates.xml`，而 6.12 只有各架构子目录）。
+          #     这里直接按仓库的 Updates.xml 取 7z，文件名 = <包内 Version> + <DownloadableArchives>。
+          $repo   = "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6120/qt6_6120_msvc2022_64"
+          $prefix = "C:\Qt\6.12.0\msvc2022_64"
+          $pkgs = @(
+            "qt.qt6.6120.win64_msvc2022_64"
+            "qt.qt6.6120.addons.qtshadertools.win64_msvc2022_64"
+            "qt.qt6.6120.addons.qtimageformats.win64_msvc2022_64"
+          )
+          #   qtdoc / qttranslations 用不上（体积大、装完也用不到）
+          $skip = "qtdoc|qttranslations"
+          [xml]$xml = (Invoke-WebRequest "$repo/Updates.xml").Content
+          New-Item -ItemType Directory -Force -Path $prefix | Out-Null
+          foreach ($p in $xml.SelectNodes("//PackageUpdate")) {
+            if ($pkgs -notcontains $p.Name) { continue }
+            $archives = ($p.DownloadableArchives -split ',') |
+              ForEach-Object { $_.Trim() } |
+              Where-Object { $_ -and $_ -notmatch $skip }
+            foreach ($a in $archives) {
+              $url = "$repo/$($p.Name)/$($p.Version)$a"
+              Write-Host "== $a"
+              Invoke-WebRequest $url -OutFile $a
+              & 7z x -y "-o$prefix" $a | Out-Null
+            }
+          }
+          Get-ChildItem $prefix | Select-Object Name
+
+      - name: Put Qt on PATH
+        shell: pwsh
+        run: '"C:\Qt\6.12.0\msvc2022_64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append'
 
       # ── 第三方库（vcpkg）──────────────────────────────────────────────────
       - name: Cache vcpkg
