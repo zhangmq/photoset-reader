@@ -118,7 +118,7 @@ jobs:
             "libarchive[core,bzip2,lz4,lzma,zstd]" `
             "libheif[core,dav1d]" `
             libexif liblzma zlib `
-            --triplet x64-windows
+            --triplet x64-windows --recurse
 
       - name: Save vcpkg
         if: always() && steps.vcpkg-cache.outputs.cache-matched-key != 'vcpkg-x64-windows-v2'
@@ -127,7 +127,7 @@ jobs:
           path: |
             C:\vcpkg\installed
             C:\Users\runneradmin\AppData\Local\vcpkg\archives
-          key: vcpkg-x64-windows-v1
+          key: vcpkg-x64-windows-v2
 
       # ── libunrar：上游源码 + 它自己的 vcxproj（工具集覆盖成 v143）─────────
       - name: Build libunrar
