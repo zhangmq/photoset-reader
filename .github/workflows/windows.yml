@@ -39,16 +39,19 @@ jobs:
           arch: x64
 
       # ── Qt（缓存命中就跳过下载；装出来约 1.5 GB）──────────────────────────
-      - name: Cache Qt
+      #   ★ 用 restore / save 两步而不是 `actions/cache`：普通 cache 的保存挂在
+      #     post 步骤上，**job 一失败就跳过**（实测 Post Cache Qt: skipped），
+      #     于是每挂一次就白等 30 分钟重下 Qt + 重编 vcpkg。
+      - name: Restore Qt
         id: qt-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: C:\Qt
           key: qt-6.12.0-msvc2022_64-v1
           restore-keys: qt-6.12.0-
 
       - name: Install Qt
-        if: steps.qt-cache.outputs.cache-hit != 'true'
+        if: steps.qt-cache.outputs.cache-matched-key == ''
         shell: pwsh
         run: |
           #   ★ 不用 aqtinstall：它 3.3.0 还不认 Qt 6.12 的仓库布局
@@ -79,26 +82,44 @@ jobs:
           }
           Get-ChildItem $prefix | Select-Object Name
 
+      #   ★ 显式保存（`always()`）：后面任何一步失败，Qt 也不用重下
+      - name: Save Qt
+        if: always() && steps.qt-cache.outputs.cache-matched-key == ''
+        uses: actions/cache/save@v4
+        with:
+          path: C:\Qt
+          key: qt-6.12.0-msvc2022_64-v1
+
       - name: Put Qt on PATH
         shell: pwsh
         run: '"C:\Qt\6.12.0\msvc2022_64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append'
 
       # ── 第三方库（vcpkg）──────────────────────────────────────────────────
-      - name: Cache vcpkg
-        uses: actions/cache@v4
+      - name: Restore vcpkg
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             C:\vcpkg\installed
             C:\Users\runneradmin\AppData\Local\vcpkg\archives
           key: vcpkg-x64-windows-v1
-          #   旧键（vcpkg-Windows-*）也能捞，免得改一次 workflow 就重编 20 分钟
           restore-keys: vcpkg-
 
       - name: vcpkg install dependencies
+        if: steps.vcpkg-cache.outputs.cache-matched-key == ''
         shell: pwsh
         run: |
           $vcpkg = Join-Path $env:VCPKG_INSTALLATION_ROOT "vcpkg.exe"
           & $vcpkg install libarchive libexif libheif liblzma zlib --triplet x64-windows
+
+      - name: Save vcpkg
+        if: always() && steps.vcpkg-cache.outputs.cache-matched-key == ''
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            C:\vcpkg\installed
+            C:\Users\runneradmin\AppData\Local\vcpkg\archives
+          key: vcpkg-x64-windows-v1
 
       # ── libunrar：上游源码 + 它自己的 vcxproj（工具集覆盖成 v143）─────────
       - name: Build libunrar
@@ -115,7 +136,8 @@ jobs:
                     ForEach-Object { $_.Include } | Where-Object { $_ })
           Write-Host "libunrar: $($srcs.Count) 个源文件"
           cl /nologo /MP /O2 /EHsc /MT /DRARDLL /DUNRAR /DSILENT $srcs `
-            /link /DLL /DEF:dll.def /OUT:unrar.dll /IMPLIB:unrar.lib
+            /link /DLL /DEF:dll.def /OUT:unrar.dll /IMPLIB:unrar.lib `
+            kernel32.lib user32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib
           if ($LASTEXITCODE -ne 0) { throw "libunrar: 编译失败" }
           Pop-Location
           New-Item -ItemType Directory -Force -Path unrar-prefix\lib, unrar-prefix\include\unrar | Out-Null
