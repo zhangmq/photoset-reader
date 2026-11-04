@@ -20,5 +20,5 @@ vec3 s2l(vec3 c)
 
 void main()
 {
-    fragColor = vec4(s2l(texture(uIn, vUv).rgb), 1.0);
+    fragColor = vec4(s2l(textureLod(uIn, vUv, 0.0).rgb), 1.0);
 }

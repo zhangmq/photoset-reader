@@ -174,6 +174,44 @@ jobs:
             -DUNRAR_INCLUDE_DIR="$unrar\include"
           cmake --build build --parallel
 
+      # ── HLSL 编译检查（**只在 Windows 才会暴露**的一类坑）─────────────────
+      #   qsb 把 GLSL 烘成 HLSL 文本，真正编译它的是运行期的 D3D 编译器。
+      #   2026-11-05 真机踩到：循环里用了隐式求导的 `texture()` ⇒ HLSL 报
+      #   "X3511: unable to unroll loop" ⇒ 管线创建失败、D3D 设备丢失。
+      #   这里在 CI 里用 fxc 提前编译一遍，别再等到真机。
+      - name: HLSL compile check
+        shell: pwsh
+        run: |
+          $qsb = "C:\Qt\$env:QT_VERSION\msvc2022_64\bin\qsb.exe"
+          $fxc = (Get-Command fxc -ErrorAction SilentlyContinue).Source
+          if (-not $fxc) {
+            $fxc = Get-ChildItem "$env:WindowsSdkVerBinPath\x64\fxc.exe" -ErrorAction SilentlyContinue |
+                   Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $fxc) { throw "找不到 fxc.exe（Windows SDK 里）" }
+          $failed = @()
+          foreach ($s in Get-ChildItem src\shaders\*.frag) {
+            $tmp = "$($s.BaseName).qsb"
+            & $qsb --hlsl 50 -o $tmp $s.FullName
+            if ($LASTEXITCODE -ne 0) { $failed += "$($s.Name)(qsb)"; continue }
+            #   从 --dump 里抠出 HLSL 源：取 "Shader N: HLSL" 之后那个 Contents: 到 *** 分隔符
+            $lines = & $qsb --dump $tmp
+            $hlsl = @(); $inHlsl = $false; $capture = $false
+            foreach ($l in $lines) {
+              if ($l -match '^Shader \d+: HLSL') { $inHlsl = $true; continue }
+              if ($inHlsl -and $l -match '^Contents:$') { $capture = $true; continue }
+              if ($capture -and $l -match '^\*{10,}$') { break }
+              if ($capture) { $hlsl += $l }
+            }
+            if ($hlsl.Count -eq 0) { $failed += "$($s.Name)(dump)"; continue }
+            $f = "$($s.BaseName).hlsl"
+            Set-Content -Path $f -Value $hlsl -Encoding utf8
+            & $fxc /nologo /T ps_5_0 /E main /Fo "$($s.BaseName).cso" $f
+            if ($LASTEXITCODE -ne 0) { $failed += $s.Name }
+          }
+          if ($failed.Count -gt 0) { throw "HLSL 编译失败：$($failed -join ', ')" }
+          Write-Host "HLSL 全部通过"
+
       # ── 测一遍 + 冒烟 ─────────────────────────────────────────────────────
       #   ★ 不走 ctest：它在超时后只报 "Timeout"，看不到测试自己打到哪一步。
       #     这里逐个跑、逐个超时、把最后 30 行输出打出来。

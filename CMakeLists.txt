@@ -177,6 +177,12 @@ target_compile_definitions(ibcore PUBLIC
 qt_add_executable(photoset-reader
     src/main.cpp
 )
+# ★ Windows：**GUI 子系统**（`/SUBSYSTEM:WINDOWS`）—— 否则双击先弹一个 cmd 窗口
+#   （用户 2026-11-05 实测）。日志仍可重定向：从 cmd 里跑 `photoset-reader.exe > run.log 2>&1`
+#   时 GUI 进程同样继承句柄，只是不分配控制台。
+if(WIN32)
+    set_target_properties(photoset-reader PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
 # ★ 套件全部搬去 `tests/`（T0 第四批）后，应用**不再链 `testsupport`**（设计 14 §11）：
 #   `main.cpp` 里 0 个 `run*SelfTest` / 0 个套件 dispatch；dev CLI 与截图机制自带工具函数。
 target_link_libraries(photoset-reader PRIVATE ibcore)

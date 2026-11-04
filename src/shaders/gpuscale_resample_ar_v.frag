@@ -94,10 +94,10 @@ void main()
         vec2 uv = vUv;
         if (axis == 0) uv.x = (float(k) + 0.5) / float(inN);
         else           uv.y = (float(k) + 0.5) / float(inN);
-        acc += texture(uIn, uv).rgb * w;
+        acc += textureLod(uIn, uv, 0.0).rgb * w;
         sum += w;
-        vmin = min(vmin, texture(uMin, uv).rgb);
-        vmax = max(vmax, texture(uMax, uv).rgb);
+        vmin = min(vmin, textureLod(uMin, uv, 0.0).rgb);
+        vmax = max(vmax, textureLod(uMax, uv, 0.0).rgb);
     }
 
     vec3 c = acc / max(sum, 1e-6);

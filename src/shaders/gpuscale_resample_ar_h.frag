@@ -89,7 +89,7 @@ void main()
         vec2 uv = vUv;
         if (axis == 0) uv.x = (float(k) + 0.5) / float(inN);
         else           uv.y = (float(k) + 0.5) / float(inN);
-        vec3 v = texture(uIn, uv).rgb;
+        vec3 v = textureLod(uIn, uv, 0.0).rgb;
         acc += v * w;
         sum += w;
         vmin = min(vmin, v);
