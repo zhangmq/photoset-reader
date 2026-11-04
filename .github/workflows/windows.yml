@@ -275,6 +275,27 @@ jobs:
             if (Test-Path (Join-Path $stage $bad)) { throw "禁止分发 HEVC 组件：$bad" }
           }
           if (Test-Path "unrar-prefix\lib\unrar.dll") { Copy-Item unrar-prefix\lib\unrar.dll $stage -Force }
+
+          #   ── VC++ 运行时：windeployqt **不拷**，但目标机没装可再发行包就起不来 ──
+          $crt = Get-ChildItem -Path "$env:VCToolsRedistDir\x64" -Filter "Microsoft.VC*.CRT" -Directory |
+                 Select-Object -First 1
+          if ($crt) {
+            Copy-Item "$($crt.FullName)\*.dll" $stage
+            Write-Host "VC 运行时来自：$($crt.FullName)"
+          } else {
+            Write-Warning "找不到 VC 运行时目录（VCToolsRedistDir=$env:VCToolsRedistDir）"
+          }
+
+          #   ── 冒烟：**用打包好的目录**跑一次，缺 DLL / 缺平台插件会立刻露出来 ──
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $p = Start-Process -FilePath "$stage\photoset-reader.exe" -ArgumentList "--version" `
+               -PassThru -NoNewWindow -RedirectStandardOutput "stage-ver.out" -RedirectStandardError "stage-ver.err"
+          if (-not $p.WaitForExit(60000)) { $p.Kill(); throw "打包后冒烟超时" }
+          Get-Content stage-ver.out -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0) {
+            Get-Content stage-ver.err -ErrorAction SilentlyContinue
+            throw "打包后冒烟失败：exit $($p.ExitCode)"
+          }
           Copy-Item LICENSE, THIRD-PARTY.md, THIRD-PARTY.en.md, LICENSES\*.txt $stage
           Get-ChildItem $stage -Filter *.dll | Measure-Object -Property Length -Sum |
             ForEach-Object { Write-Host ("DLL 共 {0} 个 / {1:N1} MB" -f $_.Count, ($_.Sum / 1MB)) }
