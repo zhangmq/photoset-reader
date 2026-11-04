@@ -168,6 +168,9 @@ jobs:
         shell: pwsh
         run: |
           $env:QT_QPA_PLATFORM = "offscreen"
+          #   ★ 测试可执行也要能找到第三方 DLL（vcpkg 的 bin 不在 PATH 上）
+          #     否则进程起不来：exit code -1073741515 = 0xC0000135 STATUS_DLL_NOT_FOUND
+          $env:PATH = "C:\vcpkg\installed\x64-windows\bin;$env:GITHUB_WORKSPACE\unrar-prefix\lib;C:\Qt\$env:QT_VERSION\msvc2022_64\bin;$env:PATH"
           $failed = @()
           foreach ($t in "ib-test-scan", "ib-test-progress", "ib-test-meta") {
             Write-Host "== $t =="
