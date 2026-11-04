@@ -100,6 +100,8 @@ public:
     Q_PROPERTY(bool scanHidden READ scanHidden WRITE setScanHidden NOTIFY scanHiddenChanged)
     //   时间轴悬停预览（用户 2026-11-03）：关掉就不再弹预览条
     Q_PROPERTY(bool previewStrip READ previewStrip WRITE setPreviewStrip NOTIFY previewStripChanged)
+    //   日志级别（设置 → 系统）：debug / info / warning / error / off；改动立即生效并写盘
+    Q_PROPERTY(QString logLevel READ logLevel WRITE setLogLevel NOTIFY logLevelChanged)
     Q_PROPERTY(int  recurseDepth READ recurseDepth WRITE setRecurseDepth NOTIFY recurseDepthChanged)
     Q_PROPERTY(int  prefetchWindow READ prefetchWindow WRITE setPrefetchWindow
                                     NOTIFY prefetchWindowChanged)
@@ -230,6 +232,8 @@ public:
     void setInputFromKeyboard(bool on);
     bool scanHidden() const;
     bool previewStrip() const;
+    QString logLevel() const;
+    void setLogLevel(const QString &level);
     void setPreviewStrip(bool on);
     void setScanHidden(bool on);
     int  recurseDepth() const;
@@ -262,6 +266,7 @@ Q_SIGNALS:
     void inputFromKeyboardChanged();
     void scanHiddenChanged();
     void previewStripChanged();
+    void logLevelChanged();
     void recurseDepthChanged();
     void prefetchWindowChanged();
     void innerArchiveMaxMbChanged();

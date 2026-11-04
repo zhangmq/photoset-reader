@@ -10,56 +10,49 @@
 // ══ 分类的定义（名字见 logging.h 的声明）═════════════════════════════════════
 //   ★ 第三个参数 = **该分类的默认最低级别**：即使没有人调过 `iblog::init()`
 //     （例如测试套件直接链 `ibcore`、不经过 `main()`），debug 也不会漏到默认输出里。
-Q_LOGGING_CATEGORY(lcApp, "ib.app", QtInfoMsg)
-Q_LOGGING_CATEGORY(lcUi, "ib.ui", QtInfoMsg)
-Q_LOGGING_CATEGORY(lcScan, "ib.scan", QtInfoMsg)
-Q_LOGGING_CATEGORY(lcDecode, "ib.decode", QtInfoMsg)
-Q_LOGGING_CATEGORY(lcGpu, "ib.gpu", QtInfoMsg)
-
-namespace {
-
-enum class Level { Debug, Info, Warning, Error, Off };
-
-// `PHOTOSET_LOG` → 最低级别。空 / 拼错都按缺省 `info`（拼错与否由 `known` 带出去）。
-Level levelFromEnv(bool *known)
-{
-    const QByteArray raw = qgetenv("PHOTOSET_LOG").trimmed().toLower();
-    *known = true;
-    if (raw.isEmpty()) return Level::Info;
-    if (raw == "debug") return Level::Debug;
-    if (raw == "info") return Level::Info;
-    if (raw == "warning") return Level::Warning;
-    if (raw == "error") return Level::Error;
-    if (raw == "off") return Level::Off;
-    *known = false;
-    return Level::Info;
-}
-
-const char *levelName(Level l)
-{
-    switch (l) {
-    case Level::Debug: return "debug";
-    case Level::Info: return "info";
-    case Level::Warning: return "warning";
-    case Level::Error: return "error";
-    case Level::Off: return "off";
-    }
-    return "info";
-}
-
-} // namespace
+Q_LOGGING_CATEGORY(lcApp, "ib.app", QtWarningMsg)
+Q_LOGGING_CATEGORY(lcUi, "ib.ui", QtWarningMsg)
+Q_LOGGING_CATEGORY(lcScan, "ib.scan", QtWarningMsg)
+Q_LOGGING_CATEGORY(lcDecode, "ib.decode", QtWarningMsg)
+Q_LOGGING_CATEGORY(lcGpu, "ib.gpu", QtWarningMsg)
 
 namespace iblog {
 
-void init()
+bool levelFromName(const QString &name, Level *out)
 {
-    bool known = true;
-    const Level level = levelFromEnv(&known);
-    //   拼错 ⇒ **先**提示：此刻规则还没落地，warning 一定出得来（设置之后可能被 off 吞掉）
-    if (!known)
-        qCWarning(lcApp).noquote()
-            << QStringLiteral("[app] unknown PHOTOSET_LOG value, expected "
-                              "debug|info|warning|error|off; using info");
+    const QString n = name.trimmed().toLower();
+    Level l;
+    if (n == "debug") l = Level::Debug;
+    else if (n == "info") l = Level::Info;
+    else if (n == "warning") l = Level::Warning;
+    else if (n == "error") l = Level::Error;
+    else if (n == "off") l = Level::Off;
+    else return false;
+    if (out) *out = l;
+    return true;
+}
+
+QString levelName(Level l)
+{
+    switch (l) {
+    case Level::Debug: return QStringLiteral("debug");
+    case Level::Info: return QStringLiteral("info");
+    case Level::Warning: return QStringLiteral("warning");
+    case Level::Error: return QStringLiteral("error");
+    case Level::Off: return QStringLiteral("off");
+    }
+    return QStringLiteral("warning");
+}
+
+namespace {
+Level g_level = Level::Warning;
+}
+
+Level level() { return g_level; }
+
+void setLevel(Level level)
+{
+    g_level = level;
 
     //   ★ `setFilterRules()` 是**全量替换**：五个级别一律显式写清，避免沿用上一次的残留规则；
     //     规则只作用于 `ib.*`，Qt 自己的日志（`qml:` / `qt.*`）保持原有默认，照旧可见。
@@ -88,10 +81,12 @@ void init()
         break;
     }
 
-    //   生效结果用 **debug** 级回显：默认输出里不多占一行，`PHOTOSET_LOG=debug` 时能确认它生效了
+    //   生效结果用 **debug** 级回显：默认输出里不多占一行，调到 debug 时能确认它生效了
     qCDebug(lcApp).noquote()
-        << QStringLiteral("[app] log level = %1 (PHOTOSET_LOG)").arg(QLatin1String(levelName(level)));
+        << QStringLiteral("[app] log level = %1").arg(iblog::levelName(level));
 }
+
+void init() { setLevel(g_level); }
 
 // ══ 限流（见 logging.h）：一个 key 只放行第一次 ═══════════════════════════════
 //   ★ 锁里**只有集合查找/插入**：不做 I/O、不调日志、不等待 —— 与 logMessage 无关，

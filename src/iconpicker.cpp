@@ -26,7 +26,6 @@ int runIconPicker(int argc, char *argv[])
 {
     // ★ 本工具自己也有 `main()`（`tools/` 的独立目标）：日志分类同样要尽早初始化，
     //   否则 `PHOTOSET_LOG` 对它无效、默认级别也只剩分类默认的 info。
-    iblog::init();
     QGuiApplication app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("photoset-reader"));
     QCoreApplication::setApplicationVersion(QStringLiteral(PHOTOSET_VERSION));

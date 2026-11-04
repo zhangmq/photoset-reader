@@ -67,5 +67,26 @@ Item {
             }
         }
 
+        //   日志级别（用户 2026-11-04）：默认 warning；排障时调低。写盘 + 立即生效；
+        //   `--log-level` 可以在启动时临时覆盖一次（不写盘）。
+        SettingsRow {
+            label: qsTr("Log level")
+            description: qsTr("How much the app writes to the log; lower levels are for troubleshooting")
+            DropdownButton {
+                readonly property var levels: ["debug", "info", "warning", "error", "off"]
+                readonly property var labels: [qsTr("Debug"), qsTr("Info"),
+                                               qsTr("Warning"), qsTr("Error"), qsTr("Off")]
+                label: labels[Math.max(0, levels.indexOf(ui.logLevel))]
+                menuItems: [
+                    { text: labels[0], selected: ui.logLevel === "debug" },
+                    { text: labels[1], selected: ui.logLevel === "info" },
+                    { text: labels[2], selected: ui.logLevel === "warning" },
+                    { text: labels[3], selected: ui.logLevel === "error" },
+                    { text: labels[4], selected: ui.logLevel === "off" }
+                ]
+                onItemTriggered: function (i) { ui.logLevel = levels[i] }
+            }
+        }
+
     }
 }

@@ -99,6 +99,12 @@ UiModel::UiModel(QObject *parent)
     m_favorites = new ProgressListModel(this);
     m_favorites->setDirectory(favoritesDir());
 
+    //   日志级别来自设置（默认 warning）：**尽早落地**，后面的日志才按它过滤
+    {
+        iblog::Level lv = iblog::Level::Warning;
+        if (iblog::levelFromName(m_settings.logLevel(), &lv)) iblog::setLevel(lv);
+    }
+
     // ★ `ui.viewer` 在**没打开来源时就是 null**（QML 一律先判非空）。
 }
 
@@ -536,6 +542,18 @@ void UiModel::setScanHidden(bool on)
 }
 
 bool UiModel::previewStrip() const { return m_settings.previewStrip(); }
+
+QString UiModel::logLevel() const { return m_settings.logLevel(); }
+
+void UiModel::setLogLevel(const QString &level)
+{
+    iblog::Level l;
+    if (!iblog::levelFromName(level, &l)) return;      // 拼错：忽略（CLI / 界面都给固定选项）
+    if (m_settings.logLevel() == iblog::levelName(l)) return;
+    m_settings.setLogLevel(iblog::levelName(l));
+    iblog::setLevel(l);
+    emit logLevelChanged();
+}
 
 void UiModel::setPreviewStrip(bool on)
 {

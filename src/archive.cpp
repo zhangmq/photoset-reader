@@ -136,6 +136,14 @@ QString unrarErrorText(unsigned int code)
 
 ArchiveSource::~ArchiveSource()
 {
+    //   ★ 逐条目的读失败在过程里只打 debug（避免按页刷屏）；**收尾聚合一条 warning**
+    //     （用户 2026-11-04 的审计口径）
+    if (m_readFails > 0) {
+        qCWarning(lcScan).noquote()
+            << QStringLiteral("[scan] entries failed to read: %1 of %2 in %3")
+                   .arg(m_readFails).arg(m_names.size()).arg(m_path);
+        m_readFails = 0;
+    }
     close();
 }
 
@@ -532,7 +540,8 @@ QByteArray ArchiveSource::dataLibarchive(int index) const
         const bool ok = m_memory ? seq->r.openMemory(m_bytes, m_password)
                                  : seq->r.open(m_path, m_password);
         if (!ok) {
-            qCWarning(lcScan).noquote() << QStringLiteral("[scan] libarchive reopen failed: %1")
+            ++m_readFails;
+            qCDebug(lcScan).noquote() << QStringLiteral("[scan] libarchive reopen failed: %1")
                 .arg(archiveError(seq->r.a));
             delete seq;
             m_seqArc = nullptr;
@@ -560,7 +569,8 @@ QByteArray ArchiveSource::dataLibarchive(int index) const
                     if (err.contains(QLatin1String("passphrase"), Qt::CaseInsensitive)
                         || err.contains(QLatin1String("password"), Qt::CaseInsensitive))
                         m_needsPassword = true;          // ★ 密码错 / 没给：交给上层弹框
-                    qCWarning(lcScan).noquote() << QStringLiteral("[scan] libarchive extraction failed: %1 (%2)")
+                    ++m_readFails;
+                    qCDebug(lcScan).noquote() << QStringLiteral("[scan] libarchive extraction failed: %1 (%2)")
                         .arg(m_names.at(index), err);
                     bad = true;
                     break;
@@ -571,9 +581,10 @@ QByteArray ArchiveSource::dataLibarchive(int index) const
             ++seq->pos;                             // 游标前进（下一条接着读）
             if (bad || total != wantSize) {
                 if (!bad)
-                    qCWarning(lcScan).noquote()
+                    { ++m_readFails;
+                      qCDebug(lcScan).noquote()
                         << QStringLiteral("[scan] libarchive extraction incomplete: %1 (%2/%3 bytes)")
-                               .arg(m_names.at(index)).arg(total).arg(wantSize);
+                               .arg(m_names.at(index)).arg(total).arg(wantSize); }
                 delete seq;                         // 出错 ⇒ 游标作废（下次重开）
                 m_seqArc = nullptr;
                 return {};
@@ -583,8 +594,9 @@ QByteArray ArchiveSource::dataLibarchive(int index) const
         archive_read_data_skip(seq->r.a);
         ++seq->pos;
     }
-    qCWarning(lcScan).noquote() << QStringLiteral("[scan] libarchive entry not found: %1 (rc=%2)")
-                                   .arg(m_names.at(index)).arg(rc);
+    ++m_readFails;
+    qCDebug(lcScan).noquote() << QStringLiteral("[scan] libarchive entry not found: %1 (rc=%2)")
+                                 .arg(m_names.at(index)).arg(rc);
     delete seq;
     m_seqArc = nullptr;
     return {};
@@ -602,7 +614,8 @@ QByteArray ArchiveSource::dataUnrar(int index) const
         if (!seq->r.open(m_reopenPath, m_password, RAR_OM_EXTRACT)) {
             //   ★ 每个解码线程都会各自重开一次 ⇒ 按路径只报一次（否则刷屏，用户 2026-11-03）
             if (iblog::firstTime(QStringLiteral("scan/unrar-reopen:") + m_path))
-                qCWarning(lcScan).noquote() << QStringLiteral("[scan] libunrar reopen failed: %1")
+                ++m_readFails;
+                qCDebug(lcScan).noquote() << QStringLiteral("[scan] libunrar reopen failed: %1")
                                    .arg(unrarErrorText(seq->r.openResult));
             delete seq;
             m_seqUnrar = nullptr;
@@ -628,7 +641,8 @@ QByteArray ArchiveSource::dataUnrar(int index) const
             const int pr = RARProcessFile(seq->r.h, RAR_TEST, nullptr, nullptr);
             ++seq->pos;                             // 游标前进
             if (pr != ERAR_SUCCESS) {
-                qCWarning(lcScan).noquote() << QStringLiteral("[scan] libunrar extraction failed: %1 (%2)")
+                ++m_readFails;
+                qCDebug(lcScan).noquote() << QStringLiteral("[scan] libunrar extraction failed: %1 (%2)")
                     .arg(m_names.at(index), unrarErrorText(unsigned(pr)));
                 delete seq;
                 m_seqUnrar = nullptr;
@@ -647,7 +661,8 @@ QByteArray ArchiveSource::dataUnrar(int index) const
         RARProcessFile(seq->r.h, RAR_SKIP, nullptr, nullptr);
         ++seq->pos;
     }
-    qCWarning(lcScan).noquote() << QStringLiteral("[scan] libunrar entry not found: %1 (rc=%2)")
+    ++m_readFails;
+    qCDebug(lcScan).noquote() << QStringLiteral("[scan] libunrar entry not found: %1 (rc=%2)")
                                    .arg(m_names.at(index)).arg(rc);
     delete seq;
     m_seqUnrar = nullptr;

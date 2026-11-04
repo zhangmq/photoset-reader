@@ -130,6 +130,8 @@ private:
     QString m_format;
     bool m_encrypted = false;
     mutable bool m_needsPassword = false;   // dataAt 是 const，但"密码错"要在里面标记
+    //   逐条目读失败的**计数**（用户 2026-11-04：per-entry 的失败降 debug，收尾聚合成一条）
+    mutable int m_readFails = 0;
     QString m_openError;                 // 最近一次失败的英文原因（绝不含密码）
     bool m_solid = false;                // RAR solid ⇒ 不能随机读（见 isSolid）
     // ★ v7：RAR 的 openBytes 落的临时文件（**本对象拥有**，close()/析构即删）。

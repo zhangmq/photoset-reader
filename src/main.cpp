@@ -145,9 +145,9 @@ bool forwardToRunningInstance(const QString &path, bool activateOnly)
 
 int main(int argc, char *argv[])
 {
-    // ★ 分类日志的**最早**初始化：本文件下面第一条诊断日志之前就要落地
-    //   （`PHOTOSET_LOG` 决定 `ib.*` 的最低级别；默认 info）。
-    iblog::init();
+    // ★ 分类日志的默认级别 = warning（`logging.h` 的分类默认值）；用户在设置里改的级别
+    //   由 `UiModel` 构造时落地，`--log-level` 可临时覆盖一次（不写盘）。
+    iblog::setLevel(iblog::Level::Warning);
 
     // ★ 文件对话框要**系统原生**（用户要求 #1）。这里要选的是**用哪套实现**：
     //   · KDE 桌面 ⇒ `kde`：plasma-integration 提供 QPlatformFileDialogHelper + KFileWidget，
@@ -206,6 +206,11 @@ int main(int argc, char *argv[])
     parser.addOption(fullscreenOpt);
     parser.addPositionalArgument(QStringLiteral("path"),
                                  QStringLiteral("Image folder, archive or file to open"));
+    QCommandLineOption logLevelOpt(QStringLiteral("log-level"),
+                                   QStringLiteral("Log level for this run: debug|info|warning|error|off"
+                                                  " (overrides the setting; not persisted)"),
+                                   QStringLiteral("level"));
+    parser.addOption(logLevelOpt);
     parser.process(app);
 
 #ifdef Q_OS_UNIX
@@ -224,6 +229,20 @@ int main(int argc, char *argv[])
         std::signal(SIGHUP, onQuitSignal);    // 终端挂断
     }
 #endif
+
+    //   `--log-level`：**尽早**落地（启动早期的日志也按它过滤）；`UiModel` 构造会按设置再设一次，
+    //   所以构造完要**再覆盖回来**（见下面的 `uiLogOverride`）。
+    bool uiLogOverride = false;
+    iblog::Level cliLogLevel = iblog::Level::Warning;
+    if (parser.isSet(logLevelOpt)) {
+        if (iblog::levelFromName(parser.value(logLevelOpt), &cliLogLevel)) {
+            uiLogOverride = true;
+            iblog::setLevel(cliLogLevel);
+        } else {
+            qCWarning(lcApp).noquote()
+                << QStringLiteral("[app] invalid --log-level, expected debug|info|warning|error|off");
+        }
+    }
 
     //   来源 = **一个位置参数** —— 文件管理器按 .desktop 的
     //   `Exec=photoset-reader %F` 启动我们时，路径就是以位置参数传进来的。
@@ -291,6 +310,7 @@ int main(int argc, char *argv[])
     //   ★ **全局只有一个 VM** = `app::UiModel`（QML 里的 `ui`）——viewer（`ui.viewer.*`）由它持有；
     //     它自己就是 QML 侧的类型信息不需要额外注册（只有一个界面之后没有枚举要给 QML 读）。
     auto *ui = new app::UiModel(&app);
+    if (uiLogOverride) iblog::setLevel(cliLogLevel);   // CLI 覆盖设置（不写盘）
     //   时间轴悬停预览：provider 只读位置表 + 解码缩略图（位置表归 UiModel ⇒ 换来源也不会悬空）
     engine.addImageProvider(QStringLiteral("preview"), new PreviewProvider(ui->previewStore()));
     //   ★ 换语言：`UiModel` 负责装/摘 `QTranslator`，**界面重算在本行** ——
