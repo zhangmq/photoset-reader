@@ -58,7 +58,7 @@ struct AppSettings
     //   ★ 2026-10-20 定案：这里是**全局默认**，不是当前阅读态 —— 每次进沉浸视图新建 viewer 时取一次；
     //     UI（底栏）上的调整只改 viewer，不回写这里。只有设置对话框才落盘。
     int  themeMode() const { return m_themeMode; }              // 0 跟随系统 / 1 浅 / 2 深
-    int  intervalMs() const { return m_intervalMs; }            // 幻灯片间隔默认，下限 50ms
+    int  intervalMs() const { return m_intervalMs; }            // 幻灯片间隔默认（0–60000 ms）
     int  defaultFitMode() const { return m_fitMode; }           // 0 原始 1 适应屏幕 2 适应宽度 3 适应高度
     int  defaultLayout() const { return m_layout; }             // 0 单幅 / 1 双幅
     int  defaultLoop() const { return m_loop; }                 // 0 不循环 / 1 全部循环 / 2 文件夹循环
@@ -81,7 +81,7 @@ struct AppSettings
     // ★ v7：**内层压缩包上限**（MB）—— 超过上限的内层压缩包不展开（嵌套包不常见，
     //   避免为此付出大代价）。判定在**解压前**（从归档条目元数据取成员大小）。
     int  innerArchiveMaxMb() const { return m_innerArchiveMaxMb; }   // 默认 512，范围 64–8192
-    //   ★ 2026-10-31：收藏夹路径（空 = 默认 `<配置目录>/收藏`；用户可改成任意目录，含外部盘）
+    //   ★ 2026-10-31：收藏夹路径（空 = 默认 `<配置目录>/favorites`；用户可改成任意目录，含外部盘）
     QString favoritesDir() const { return m_favoritesDir; }
 
     // 界面语言：**空串 = 跟随系统**；否则是语言代码（`zh_CN` / `en` …）。
@@ -119,7 +119,7 @@ private:
     int  m_recurseDepth = 5;
     int  m_prefetchWindow = 8;
     int  m_innerArchiveMaxMb = 512;     // ★ v7：内层压缩包上限（MB），范围 64–8192
-    QString m_favoritesDir;             // 收藏夹路径（空 = 默认 `<配置目录>/收藏`）
+    QString m_favoritesDir;             // 收藏夹路径（空 = 默认 `<配置目录>/favorites`）
     QString m_language;                 // 界面语言代码（空 = 跟随系统）
 };
 
