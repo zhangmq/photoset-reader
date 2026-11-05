@@ -431,6 +431,15 @@ private:
     //   挂上闹钟（**只在宣布新屏时**；幂等：同一 deadline 不重复 start；等缓存时不挂）
     void    armBeat();
     void    cancelBeat();
+    //   ★ **每秒体检**（2026-11-06 用户要求，用来自己跑 5 秒对比预取 0/8）：
+    //     每秒打一行 `[ui] viewer: 1s ready=… screens=… started=… inflight=… pending=… L=…`。
+    //     · `ready`    = 这一秒里解出图（变成 Ready，含占位图）的**张数**；
+    //     · `screens`  = 这一秒里"上新屏"的**屏数**；
+    //     · `started`  = 这一秒里**派出去**的解码数；
+    //     · `inflight` = 行尾此刻在飞的解码数；
+    //     · `pending`  = 本屏还差几张（= 调度器眼里的"未满足"）。
+    //     空闲（三项都为 0 且没有在飞）**不打**，免得刷屏。
+    void    onStatTick();
     void    stopPlaying(const QString &noticeText);   // 停播（到头）
     qint64  nowMs() const { return m_now ? m_now() : 0; }
 
@@ -452,6 +461,10 @@ private:
     QVariantList osdColumn(int itemIndex);    // OSD 的一列（按需读；见 osdRows）
     QString      relativePathOf(int itemIndex) const;   // 相对图集根的路径（`A!/B`）
     QTimer  *m_beat = nullptr;                // 单发闹钟（只负责"到点叫醒"，不参与节奏）
+    QTimer  *m_stat = nullptr;                // 每秒体检（只打日志，不参与调度）
+    int      m_statReady = 0;                 // 这一秒解出图的张数
+    int      m_statScreens = 0;               // 这一秒上新屏的屏数
+    int      m_statStarted = 0;               // 这一秒派出去的解码数
     NowFn    m_now;                           // 单调时钟（可注入；生产在构造里装）
     qint64   m_reqAt = 0;                     // 上一次"成为当前屏"的动作**被请求**的时刻
     bool     m_beatArmed = false;             // 闹钟已挂（同一 deadline 不重复 start）

@@ -47,6 +47,12 @@ ViewerModel::ViewerModel(int prefetchLength, QObject *parent)
     m_beat->setSingleShot(true);
     m_beat->setTimerType(Qt::CoarseTimer);
     connect(m_beat, &QTimer::timeout, this, &ViewerModel::onBeat);
+    //   ★ 每秒体检（用户自己跑 5 秒对比预取 0/8 时看这一行）：只打日志，不参与任何调度。
+    m_stat = new QTimer(this);
+    m_stat->setInterval(1000);
+    m_stat->setTimerType(Qt::CoarseTimer);
+    connect(m_stat, &QTimer::timeout, this, &ViewerModel::onStatTick);
+    m_stat->start();
 }
 
 //   **不 join 工作线程**（join 会把退出拖住几百毫秒）：**不加锁**地置失效记号 + 置空目标
@@ -143,7 +149,7 @@ void ViewerModel::setPrefetchWindow(int prefetchLength)
     const int v = qMax(0, prefetchLength);
     if (v == m_length) return;
     //   验收用（`--log-level debug`）：改设置时能看到它真的传到了 viewer
-    qCDebug(lcUi).noquote()
+    qCInfo(lcUi).noquote()
         << QStringLiteral("[ui] viewer: prefetch window L=%1 -> %2").arg(m_length).arg(v);
     m_length = v;
     evaluateScreen();
@@ -170,6 +176,7 @@ void ViewerModel::onLoaded(quint64 epoch, int item, const QImage &image, int pas
     if (!image.isNull()) {
         it->image = image;
         it->state = Entry::State::Ready;
+        ++m_statReady;                                   // 每秒体检：这一秒多解出一张
     } else {
         //   这次解码是在**用户输入密码之前**发起的（结果回来晚）：条目现在已经有密码了
         //   ⇒ 丢掉这个结果，别误报"要密码"、也别把它记成任何结论（等 retry 的新结果）。
@@ -451,6 +458,31 @@ void ViewerModel::armBeat()
     m_beatArmed    = true;
     m_beatDeadline = deadline;
     m_beat->start(remain);
+}
+
+//   每秒体检（**只打日志**，不参与调度）：用户自己跑 5 秒对比预取 0 / 8 时看这一行。
+//   `ready` = 这秒解出几张、`screens` = 这秒上几屏、`started` = 这秒派了几条、
+//   `inflight` = 现在还在飞、`pending` = 本屏还差几张。空闲不打，避免刷屏。
+void ViewerModel::onStatTick()
+{
+    const int ready = m_statReady, screens = m_statScreens, started = m_statStarted;
+    m_statReady = m_statScreens = m_statStarted = 0;
+
+    int pending = 0;
+    if (m_seq) {
+        for (int i : screenItems(screenStart(m_pos))) {
+            if (!inLoopScope(i)) continue;
+            if (isMissing(i)) continue;
+            if (waitsPassword(i) && !passwordDeclined(i)) continue;
+            if (entryReady(i)) continue;
+            ++pending;
+        }
+    }
+    if (ready == 0 && screens == 0 && started == 0 && m_inFlight == 0 && pending == 0) return;
+
+    qCInfo(lcUi).noquote()
+        << QStringLiteral("[ui] viewer: 1s ready=%1 screens=%2 started=%3 inflight=%4 pending=%5 L=%6")
+               .arg(ready).arg(screens).arg(started).arg(m_inFlight).arg(pending).arg(m_length);
 }
 
 //   闹钟到点：**不预存目标**，一律按当时状态计算。
@@ -960,6 +992,7 @@ void ViewerModel::reconcile()
         e.pinned = pinned;
         m_entries.insert(item, e);
         ++m_inFlight;
+        ++m_statStarted;                                 // 每秒体检：这一秒派出去一条
         if (!pinned) ++lookahead;
         preload(m_seq->at(item), item);
     }
@@ -1297,6 +1330,7 @@ void ViewerModel::announce(int start, const QVector<int> &items)
 {
     m_announcedStart = start;
     m_announcedItems = items;
+    ++m_statScreens;                                     // 每秒体检：这一秒上新屏的屏数
     onScreenUp();
 }
 
