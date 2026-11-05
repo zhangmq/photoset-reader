@@ -9,6 +9,7 @@ out/
 .testdata
 .scratch/
 .tmp/
+.local/
 AGENTS.md
 
 # 构建/编辑器产物
