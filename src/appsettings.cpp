@@ -110,7 +110,8 @@ void AppSettings::load()
     m_previewStrip  = o.value(QStringLiteral("previewStrip")).toBool(m_previewStrip);
     m_logLevel      = o.value(QStringLiteral("logLevel")).toString(m_logLevel);
     m_recurseDepth  = qBound(1, o.value(QStringLiteral("recurseDepth")).toInt(m_recurseDepth), 64);
-    m_prefetchWindow = qBound(3, o.value(QStringLiteral("prefetchWindow")).toInt(m_prefetchWindow), 64);
+    //   ★ 预取张数：0 合法（2026-11-05 用户：预取数量就是预取数量，当前屏不算预取）
+    m_prefetchWindow = qBound(0, o.value(QStringLiteral("prefetchWindow")).toInt(m_prefetchWindow), 64);
     m_innerArchiveMaxMb = qBound(64, o.value(QStringLiteral("innerArchiveMaxMb"))
                                          .toInt(m_innerArchiveMaxMb), 8192);
     m_favoritesDir  = o.value(QStringLiteral("favoritesDir")).toString();

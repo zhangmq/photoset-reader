@@ -45,10 +45,11 @@ Item {
 
         SettingsRow {
             label: qsTr("Prefetch window")
-            description: qsTr("Number of images decoded ahead (the window slides as you page)")
+            //   ★ 0 合法（用户 2026-11-05）：预取数量就是预取数量，当前屏那 1~2 张不算在内。
+            description: qsTr("Number of images decoded ahead (0 = none; the window slides as you page)")
             NumberField {
                 value: ui.prefetchWindow
-                from: 3
+                from: 0
                 to: 64
                 suffix: qsTr("images")
                 onEdited: function (v) { ui.prefetchWindow = v }

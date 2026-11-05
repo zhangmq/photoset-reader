@@ -75,8 +75,9 @@ struct AppSettings
     //   日志级别（用户 2026-11-04）：debug / info / warning / error / off，默认 warning
     QString logLevel() const { return m_logLevel; }
     int  recurseDepth() const { return m_recurseDepth; }        // 默认 5 层
-    //   ★ T2d-1d-②：语义 = **两个方向的条数相加**（队列长度恒为该值），默认 **8**。
+    //   ★ T2d-1d-②：语义 = **预取的图数**（当前屏那 1~2 张不算预取、不占这个额度），默认 **8**。
     //     名字沿用旧名（改名按术语铁律单列报批）。
+    //   ★ 2026-11-05（用户）：**0 合法** —— 预取数量就是预取数量；0 = 只备本屏、不预热邻居。
     int  prefetchWindow() const { return m_prefetchWindow; }
     // ★ v7：**内层压缩包上限**（MB）—— 超过上限的内层压缩包不展开（嵌套包不常见，
     //   避免为此付出大代价）。判定在**解压前**（从归档条目元数据取成员大小）。
@@ -99,7 +100,7 @@ struct AppSettings
     void setPreviewStrip(bool v) { m_previewStrip = v; save(); }
     void setLogLevel(const QString &v) { m_logLevel = v; save(); }
     void setRecurseDepth(int v) { m_recurseDepth = qBound(1, v, 64); save(); }
-    void setPrefetchWindow(int v) { m_prefetchWindow = qBound(3, v, 64); save(); }
+    void setPrefetchWindow(int v) { m_prefetchWindow = qBound(0, v, 64); save(); }
     void setInnerArchiveMaxMb(int v) { m_innerArchiveMaxMb = qBound(64, v, 8192); save(); }
     void setFavoritesDir(const QString &v) { m_favoritesDir = v; save(); }
     void setLanguage(const QString &v) { m_language = v; save(); }
