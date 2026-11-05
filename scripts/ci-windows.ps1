@@ -738,7 +738,9 @@ Import-MsvcEnvironment
 switch ($Step) {
     'deps'      { Invoke-Deps; break }
     'configure' { Invoke-Configure; break }
-    'build'     { Invoke-Build; break }
+    #   ★ `-Clean` 在 `-Step build` 上也要生效（2026-11-05 教训，见 docs 坑-18）：
+    #     只删 build 目录会让 `cmake --build` 没有缓存，所以这里**先 configure（它负责删）**再 build。
+    'build'     { if ($Clean) { Invoke-Configure }; Invoke-Build; break }
     'hlsl'      { Invoke-HlslCheck; break }
     'test'      { Invoke-Tests; break }
     'package'   { Invoke-Package; break }
