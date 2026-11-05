@@ -1191,6 +1191,15 @@ void ViewerModel::retryNeedingPassword()
     reconcile();
 }
 
+//   用户**取消**了密码输入：`Sequence::declinePassword(key)` 之后那一格从"等密码"变成"缺"
+//   （`passwordDeclined()` 判的），前端得重判一次才能跳屏 / 挂节拍。
+//   ★ 不重取、不清别的结论：取消 ≠ 密码错，没有"再试一次"的意思。
+void ViewerModel::passwordStateChanged()
+{
+    evaluateScreen();
+    reconcile();
+}
+
 void ViewerModel::evaluateScreen()
 {
     updateLoading();                      // 浮层按当前状态当场算（唯一更新入口）
@@ -1209,12 +1218,19 @@ void ViewerModel::evaluateScreen()
             return;
         }
 
-        //   ② 数三种格：没结论 / 有图 / 缺；另数"等密码"的（含"用户已取消"的不算）
+        //   ② 数三种格：等密码 / 没结论 / 有图（"用户已取消密码"的按"缺"算，不进等密码）
         int pending = 0, ready = 0, needsPw = 0;
         for (int i : items) {
+            if (waitsPassword(i) && !passwordDeclined(i)) { ++needsPw; continue; }  // 不是"没结论"，是等用户
             if (cellOf(i) == Cell::Pending) ++pending;
             else if (cellOf(i) == Cell::Ready) ++ready;
-            if (waitsPassword(i) && !passwordDeclined(i)) ++needsPw;
+        }
+        //   ★★ 等密码 ⇒ **先问、且不挂节拍**（2026-11-05 用户纠正：它不是"有结论"）。
+        //     双幅里另一页就绪也照问 —— 否则那一页永远空着、幻灯片还继续往前翻。
+        if (needsPw > 0) {
+            if (ready > 0) updateDisplay(start, items);   // 能显示的先显示（另一格留空）
+            maybeAskPassword(items);
+            return;
         }
         if (pending > 0) {                // ★ 还有位置没结论 ⇒ 不宣布、不挂节拍
             //   ★ ★ 一格都没就绪时**什么都不动**（画面 / 页码都不许跳）：
@@ -1226,11 +1242,6 @@ void ViewerModel::evaluateScreen()
         if (ready > 0) {                  // 有图 ⇒ 显示 + 宣布（宣布那一刻挂节拍）
             updateDisplay(start, items);
             announce(start, items);
-            return;
-        }
-        if (needsPw > 0) {                // 一条图都没有、但要密码 ⇒ **停在原地**（不跳屏）
-            updateDisplay(start, items);
-            maybeAskPassword(items);
             return;
         }
 
@@ -1276,19 +1287,25 @@ void ViewerModel::clearAnnounced()
 
 //   本屏每一格的**前端口径**：
 //     · 区间外（文件夹循环跨边界那一格）⇒ 缺（不显示、也不等它）；
-//     · 有图（真图 / 占位图）⇒ 有图；已知缺 / 等密码 ⇒ 缺（"等密码"另有专门判定）；
-//     · 其余 ⇒ 还没结论。
+//     · 已知缺 ⇒ 缺；有图（真图 / 占位图）⇒ 有图；
+//     · **等密码 → 还没结论**（★ 2026-11-05 用户纠正）：它不是"缺"，也不能算"有结论"——
+//       图还没拿到，用户也没答，节拍**不许**挂（否则会带着一个永远空着的半页往前翻）。
+//       用户取消密码之后才降级成"缺"（那时才允许跳屏 / 挂节拍）。
 ViewerModel::Cell ViewerModel::cellOf(int item) const
 {
     if (item < 0) return Cell::Missing;
     if (!inLoopScope(item)) return Cell::Missing;
     if (isMissing(item)) return Cell::Missing;
-    if (waitsPassword(item)) return Cell::Missing;   // 结论是"读不到"，图由界面的占位说明承担
+    if (waitsPassword(item) && !passwordDeclined(item)) return Cell::Pending;
+    if (waitsPassword(item)) return Cell::Missing;     // 用户取消过 ⇒ 当缺（跳屏）
     if (entryReady(item)) return Cell::Ready;
     return Cell::Pending;
 }
 
-//   本屏每个位置都有结论（有图 / 缺 / 等密码）= **不在等缓存**（节拍能不能挂看它）。
+//   本屏每个位置都有结论（有图 / 缺）= **不在等缓存**（节拍能不能挂看它）。
+//   ★★ **只看本屏**（`screenItems(screenStart(m_pos))`）：预取窗口 `L` 是**后台**的事，
+//     从来不是"上屏/挂钟"的条件 —— 翻一屏只等这一屏那一两格（2026-11-05 用户强调）。
+//   ★ "等密码（用户还没取消）"算 **没结论** ⇒ 不挂钟（它既不是缺、也不该被翻过去）。
 bool ViewerModel::screenSettled() const
 {
     if (!m_seq || m_seq->count() <= 0) return false;
@@ -1348,8 +1365,12 @@ void ViewerModel::updateDisplay(int start, const QVector<int> &items)
 {
     const QImage a = imageOf(items.value(0, -1));
     const QImage b = imageOf(items.value(1, -1));
-    const bool imageChanged = a.cacheKey() != m_imageA.cacheKey()
-                              || b.cacheKey() != m_imageB.cacheKey();
+    //   ★ **按幅判变化、按幅 emit**（2026-11-05 用户报"双幅时第一幅比第二幅刷得勤"）：
+    //     以前只要任一格变了就两个信号都发 ⇒ 双幅里第二页晚到时，第一页（没变）也被重新
+    //     赋值一次（QML 那边等于重传纹理 / 重画），看起来就是"第一幅一直在刷"。
+    const bool aChanged = a.cacheKey() != m_imageA.cacheKey();
+    const bool bChanged = b.cacheKey() != m_imageB.cacheKey();
+    const bool imageChanged = aChanged || bChanged;
     const bool screenChanged = (m_cursor != start) || (m_keyCount != items.size());
 
     // 顶栏文件名：按**这一屏真实的条目**取（配对可能跳过缺条目，不能拿 cursor+1 推）
@@ -1372,10 +1393,8 @@ void ViewerModel::updateDisplay(int start, const QVector<int> &items)
     m_keyCount   = items.size();
     m_cursor     = start;
     updateLoading();                          // 上屏之后也更新一次（浮层与其他状态无关）
-    if (imageChanged) {
-        emit imageAChanged();
-        emit imageBChanged();
-    }
+    if (aChanged) emit imageAChanged();        // ★ 只发**变了的那一幅**（见上）
+    if (bChanged) emit imageBChanged();
     if (!imageChanged && !screenChanged && !metaChanged) return;
     emit currentChanged();
     // 换画面 ⇒ 视图态复位（未锁定时按当前 fit 重算 zoom；锁定 ⇒ 保留 zoom/pan）

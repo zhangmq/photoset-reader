@@ -167,9 +167,13 @@ public:
     Q_INVOKABLE void setViewport(qreal logicalW, qreal logicalH, qreal dpr);
     Q_INVOKABLE void applyFit();
     Q_INVOKABLE void panBy(qreal dx, qreal dy);
-    //   ★ 加密压缩包（设计 22 §5.3）：用户提交了密码 ⇒ 把**所有"等密码"的坏因**清掉再重取。
+    //   ★ 加密压缩包（设计 22 §5.3）：用户提交了密码 ⇒ 把**所有"等密码"的结论**清掉再重取。
     //     唯一调用点 = "提交密码"，**不做任何自动重试**。
     Q_INVOKABLE void retryNeedingPassword();
+    //   ★ 用户**取消**了密码输入（`Sequence::declinePassword`）：那一格从"等密码"降级成"缺"，
+    //     前端要**重判一次**才能跳屏 / 挂节拍（否则幻灯片会停在一页永远等不到的图上）。
+    //     与上面的区别：**不重取、不清别的结论**。
+    void passwordStateChanged();
     //   ★ 时间轴悬停预览（用户 2026-11-03）：以 `center` 为中心取邻近条目，按固定高度等比铺开，
     //     返回 [{ index, w, h, url }]（url 是 `image://preview/…`）。GUI 线程调用；位置表交给 provider。
     //     `heightPx` = 预览条高度；`maxWidthPx` = 窗口宽度（填满即停，最多 12 张）。

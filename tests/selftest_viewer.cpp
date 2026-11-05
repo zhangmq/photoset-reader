@@ -154,6 +154,11 @@ int runViewerSelfTest(const QString &realDir)
             vm.setSequence(&sq);
             vm.setDoublePage(true);
             vm.setIntervalMs(0);
+            //   ★ 顺便量一下**两幅各自的刷新次数**（用户 2026-11-05：双幅时第一幅明显比第二幅
+            //     刷得勤）。模型层应当对称：同一屏的 A / B 要么一起更新，要么各更新一次。
+            int updA = 0, updB = 0;
+            QObject::connect(&vm, &fetch::ViewerModel::imageAChanged, &vm, [&] { ++updA; });
+            QObject::connect(&vm, &fetch::ViewerModel::imageBChanged, &vm, [&] { ++updB; });
             const PlayResult r = play(vm, 20000);
             const int lastStart = sq.pairStart(sq.count() - 1);
             check(r.stopped,
@@ -164,6 +169,9 @@ int runViewerSelfTest(const QString &realDir)
                       .arg(r.reached).arg(lastStart));
             check(r.advanced >= 19,
                   QStringLiteral("① 双幅：真的翻了 19 屏以上（实际 %1）").arg(r.advanced));
+            check(updB > 0 && updB + 2 >= updA && updA + 2 >= updB,
+                  QStringLiteral("① 双幅：两幅刷新次数对称（A=%1 / B=%2，屏数=%3）")
+                      .arg(updA).arg(updB).arg(r.advanced + 1));
         }
 
         // ══ ② 单幅 / 0ms / L=0：预取深度 0 也得照常播 ══

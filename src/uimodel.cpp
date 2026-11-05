@@ -800,6 +800,9 @@ void UiModel::cancelPassword()
     if (decodeTime) {
         //   ★ 浏览进度文件时取消 ⇒ 只记"别再问"，**不关来源**（用户还在看图）
         if (m_src.seq) m_src.seq->declinePassword(key);
+        //   ★ 回通知 viewer 重判一次：这一格从"等密码"降级成"缺"，
+        //     前端才可能跳屏 / 挂节拍（否则幻灯片会停在那一页不动）。见 `passwordStateChanged()`。
+        if (m_src.vm) m_src.vm->passwordStateChanged();
         qCInfo(lcUi).noquote() << QStringLiteral("[ui] password cancelled (item stays unreadable)");
         return;
     }
