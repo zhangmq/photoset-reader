@@ -20,7 +20,8 @@ Rectangle {
 
     height: stripH
     width: parent ? parent.width : 0
-    //   ★ 外部只改 `opened`（用户 2026-11-06）：显隐 + 滑入滑出都在本组件里演
+    //   ★ 外部只改 `wantOpen`（**意图**）；真正的开合 `opened` 由本组件自己锁存（见下）。
+    property bool wantOpen: false
     property bool opened: false
     visible: opened || slide < 1
     //   ★★ 滑动途中**整条不吃事件**（用户 2026-11-06）：滑动开始就关，**再次到位才开启**。
@@ -44,6 +45,23 @@ Rectangle {
         NumberAnimation { duration: Theme.durMed; easing.type: Easing.OutCubic }
     }
     transform: Translate { y: root.slide * root.height }
+
+    //   ★★ **"打开"只在完全收起时接受**（用户 2026-11-06 报的"上下蹲起"的根因）：
+    //     条的收起位盖住"进度条 + 控制条"那一块，指针就在那儿 ⇒ 条一滑动就等于**从指针
+    //     身下扫过**，hover 会在"在条里 / 不在条里"之间反复跳；如果把这个信号直接接到
+    //     `opened` 上，一次滑出会被自己重新拉起来 —— 进→出→进→出，条就上下蹲起。
+    //     ⇒ 收起随时可以（安全方向）；**打开只允许在 `slide === 1`（完全收起）时**，
+    //       也就是"一滑出必须走完，才允许再滑入"。滑动途中整条又是 `enabled: false`，
+    //       两条一起把这一类自激循环堵死。
+    onWantOpenChanged: syncOpened()
+    onSlideChanged: if (slide === 1) syncOpened()
+    function syncOpened() {
+        if (!wantOpen) {
+            if (opened) opened = false
+        } else if (!opened && slide === 1) {
+            opened = true
+        }
+    }
 
     //   开始收起时清掉 hover：滑动途中条会扫过底栏，不能再把自己"顶"回来（会抖）
     onOpenedChanged: if (!opened) hovered = false

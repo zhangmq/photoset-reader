@@ -197,9 +197,10 @@ Item {
         focusX: root.previewShown.focusX ?? 0
         focusW: root.previewShown.focusW ?? 0
         //   显示条件：指针在**进度条** 或 在**预览条**里（用户 2026-11-03）
-        //   ★ 只给 `opened`：滑入 / 滑出由 `TimelinePreview` 自己演（用户 2026-11-06）
-        opened: root.previewEnabled && (timeline.hovered || previewStrip.hovered)
-                && (root.previewShown.items ? root.previewShown.items.length > 0 : false)
+        //   ★ 这里只给**意图** `wantOpen`：开合状态由 `TimelinePreview` 锁存
+        //     （"打开"只在完全收起时接受，防止条滑过指针把自己重新拉起来 ⇒ 上下蹲起）
+        wantOpen: root.previewEnabled && (timeline.hovered || previewStrip.hovered)
+                  && (root.previewShown.items ? root.previewShown.items.length > 0 : false)
         onItemClicked: function (i) { root.seeked(i) }      // 点缩略图 = 跳到那一页
     }
     //   ★ 预览条收起 ⇒ 作废"已显示的那一份"：下次进入进度条按**首份**处理（不门控、立即出现）。
