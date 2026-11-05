@@ -18,6 +18,7 @@
 
 #include "appsettings.h"
 #include "sequence.h"
+#include "uimodel.h"
 #include "viewermodel.h"   // `src/` 在 include 路径上（testsupport 给的）
 
 // ══ 阅读屏自检（ib-test-viewer）════════════════════════════════════════════
@@ -320,6 +321,19 @@ int runViewerSelfTest(const QString &realDir)
             check(again.prefetchWindow() == 12,
                   QStringLiteral("⑥ 设置：改完**立刻落盘**（新实例读回 %1，期望 12）")
                       .arg(again.prefetchWindow()));
+        }
+        {
+            //   ★ 走**产品那条路**：QML 里 `ui.prefetchWindow = v` 等价于调这个 setter。
+            //     用户报的"改成 8 也变回 3"就出在这条路上（重复夹取 + 提前 return）。
+            app::UiModel ui;
+            ui.setPrefetchWindow(8);
+            check(ui.prefetchWindow() == 8,
+                  QStringLiteral("⑥ 设置：UiModel 收到 8（实际 %1）").arg(ui.prefetchWindow()));
+            app::AppSettings fresh;
+            fresh.load();
+            check(fresh.prefetchWindow() == 8,
+                  QStringLiteral("⑥ 设置：经 UiModel 写完后**文件里也是 8**（实际 %1）")
+                      .arg(fresh.prefetchWindow()));
         }
         QFile::remove(settingsPath);
     }

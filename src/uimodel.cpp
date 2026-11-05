@@ -43,6 +43,11 @@ UiModel::UiModel(QObject *parent)
 {
     // ★★ 运行期设置的**唯一实例**在这里 load（时机等价：本类被建出来之后才有人读设置）。
     m_settings.load();
+    //   验收用（`--log-level debug`）：设置**从哪个文件读到了什么** —— 排查"改了不生效"时
+    //   第一眼要看的就是这一行（是没存进去、还是读的不是同一个文件？）
+    qCDebug(lcUi).noquote()
+        << QStringLiteral("[ui] settings: path=%1 prefetchWindow=%2")
+               .arg(m_settings.filePath()).arg(m_settings.prefetchWindow());
     //   ★ 翻译要在**任何 QML 加载之前**装好（本类在 `engine.load()` 之前构造）：
     //     否则首帧按源串（英文）渲染，切中文时整屏文字闪一下。
     applyLanguage();
@@ -594,6 +599,8 @@ void UiModel::setPrefetchWindow(int v)
     if (m_settings.prefetchWindow() == v) return;
     m_settings.setPrefetchWindow(v);
     const int stored = m_settings.prefetchWindow();   // 落库之后的规范值（唯一的边界在那边）
+    //   验收用：设置页改这一项时日志里会有一行（值没变就不会走到这儿 —— 那也是信息）
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] prefetch window -> %1 (saved)").arg(stored);
     emit prefetchWindowChanged();
     //   ★ 设置值是全局的、由本类持有；viewer 只**用即时值** ⇒ 直接交给它，
     //     不重建（重建 = 重扫来源，既慢又会把密码表带丢，用户 2026-11-03）。
