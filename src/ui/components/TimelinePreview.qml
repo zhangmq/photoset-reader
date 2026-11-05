@@ -20,10 +20,25 @@ Rectangle {
 
     height: stripH
     width: parent ? parent.width : 0
-    visible: items.length > 0
+    //   ★ 外部只改 `opened`（用户 2026-11-06）：显隐 + 滑入滑出都在本组件里演
+    property bool opened: false
+    visible: opened || slide < 1
     color: Theme.barFill          // 与顶/底栏同一个面（用户 2026-11-03）
     radius: 0          // 不要圆角（用户 2026-11-03）
     clip: true
+
+    //   ★ 滑入 / 滑出（用户 2026-11-06）：整条从**底栏后面**滑上来、再滑回去。
+    //     收起位 = 下移一个条高：正好落到"进度条 + 控制条"那一块，被不透明底栏挡住
+    //     （`bar` 在 FullscreenBottomBar 里声明在本组件之后 ⇒ 画在上层）。
+    //   ★ 只做位移、不叠淡出：位移本身已经说明方向，再淡出会糊成一团。
+    property real slide: opened ? 0 : 1
+    Behavior on slide {
+        NumberAnimation { duration: Theme.durMed; easing.type: Easing.OutCubic }
+    }
+    transform: Translate { y: root.slide * root.height }
+
+    //   开始收起时清掉 hover：滑动途中条会扫过底栏，不能再把自己"顶"回来（会抖）
+    onOpenedChanged: if (!opened) hovered = false
 
     //   ★ 悬停目标**由指针 x 反查数据**（用户 2026-11-04：不再用"每张图一个 HoverHandler"）：
     //     落在两张图之间的 spacing 上时取**最近的一张** —— 天然不会出现"没有目标"的空档，
@@ -31,6 +46,8 @@ Rectangle {
     //   用 MouseArea（API 最稳）：`acceptedButtons: NoButton` ⇒ 不吃点击，缩略图的 TapHandler 照常
     MouseArea {
         anchors.fill: parent
+        //   ★ 收起途中不再吃 hover（否则条滑过底栏时会把自己"顶"回来，来回抖）
+        enabled: root.opened
         hoverEnabled: true
         acceptedButtons: Qt.NoButton
         onEntered: { root.hovered = true; root.updateHoverIndex(mouseX) }   // onEntered 没有 mouse 形参

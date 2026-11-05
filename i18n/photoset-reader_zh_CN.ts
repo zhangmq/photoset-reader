@@ -2,6 +2,25 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_CN">
 <context>
+    <name>AboutDialog</name>
+    <message>
+        <location filename="../src/ui/components/AboutDialog.qml" line="79"/>
+        <source>Version %1</source>
+        <translation>版本 %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/AboutDialog.qml" line="96"/>
+        <source>Repository</source>
+        <translation>仓库</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/AboutDialog.qml" line="119"/>
+        <location filename="../src/ui/components/AboutDialog.qml" line="129"/>
+        <source>Close</source>
+        <translation>关闭</translation>
+    </message>
+</context>
+<context>
     <name>Breadcrumb</name>
     <message>
         <location filename="../src/ui/components/Breadcrumb.qml" line="197"/>
@@ -264,156 +283,156 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
         <translation>减速</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="212"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="250"/>
         <source>Previous folder: %1</source>
         <translation>上一个文件夹：%1</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="213"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="251"/>
         <source>Previous folder</source>
         <translation>上一个文件夹</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="221"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="259"/>
         <source>Previous page (←); hold for continuous rewind</source>
         <translation>上一张（←）；长按 = 连续后退</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="237"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="275"/>
         <source>Pause slideshow (Space)</source>
         <translation>暂停幻灯片（Space）</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="237"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="275"/>
         <source>Play slideshow (Space)</source>
         <translation>播放幻灯片（Space）</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="245"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="283"/>
         <source>Next page (→); hold for continuous fast-forward</source>
         <translation>下一张（→）；长按 = 连续快进</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="281"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="319"/>
         <source>Next folder: %1</source>
         <translation>下一个文件夹：%1</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="282"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="320"/>
         <source>Next folder</source>
         <translation>下一个文件夹</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="302"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="340"/>
         <source>Zoom: %1</source>
         <translation>画面缩放：%1</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="302"/>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="310"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="340"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="348"/>
         <source>Original size</source>
         <translation>原始大小</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="302"/>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="311"/>
-        <source>Fit screen</source>
-        <translation>适应屏幕</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="302"/>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="312"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="340"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="350"/>
         <source>Fit width</source>
         <translation>适应宽度</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="302"/>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="313"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="340"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="351"/>
         <source>Fit height</source>
         <translation>适应高度</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="322"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="340"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="349"/>
+        <source>Fit window</source>
+        <translation>适应窗口</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="360"/>
         <source>Layout: %1</source>
         <translation>阅读版面：%1</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="322"/>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="331"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="360"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="369"/>
         <source>Two pages</source>
         <translation>双幅</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="322"/>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="330"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="360"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="368"/>
         <source>Single page</source>
         <translation>单幅</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="339"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="377"/>
         <source>Zoom locked (kept across screens)</source>
         <translation>已锁定缩放（跨画面保留）</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="339"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="377"/>
         <source>Lock zoom</source>
         <translation>锁定缩放</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="350"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="388"/>
         <source>Speed: %1 ms</source>
         <translation>切换速度：%1 ms</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="351"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="389"/>
         <source>Speed: %1 ms (custom)</source>
         <translation>切换速度：%1 ms（自定义）</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="352"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="390"/>
         <source>no minimum (0 = fastest); limited by decoding and refresh rate</source>
         <translation>不设最小间隔（0 = 最快）；实际受解码与屏幕刷新率限制</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="378"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="416"/>
         <source>Loop: %1</source>
         <translation>循环：%1</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="378"/>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="387"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="416"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="425"/>
         <source>No loop</source>
         <translation>不循环</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="378"/>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="388"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="416"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="426"/>
         <source>Loop all</source>
         <translation>全部循环</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="378"/>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="389"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="416"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="427"/>
         <source>Loop folder</source>
         <translation>文件夹循环</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="396"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="434"/>
         <source>Exit full screen</source>
         <translation>退出全屏窗口</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="396"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="434"/>
         <source>Full screen</source>
         <translation>全屏窗口</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="405"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="443"/>
         <source>Hide OSD info</source>
         <translation>隐藏 OSD 信息</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="405"/>
+        <location filename="../src/ui/fullscreen/FullscreenBottomBar.qml" line="443"/>
         <source>Show OSD info</source>
         <translation>显示 OSD 信息</translation>
     </message>
@@ -439,165 +458,170 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
 <context>
     <name>FullscreenView</name>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="305"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="319"/>
         <source>Loading…</source>
         <translation>载入中…</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="318"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="332"/>
         <source>No password, cannot view</source>
         <translation>无密码，无法查看</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="332"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="346"/>
         <source>Scanning…</source>
         <translation>正在扫描…</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="332"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="346"/>
         <source>Nothing to show here</source>
         <translation>这里没有可显示的图片</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="337"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="351"/>
         <source>%1 files found</source>
         <translation>已发现 %1 个文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="338"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="352"/>
         <source>Try another folder, or right-click → Open…</source>
         <translation>换个目录，或右键 → 打开…</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="496"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="497"/>
         <source>Open favorites</source>
         <translation>打开收藏夹</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="497"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="498"/>
         <source>Open progress file</source>
         <translation>打开进度文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="498"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="499"/>
         <source>Open folder</source>
         <translation>打开文件夹</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="499"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="500"/>
         <source>Open archive</source>
         <translation>打开压缩包</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="500"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="501"/>
         <source>Open file</source>
         <translation>打开文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="504"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="505"/>
         <source>Rescan</source>
         <translation>重新扫描</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="506"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="507"/>
         <source>Save progress to favorites</source>
         <translation>保存进度到收藏夹</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="507"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="508"/>
         <source>Save progress to file</source>
         <translation>保存进度到文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="514"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="515"/>
         <source>Scale algorithm</source>
         <translation>缩放算法</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="523"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="524"/>
         <source>Settings</source>
         <translation>设置</translation>
     </message>
     <message>
         <location filename="../src/ui/fullscreen/FullscreenView.qml" line="525"/>
+        <source>About</source>
+        <translation>关于</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="527"/>
         <source>Quit</source>
         <translation>退出</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="641"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="644"/>
         <source>Save password?</source>
         <translation>保存密码？</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="642"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="645"/>
         <source>Save the archive password in this progress file? It is stored as plain text.</source>
         <translation>把压缩包密码保存到这份进度文件里？密码会以明文保存。</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="644"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="647"/>
         <source>Don&apos;t save</source>
         <translation>不保存</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="659"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="662"/>
         <source>Scan not finished</source>
         <translation>扫描还没完</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="660"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="663"/>
         <source>Wait for the scan to finish before adding to favorites.</source>
         <translation>等扫描完成后再收藏。</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="661"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="664"/>
         <source>Got it</source>
         <translation>知道了</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="666"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="669"/>
         <source>Scan incomplete</source>
         <translation>扫描不完整</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="667"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="670"/>
         <source>Scanning incomplete. Save progress anyway? Files that were not scanned will not be found again; finish the scan before saving.</source>
         <translation>扫描不完整，确认保存进度吗？未扫描发现的文件不会被重新发现，建议完整扫描后收藏/保存。</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="643"/>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="668"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="646"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="671"/>
         <source>Save</source>
         <translation>保存</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="669"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="672"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="674"/>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="676"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="677"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="679"/>
         <source>Cancel scan</source>
         <translation>取消扫描</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="675"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="678"/>
         <source>Stop this scan? What has been scanned so far is still browsable.</source>
         <translation>要停止这次扫描吗？已经扫到的内容仍然可以查看。</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="677"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="680"/>
         <source>Continue scanning</source>
         <translation>继续扫描</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="682"/>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="684"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="685"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="687"/>
         <source>Remove favorite</source>
         <translation>取消收藏</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="683"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="686"/>
         <source>Delete this progress record? The source files are not deleted.</source>
         <translation>删除这条进度记录？不会删除源文件。</translation>
     </message>
@@ -646,7 +670,7 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
 <context>
     <name>PopupMenu</name>
     <message>
-        <location filename="../src/ui/components/PopupMenu.qml" line="242"/>
+        <location filename="../src/ui/components/PopupMenu.qml" line="261"/>
         <source>Zoom</source>
         <translation>缩放</translation>
     </message>
@@ -693,52 +717,52 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
 <context>
     <name>SettingsDialog</name>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="72"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="82"/>
         <source>Settings</source>
         <translation>设置</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="80"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="90"/>
         <source>Close</source>
         <translation>关闭</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="101"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="111"/>
         <source>General</source>
         <translation>常规</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="101"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="111"/>
         <source>Image</source>
         <translation>图像</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="101"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="111"/>
         <source>System</source>
         <translation>系统</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="101"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="111"/>
         <source>Shortcuts</source>
         <translation>快捷键</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="185"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="195"/>
         <source>Reset all settings</source>
         <translation>恢复全部默认设置</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="194"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="204"/>
         <source>Reset settings</source>
         <translation>恢复默认设置</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="195"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="205"/>
         <source>Restore every setting to its default value? This cannot be undone.</source>
         <translation>把所有设置恢复为默认值？此操作无法撤销。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="196"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="206"/>
         <source>Reset</source>
         <translation>恢复</translation>
     </message>
@@ -813,12 +837,6 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
     </message>
     <message>
         <location filename="../src/ui/components/SettingsGeneralPage.qml" line="106"/>
-        <location filename="../src/ui/components/SettingsGeneralPage.qml" line="108"/>
-        <source>Fit screen</source>
-        <translation>适应屏幕</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/components/SettingsGeneralPage.qml" line="106"/>
         <location filename="../src/ui/components/SettingsGeneralPage.qml" line="109"/>
         <source>Fit width</source>
         <translation>适应宽度</translation>
@@ -828,6 +846,12 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
         <location filename="../src/ui/components/SettingsGeneralPage.qml" line="110"/>
         <source>Fit height</source>
         <translation>适应高度</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SettingsGeneralPage.qml" line="106"/>
+        <location filename="../src/ui/components/SettingsGeneralPage.qml" line="108"/>
+        <source>Fit window</source>
+        <translation>适应窗口</translation>
     </message>
     <message>
         <location filename="../src/ui/components/SettingsGeneralPage.qml" line="116"/>
@@ -1173,80 +1197,80 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
 <context>
     <name>fetch::ViewerModel</name>
     <message>
-        <location filename="../src/viewermodel.cpp" line="466"/>
-        <location filename="../src/viewermodel.cpp" line="1280"/>
+        <location filename="../src/viewermodel.cpp" line="513"/>
+        <location filename="../src/viewermodel.cpp" line="1354"/>
         <source>End reached · slideshow stopped</source>
         <translation>到头 · 幻灯片已停</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="1487"/>
+        <location filename="../src/viewermodel.cpp" line="1564"/>
         <source>Index</source>
         <translation>序号</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="1442"/>
-        <location filename="../src/viewermodel.cpp" line="1488"/>
+        <location filename="../src/viewermodel.cpp" line="1519"/>
+        <location filename="../src/viewermodel.cpp" line="1565"/>
         <source>File</source>
         <translation>文件</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="509"/>
-        <location filename="../src/viewermodel.cpp" line="560"/>
+        <location filename="../src/viewermodel.cpp" line="555"/>
+        <location filename="../src/viewermodel.cpp" line="606"/>
         <source>End of list</source>
         <translation>到头</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="1443"/>
+        <location filename="../src/viewermodel.cpp" line="1520"/>
         <source>Image</source>
         <translation>图像</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="1490"/>
+        <location filename="../src/viewermodel.cpp" line="1567"/>
         <source>Path</source>
         <translation>路径</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="1491"/>
+        <location filename="../src/viewermodel.cpp" line="1568"/>
         <source>Folder</source>
         <translation>文件夹</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="1498"/>
+        <location filename="../src/viewermodel.cpp" line="1575"/>
         <source>Resolution</source>
         <translation>分辨率</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="1498"/>
+        <location filename="../src/viewermodel.cpp" line="1575"/>
         <source> (rotated by EXIF)</source>
         <translation>（已按 EXIF 旋转）</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="1502"/>
+        <location filename="../src/viewermodel.cpp" line="1579"/>
         <source>Unknown</source>
         <translation>未知</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="1504"/>
+        <location filename="../src/viewermodel.cpp" line="1581"/>
         <source>Type</source>
         <translation>类型</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="1505"/>
+        <location filename="../src/viewermodel.cpp" line="1582"/>
         <source>Size</source>
         <translation>尺寸</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="1512"/>
+        <location filename="../src/viewermodel.cpp" line="1589"/>
         <source>Color space</source>
         <translation>色彩空间</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="1515"/>
+        <location filename="../src/viewermodel.cpp" line="1592"/>
         <source>Other</source>
         <translation>其他</translation>
     </message>
     <message>
-        <location filename="../src/viewermodel.cpp" line="1516"/>
+        <location filename="../src/viewermodel.cpp" line="1593"/>
         <source>… %1 more</source>
         <translation>… 其余 %1 条</translation>
     </message>

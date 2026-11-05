@@ -103,9 +103,9 @@ Item {
         SettingsRow {
             label: qsTr("Default zoom")
             DropdownButton {
-                label: [qsTr("Original size"), qsTr("Fit screen"), qsTr("Fit width"), qsTr("Fit height")][ui.fitMode]
+                label: [qsTr("Original size"), qsTr("Fit window"), qsTr("Fit width"), qsTr("Fit height")][ui.fitMode]
                 menuItems: [ { text: qsTr("Original size"), selected: ui.fitMode === 0 },
-                             { text: qsTr("Fit screen"),    selected: ui.fitMode === 1 },
+                             { text: qsTr("Fit window"),    selected: ui.fitMode === 1 },
                              { text: qsTr("Fit width"),     selected: ui.fitMode === 2 },
                              { text: qsTr("Fit height"),    selected: ui.fitMode === 3 } ]
                 onItemTriggered: function (i) { ui.fitMode = i }

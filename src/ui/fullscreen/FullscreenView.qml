@@ -102,6 +102,11 @@ Item {
         id: settingsDialog
     }
 
+    // ── 关于（用户 2026-11-06）：右键菜单 →「关于」──
+    AboutDialog {
+        id: aboutDialog
+    }
+
     // ── 显示时钟（2026-11-06 用户定）：每**呈现一帧**叫一次 viewer ──
     //   ★ 幻灯片的换屏**只在这里发生**，且每帧最多换一屏 ⇒ 每一屏都至少被画出一帧，
     //     0 ms 也不会"一帧跳两三页"。节奏 = 刷新率 × 间隔（`ViewerModel::framePresented()`）。
@@ -517,6 +522,7 @@ Item {
               ] },
             { sep: true },
             { text: qsTr("Settings"), icon: Theme.icSettings, action: "settings" },
+            { text: qsTr("About"), icon: Theme.icInfo, action: "about" },
             { sep: true },
             { text: qsTr("Quit"), icon: Theme.icPower, hint: "Ctrl+Q", action: "quit" }
         ]
@@ -534,6 +540,7 @@ Item {
         else if (action === "save:progress")  root.requestSaveToFavorites()
         else if (action === "save:progress-as") root.requestSaveToFile()
         else if (action === "settings")       settingsDialog.open()
+        else if (action === "about")          aboutDialog.open()
         else if (action === "quit")           Qt.quit()
         //   其余动作按需再加
     }

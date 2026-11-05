@@ -59,7 +59,7 @@ struct AppSettings
     //     UI（底栏）上的调整只改 viewer，不回写这里。只有设置对话框才落盘。
     int  themeMode() const { return m_themeMode; }              // 0 跟随系统 / 1 浅 / 2 深
     int  intervalMs() const { return m_intervalMs; }            // 幻灯片间隔默认（0–60000 ms）
-    int  defaultFitMode() const { return m_fitMode; }           // 0 原始 1 适应屏幕 2 适应宽度 3 适应高度
+    int  defaultFitMode() const { return m_fitMode; }           // 0 原始 1 适应窗口 2 适应宽度 3 适应高度
     int  defaultLayout() const { return m_layout; }             // 0 单幅 / 1 双幅
     int  defaultLoop() const { return m_loop; }                 // 0 不循环 / 1 全部循环 / 2 文件夹循环
 

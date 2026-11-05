@@ -85,7 +85,7 @@ qreal zoomForFit(const QSize &src, const QSize &viewport, Fit fit)
     switch (fit) {
     case Fit::Original:
         return 1.0;
-    case Fit::Screen:
+    case Fit::Window:
         // 精确的"装进视口"比例：两个方向的限制比取小者。**不借 `scaled()` 的取整盒**——
         // 那个盒子会把某一个方向的取整误差放大成一个各向异性的比例（旧实现就是 1419×950，
         // 宽高比与源差 0.05%）。这里一个 zoom 走两轴，最多差 1px，但比例是准的。

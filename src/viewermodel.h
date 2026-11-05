@@ -470,7 +470,7 @@ private:
 
     // ── 视图态（viewer 领域）──
     QImage geometryImage() const;             // 双幅取有图的那一张
-    int    m_fitMode = 1;                     // 0 原始 / 1 适应屏幕 / 2 适应宽度 / 3 适应高度
+    int    m_fitMode = 1;                     // 0 原始 / 1 适应窗口 / 2 适应宽度 / 3 适应高度
     qreal  m_zoom = 1.0, m_panX = 0.0, m_panY = 0.0;
     QSize  m_viewport;                        // 设备像素
     qreal  m_dpr = 1.0;

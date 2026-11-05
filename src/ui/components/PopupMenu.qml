@@ -140,6 +140,7 @@ PopupPanel {
     //   二级面板有自己的圆角与描边，靠右、与展开它的那一行顶对齐 —— 不是"一个加宽的大面板"。
     background: Item {
         Rectangle {                                        // 主面板
+            id: mainPanel
             width: root.mainW
             height: root.height
             color: Theme.menuFill
@@ -148,6 +149,7 @@ PopupPanel {
             border.color: Theme.borderL4
         }
         Rectangle {                                        // 二级面板（只在展开时出现）
+            id: subPanel
             visible: root.subOpen
             x: root.mainW + root.subGap
             y: root.topPadding + root.subY - Theme.spaceXs
@@ -157,6 +159,23 @@ PopupPanel {
             radius: Theme.radiusLg
             border.width: Theme.borderW
             border.color: Theme.borderL4
+        }
+        //   ★ 两块面板**各自**一份影子（用户 2026-11-06）：二级面板是独立的浮层，
+        //     套同一个影子会看不出层次；参数与 `PopupPanel` 保持一致（菜单那一档）。
+        SurfaceShadow {
+            anchors.fill: mainPanel
+            radius: mainPanel.radius
+            blur: 20
+            offset: Qt.point(0, 6)
+            z: -1
+        }
+        SurfaceShadow {
+            anchors.fill: subPanel
+            radius: subPanel.radius
+            blur: 20
+            offset: Qt.point(0, 6)
+            visible: root.subOpen
+            z: -1
         }
     }
 

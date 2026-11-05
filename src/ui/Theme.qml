@@ -331,7 +331,7 @@ QtObject {
     // ── 全屏浮层：画面缩放 / 阅读版面 ──
     // 缩放算法（对图"施加魔法"：图 + 自动调整）—— 用户 2026-10-20 选定
     readonly property string icFitActual:  String.fromCodePoint(0xF0C8D)  // image-size-select-actual（原始大小）
-    readonly property string icFitScreen:  String.fromCodePoint(0xF18F4)  // fit-to-screen（适应屏幕）
+    readonly property string icFitScreen:  String.fromCodePoint(0xF18F4)  // fit-to-screen（适应窗口）
     readonly property string icFitWidth:   String.fromCodePoint(0xF084E)  // arrow-expand-horizontal（适应宽度）
     readonly property string icFitHeight:  String.fromCodePoint(0xF084F)  // arrow-expand-vertical（适应高度）
     readonly property string icSinglePage: String.fromCodePoint(0xF0EB0)  // file-image-outline（单幅，用户选定）

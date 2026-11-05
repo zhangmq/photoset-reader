@@ -39,9 +39,19 @@ Popup {
         onWheel: (w) => { w.accepted = true }
     }
 
-    background: Rectangle {
-        color: Theme.bgLayer2
-        radius: Theme.radiusPanel
+    background: Item {
+        Rectangle {
+            id: panel
+            anchors.fill: parent
+            color: Theme.bgLayer2
+            radius: Theme.radiusPanel
+        }
+        //   ★ 投影（用户 2026-11-06）：对话框不压暗背景，靠这层影子把"浮起来"表达出来
+        SurfaceShadow {
+            anchors.fill: panel
+            radius: panel.radius
+            z: -1
+        }
     }
 
     property int tab: 0

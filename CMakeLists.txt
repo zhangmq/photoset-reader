@@ -10,7 +10,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml QuickControls2 Widgets ShaderTools Concurrent)
+#   ★ 最低 Qt 6.9（2026-11-06）：浮层投影用 `QtQuick.Effects` 的 `RectangularShadow`
+#     （6.9 才有；`MultiEffect` 做不到"只画影子"，会把半透明面板叠出第二层颜色）。
+#     本地与 Windows CI 都是 6.12。
+find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui Quick Qml QuickControls2 Widgets ShaderTools Concurrent)
 #   ★ QtDBus 只有 Unix 有（幻灯片期间的屏幕抑制用它）⇒ 只在 Unix 上找、只在 Unix 上链
 if(UNIX)
     find_package(Qt6 REQUIRED COMPONENTS DBus)
@@ -301,6 +304,8 @@ function(ib_add_qml_resources target)
         src/ui/Main.qml
         src/ui/components/PopupPanel.qml
         src/ui/components/PopupMenu.qml
+        src/ui/components/SurfaceShadow.qml
+        src/ui/components/AboutDialog.qml
         src/ui/components/Button.qml
         src/ui/components/DropdownButton.qml
         src/ui/components/IconDropdownButton.qml

@@ -37,11 +37,24 @@ Popup {
     focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
-    background: Rectangle {
-        color: Theme.menuFill
-        radius: Theme.radiusLg
-        border.width: Theme.borderW
-        border.color: Theme.borderL4
+    background: Item {
+        Rectangle {
+            id: backdrop
+            anchors.fill: parent
+            color: Theme.menuFill
+            radius: Theme.radiusLg
+            border.width: Theme.borderW
+            border.color: Theme.borderL4
+        }
+        //   ★ 投影（用户 2026-11-06）：只画影子、不重绘面板 ⇒ 半透明的 `menuFill` 不会叠黑
+        SurfaceShadow {
+            anchors.fill: backdrop
+            radius: backdrop.radius
+            //   菜单比对话框小、贴着控件弹出 ⇒ 影子收紧一点，不然像"浮太高"
+            blur: 20
+            offset: Qt.point(0, 6)
+            z: -1
+        }
     }
 
     onOpened: positionToTarget()

@@ -49,7 +49,7 @@ Item {
         { text: qsTr("Faster"), keepOpen: true },
         { text: qsTr("Slower"), keepOpen: true }
     ]
-    property int    fitMode: 1            // 0=原始 1=适应屏幕 2=适应宽度 3=适应高度
+    property int    fitMode: 1            // 0=原始 1=适应窗口 2=适应宽度 3=适应高度
     property bool   doublePage: false     // 阅读版面：单幅 / 双幅
     property bool   zoomLocked: false     // 锁定缩放（跨画面保留 zoom/pan；属于 viewer 态）
     property bool   windowFullscreen: false   // 窗口全屏
@@ -197,8 +197,9 @@ Item {
         focusX: root.previewShown.focusX ?? 0
         focusW: root.previewShown.focusW ?? 0
         //   显示条件：指针在**进度条** 或 在**预览条**里（用户 2026-11-03）
-        visible: root.previewEnabled && (timeline.hovered || hovered)
-                 && (root.previewShown.items ? root.previewShown.items.length > 0 : false)
+        //   ★ 只给 `opened`：滑入 / 滑出由 `TimelinePreview` 自己演（用户 2026-11-06）
+        opened: root.previewEnabled && (timeline.hovered || previewStrip.hovered)
+                && (root.previewShown.items ? root.previewShown.items.length > 0 : false)
         onItemClicked: function (i) { root.seeked(i) }      // 点缩略图 = 跳到那一页
     }
     //   ★ 预览条收起 ⇒ 作废"已显示的那一份"：下次进入进度条按**首份**处理（不门控、立即出现）。
@@ -336,7 +337,7 @@ Item {
                      : root.fitMode === 1 ? Theme.icFitScreen
                      : root.fitMode === 2 ? Theme.icFitWidth
                                           : Theme.icFitHeight
-                tooltip: qsTr("Zoom: %1").arg([qsTr("Original size"), qsTr("Fit screen"), qsTr("Fit width"), qsTr("Fit height")][root.fitMode])
+                tooltip: qsTr("Zoom: %1").arg([qsTr("Original size"), qsTr("Fit window"), qsTr("Fit width"), qsTr("Fit height")][root.fitMode])
                 enabled: root.overlaysVisible
                 onTriggered: fitMenu.visible ? fitMenu.close() : fitMenu.open()
             }
@@ -345,7 +346,7 @@ Item {
                 anchorTarget: fitBtn
                 items: [
                     { text: qsTr("Original size"), icon: Theme.icFitActual, selected: root.fitMode === 0 },
-                    { text: qsTr("Fit screen"), icon: Theme.icFitScreen, selected: root.fitMode === 1 },
+                    { text: qsTr("Fit window"), icon: Theme.icFitScreen, selected: root.fitMode === 1 },
                     { text: qsTr("Fit width"), icon: Theme.icFitWidth,  selected: root.fitMode === 2 },
                     { text: qsTr("Fit height"), icon: Theme.icFitHeight, selected: root.fitMode === 3 }
                 ]
