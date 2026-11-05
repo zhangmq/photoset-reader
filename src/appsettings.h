@@ -118,7 +118,9 @@ private:
     bool m_previewStrip = true;
     QString m_logLevel = QStringLiteral("warning");
     int  m_recurseDepth = 5;
-    int  m_prefetchWindow = 8;
+    //   ★ 默认 **1**（用户 2026-11-05）：并行解码数 = 预取数 + 本屏图数（上限 = 核数），
+    //     默认 1 就只多开一条预取；再大是"用内存/功耗换抖动"，要就让用户自己加。
+    int  m_prefetchWindow = 1;
     int  m_innerArchiveMaxMb = 512;     // ★ v7：内层压缩包上限（MB），范围 64–8192
     QString m_favoritesDir;             // 收藏夹路径（空 = 默认 `<配置目录>/favorites`）
     QString m_language;                 // 界面语言代码（空 = 跟随系统）

@@ -11,6 +11,7 @@
 #include <QPen>
 #include <QVariantMap>
 #include <QMetaObject>
+#include <QThread>
 #include <QTimer>
 
 #include <algorithm>
@@ -845,6 +846,18 @@ void ViewerModel::act(int target, int stepDir)
 }
 
 // ══ 后台线：预取（`reconcile`）══════════════════════════════════════════════
+
+//   解码并发上限 = **预取张数 + 本屏图数**，再夹到硬件并发（2026-11-05 用户定）。
+//   ★ 为什么不是固定 4：慢盘实测 1/4/8 线程 = 18/51/121 页每秒，双幅 60 fps 要 ~8 并发；
+//     预取调大就该多给它几条解码，调小（默认 1）就只给本屏那 1~2 条 + 1 条预取。
+//   ★ 上限取 `QThread::idealThreadCount()`（逻辑核）：超过它只会互相抢 CPU。
+int ViewerModel::inFlightLimit() const
+{
+    const int members = m_seq ? screenItems(screenStart(m_pos)).size() : 1;
+    const int cores = qMax(1, QThread::idealThreadCount());
+    return qBound(1, m_length + qMax(1, members), cores);
+}
+
 //   每拍重算一次"现在该有哪些条目"，然后派缺失的、丢不要的。**幂等**，没有历史包袱。
 //
 //     desired = 本屏（pinned：必取，**不占** L）
@@ -921,6 +934,8 @@ void ViewerModel::reconcile()
     }
 
     //   ⑤ 派：按 desired 顺序（pinned 在最前）；受"并发上限"与"lookahead 额度"两条约束
+    //   ★ 并发上限 = 本屏图数 + 预取张数，再夹到核数（见 `inFlightLimit()`）。
+    const int inFlightLimit = this->inFlightLimit();
     int lookahead = 0;
     for (auto it = m_entries.cbegin(); it != m_entries.cend(); ++it)
         if (!it->pinned) ++lookahead;
@@ -928,7 +943,7 @@ void ViewerModel::reconcile()
         if (m_entries.contains(item)) continue;              // 在飞 / 已备好
         const bool pinned = members.contains(item);
         if (!pinned && lookahead >= m_length) break;          // 额度用完（L = 0 ⇒ 一条不派）
-        if (m_inFlight >= kMaxInFlight) break;                // 资源上限：下一次重拍再派
+        if (m_inFlight >= inFlightLimit) break;               // 资源上限：下一次重拍再派
         Entry e;
         e.state  = Entry::State::InFlight;
         e.pinned = pinned;
