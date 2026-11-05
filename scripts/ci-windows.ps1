@@ -494,7 +494,24 @@ function Invoke-Configure {
 
 function Invoke-Build {
     Write-Head 'Build'
+    #   ★★ 坑-18 守护（2026-11-06 **第二次**踩到）：本机 ninja 的依赖记录偶尔漏掉"头文件 → 某些 TU"
+    #     —— 改了带成员的类头之后只做增量编译，会留下按**旧类布局**编出来的 .obj。
+    #     症状极隐蔽：程序能起、但一"新建 ViewerModel"（= 带路径启动）就堆损坏 0xC0000374 闪退。
+    #     这里对比"src 下最新头文件时间 vs 上次构建成功时的时间戳"，脏了就**大声警告**。
+    $stamp = Join-Path $BuildDir '.headers.stamp'
+    $hdrNewest = Get-ChildItem (Join-Path $RepoRoot 'src') -Recurse -Include *.h -ErrorAction SilentlyContinue |
+                 Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($hdrNewest -and (Test-Path $stamp)) {
+        $stampTime = (Get-Item $stamp).LastWriteTime
+        if ($hdrNewest.LastWriteTime -gt $stampTime) {
+            Write-Warning ("头文件比上次构建新：{0}（{1:HH:mm:ss} > {2:HH:mm:ss}）" -f `
+                $hdrNewest.Name, $hdrNewest.LastWriteTime, $stampTime)
+            Write-Warning '本机 ninja 偶尔不重编依赖它的 .obj（坑-18）⇒ 建议用 -Step build -Clean，否则可能运行期堆损坏'
+        }
+    }
     Invoke-Native 'cmake' @('--build', $BuildDir, '--parallel')
+    #   构建成功 ⇒ 记时间戳：此刻的产物已经包含上述全部头文件改动
+    Set-Content -Path $stamp -Value (Get-Date -Format o) -Encoding ASCII
 }
 
 # ══ hlsl：qsb --hlsl 50 → fxc ps_5_0（对应 workflow 的 HLSL compile check）══
