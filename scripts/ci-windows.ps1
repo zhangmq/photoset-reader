@@ -37,12 +37,15 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('all', 'deps', 'configure', 'build', 'hlsl', 'test', 'package')]
+    [ValidateSet('all', 'deps', 'configure', 'build', 'hlsl', 'test', 'package', 'check', 'run')]
     [string]$Step = 'all',
 
     [string]$DepsRoot = '',
     [string]$BuildDir = '',
     [string]$Config = 'Release',
+
+    #   `-Step run` 传给程序的参数（例如 '"-H:\Dragon Ball"' 或 '--fullscreen'）
+    [string[]]$RunArgs = @(),
 
     [string]$QtVersion = '6.12.0',
     [string]$QtArch = 'msvc2022_64',
@@ -187,6 +190,108 @@ function Import-MsvcEnvironment {
 
 function Add-EnvPath([string]$Path) {
     if ($Path -and (Test-Path $Path)) { $env:PATH = $Path + ';' + $env:PATH }
+}
+
+# ══ 运行期依赖检查（避免 Windows 弹「找不到 xxx.dll」的模态框）════════════════
+#   Windows 在**加载期**找不到 DLL 会弹系统错误框、进程挂住。开发态的
+#   `photoset-reader.exe` 不会把 Qt / vcpkg / unrar 的 DLL 拷到自己旁边，
+#   所以直接双击它就会弹框。这里在脚本里先查一遍：缺什么就打在终端里并报错，
+#   而不是留给用户去点那个框。
+function Get-PeDependents([string]$File) {
+    if (-not (Get-Command dumpbin -ErrorAction SilentlyContinue)) { throw 'dumpbin 不在 PATH 上（先导入 MSVC 环境）' }
+    $deps = (& dumpbin /nologo /dependents $File 2>$null) |
+            Select-String '^\s+(\S+\.dll)\s*$' |
+            ForEach-Object { $_.Matches[0].Groups[1].Value }
+    return @($deps)
+}
+
+function Get-MissingRuntimeDeps([string]$Exe, [string[]]$SearchDirs) {
+    $system32 = Join-Path $env:SystemRoot 'System32'
+    $queue = New-Object System.Collections.Queue
+    $queue.Enqueue($Exe)
+    $seen = @{}
+    $missing = New-Object System.Collections.Generic.List[string]
+    while ($queue.Count -gt 0) {
+        $file = $queue.Dequeue()
+        if ($seen.ContainsKey($file)) { continue }
+        $seen[$file] = $true
+        foreach ($d in (Get-PeDependents $file)) {
+            if ($d -match '^(api-ms-|ext-ms-)') { continue }
+            $src = $null
+            foreach ($dir in $SearchDirs) {
+                $cand = Join-Path $dir $d
+                if (Test-Path $cand) { $src = $cand; break }
+            }
+            if ($src) {
+                if (-not $seen.ContainsKey($src)) { $queue.Enqueue($src) }
+            } elseif (-not (Test-Path (Join-Path $system32 $d))) {
+                $missing.Add(("{0}（被 {1} 引用）" -f $d, [IO.Path]::GetFileName($file)))
+            }
+        }
+    }
+    return $missing
+}
+
+function Get-RuntimeSearchDirs([string]$ExtraDir) {
+    $dirs = @()
+    if ($ExtraDir) { $dirs += $ExtraDir }
+    $dirs += (Join-Path $VcpkgInstalled 'bin')
+    $dirs += (Join-Path $UnrarPrefix 'lib')
+    $dirs += (Join-Path $QtRoot 'bin')
+    return $dirs
+}
+
+function Invoke-Check {
+    Write-Head 'Runtime dependency check'
+    $exe = Join-Path $BuildDir 'photoset-reader.exe'
+    if (-not (Test-Path $exe)) { throw "找不到 $exe（先 -Step build）" }
+    $missing = @(Get-MissingRuntimeDeps $exe (Get-RuntimeSearchDirs $BuildDir))
+    if ($missing.Count -gt 0) {
+        foreach ($m in $missing) { Write-Host "  缺: $m" -ForegroundColor Yellow }
+        throw ("运行期依赖不全（{0} 个）。开发态 exe 需要 Qt/vcpkg/unrar 的 DLL —— " -f $missing.Count) +
+              '请用 -Step run 启动，或 -Step package 生成自包含目录（stage）后双击它。'
+    }
+    Write-Host '  依赖齐全：Qt / vcpkg / libunrar 全部能解析' -ForegroundColor Green
+}
+
+function Invoke-Run {
+    Write-Head 'Run'
+    $exe = Join-Path $BuildDir 'photoset-reader.exe'
+    if (-not (Test-Path $exe)) { throw "找不到 $exe（先 -Step build）" }
+    $dirs = Get-RuntimeSearchDirs $BuildDir
+    $missing = @(Get-MissingRuntimeDeps $exe $dirs)
+    if ($missing.Count -gt 0) {
+        foreach ($m in $missing) { Write-Host "  缺: $m" -ForegroundColor Yellow }
+        throw '运行期依赖不全 —— 拒绝启动（否则 Windows 会弹「找不到 xxx.dll」的框）'
+    }
+    foreach ($d in $dirs) { Add-EnvPath $d }
+    #   没给 --log-file 就补一个（GUI 子系统没有控制台，出问题只能看文件）
+    if (-not ($RunArgs -match '^--log-file')) {
+        $RunArgs = @($RunArgs) + @('--log-file', (Join-Path $BuildDir 'run.log'))
+    }
+    Write-Note ("启动: {0} {1}" -f $exe, ($RunArgs -join ' '))
+    #   ★ `--version` / `--help`：GUI 子系统没有控制台，Qt 会把它们弹成**消息框**
+    #     （用户 2026-11-05 看到「应用名 + 版本」的框）。这里改成重定向输出直接打印。
+    if ($RunArgs -match '^(--version|-v|--help|-h)$') {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $exe
+        $psi.Arguments = ($RunArgs -join ' ')
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.WorkingDirectory = $BuildDir
+        $proc = New-Object System.Diagnostics.Process
+        $proc.StartInfo = $psi
+        $null = $proc.Start()
+        $out = $proc.StandardOutput.ReadToEnd()
+        $err = $proc.StandardError.ReadToEnd()
+        if (-not $proc.WaitForExit(30000)) { try { $proc.Kill() } catch { } }
+        if ($out) { Write-Host $out.TrimEnd() }
+        if ($err) { Write-Host $err.TrimEnd() }
+        Write-Note ("exit={0}" -f $proc.ExitCode)
+        return
+    }
+    Start-Process -FilePath $exe -ArgumentList $RunArgs -WorkingDirectory $BuildDir
 }
 
 # ══ deps：Qt / vcpkg / libunrar（对应 workflow 的 Restore Qt → vcpkg → libunrar）══
@@ -634,6 +739,8 @@ switch ($Step) {
     'hlsl'      { Invoke-HlslCheck; break }
     'test'      { Invoke-Tests; break }
     'package'   { Invoke-Package; break }
+    'check'     { Invoke-Check; break }
+    'run'       { Invoke-Run; break }
     'all' {
         Invoke-Deps
         Invoke-Configure
@@ -641,6 +748,7 @@ switch ($Step) {
         if (-not $SkipHlsl) { Invoke-HlslCheck }
         if (-not $SkipTests) { Invoke-Tests }
         if (-not $SkipPackage) { Invoke-Package }
+        Invoke-Check
         Write-Head 'DONE'
         break
     }
