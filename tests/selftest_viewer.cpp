@@ -36,6 +36,7 @@
 //     ② 单幅 / 0ms / L=0 ⇒ 播到底（L=0 合法：只备本屏）
 //     ③ 截断图（有字节、解不出）⇒ 显示占位图、**不跳屏**
 //     ④ 缺（文件删了、元数据标 missing）⇒ 该屏自动跳过、不卡住
+//     ⑦ 预览条：冷缓存 `ready=false` / 空闲才派活 / 一批一条通知 / 坏图算已了结
 namespace {
 
 //   等条件成立（上限 = timeoutMs；每轮都转一把事件循环）。超时 = 条件不成立。
@@ -248,6 +249,59 @@ int runViewerSelfTest(const QString &realDir)
             //   落到下一屏后还要等它自己的图（跳屏只是改位置，解码是异步的）
             const bool gotImage = waitUntil([&] { return !vm.imageA().isNull(); }, 5000);
             check(gotImage, QStringLiteral("④ 缺：跳过去之后有新的一屏图"));
+        }
+
+        // ══ ⑦ 预览条：前端调度 / 空闲门控 / 失败算已了结（用户 2026-11-06 定的模型）══
+        //   ★ 这三条以前是"组件自己调度"（批次号 + 跑完采样最新），坏处是组件得判断
+        //     "我这批还用得上吗" —— 那是前端的知识。现在：组件只回一个 `ready` 和一条
+        //     "我空闲了"的通知，**派不派活由前端决定**。
+        //     这里钉住 C++ 侧的三条契约（QML 侧的判定在 `FullscreenBottomBar.decidePreview`）。
+        {
+            const QString rootD = tmp.filePath(QStringLiteral("preview"));
+            check(makeImages(rootD, 8), QStringLiteral("⑦ 夹具：8 张 PNG 写入成功"));
+            check(makeBrokenPng(QStringLiteral("%1/p003.png").arg(rootD),
+                                QStringLiteral("%1/p004.png").arg(rootD)),
+                  QStringLiteral("⑦ 夹具：第 4 张写成截断图（有字节、解不出）"));
+            Sequence sqD;
+            const bool okD = scanAll(sqD, rootD);
+            check(okD && sqD.count() == 8,
+                  QStringLiteral("⑦ 夹具：扫描到 8 条（实际 %1）").arg(sqD.count()));
+            if (sqD.count() == 8) {
+                auto store = std::make_shared<PreviewStore>();
+                fetch::ViewerModel vm(1);
+                vm.setPreviewStore(store);
+                vm.setSequence(&sqD);
+                int idle = 0;
+                QObject::connect(&vm, &fetch::ViewerModel::previewIdle, &vm,
+                                 [&idle] { ++idle; });
+
+                const int H = 100, W = 600, G = 6;
+                const QVariantMap cold = vm.previewStrip(4, H, W, G);
+                check(cold.value(QStringLiteral("items")).toList().size() >= 5,
+                      QStringLiteral("⑦ 预览条：条目 + 定位框几何一次算完（%1 张）")
+                          .arg(cold.value(QStringLiteral("items")).toList().size()));
+                check(!cold.value(QStringLiteral("ready")).toBool(),
+                      QStringLiteral("⑦ 冷缓存：ready=false（前端据此**不换**显示）"));
+                check(vm.previewEnsure(4, H, W, G),
+                      QStringLiteral("⑦ 空闲 ⇒ 派活（`previewEnsure` 返回 true）"));
+                check(!vm.previewEnsure(4, H, W, G),
+                      QStringLiteral("⑦ 忙 ⇒ 不再派（只有空闲才发，不排队）"));
+                check(waitUntil([&] { return idle > 0; }, 30000),
+                      QStringLiteral("⑦ 一批跑完 ⇒ 发 `previewIdle`（组件回到空闲）"));
+                const QVariantMap warm = vm.previewStrip(4, H, W, G);
+                check(warm.value(QStringLiteral("ready")).toBool(),
+                      QStringLiteral("⑦ 解完 ⇒ ready=true（可以显示）"));
+                check(!vm.previewEnsure(4, H, W, G),
+                      QStringLiteral("⑦ 全部命中 ⇒ 不再派活"));
+                //   ★ 截断图（解不出）必须算"已了结"：否则这一批**永远不就绪** ⇒ 预览条永远
+                //     停在上一次的内容；而且"未就绪 ⇒ 再派"会绕成死循环（派 → 失败 → 再派）。
+                check(idle == 1,
+                      QStringLiteral("⑦ 坏图算已了结：只发一次通知、没有反复重派（实际 %1 次）")
+                          .arg(idle));
+                check(store->images.size() == 7,
+                      QStringLiteral("⑦ 缓存里 7 张（8 张里 1 张解不出，实际 %1）")
+                          .arg(store->images.size()));
+            }
         }
     }
 

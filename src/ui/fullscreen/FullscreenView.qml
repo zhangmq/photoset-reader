@@ -403,6 +403,9 @@ Item {
         osdVisible: ui.viewer ? ui.viewer.osdVisible : false
         overlaysVisible: root.showUi
         previewEnabled: ui.previewStrip
+        //   ★ 预览条的调度归它自己（用户 2026-11-06）：这里只把 viewer 交出去，
+        //     它自己按"指针在哪一条 + 组件是否空闲"决定取什么、什么时候换显示。
+        viewer: ui.viewer
         onPrevRequested: { if (ui.viewer) ui.viewer.stepPage(-1) }
         onNextRequested: { if (ui.viewer) ui.viewer.stepPage(1) }
         //   ★ 没有 viewer 时改**全局默认**（打开下一个来源时生效）；有 viewer 时只改当前阅读态
@@ -430,15 +433,6 @@ Item {
         onWindowFullscreenToggled: ui.windowFullscreen = !ui.windowFullscreen
         onOsdToggled: { if (ui.viewer) ui.viewer.osdVisible = !ui.viewer.osdVisible }
         onSeeked: function (i) { if (ui.viewer) ui.viewer.cursor = i }
-        //   时间轴悬停预览：只在"条目变了"时查一次（数据在 viewer 里算，provider 解码缩略图）
-        onPreviewHover: function (index) {
-            //   ★ 条目与定位框几何**一次取回**（`{ items, focusX, focusW }`），
-            //     避免分几次赋值产生"半新半旧"的中间态（用户 2026-11-03）
-            const imgH = Theme.timelinePreviewH - Theme.spaceSm * 2
-            bottomBar.previewData = (ui.previewStrip && ui.viewer)
-                    ? ui.viewer.previewStrip(index, imgH, bottomBar.width, Theme.spaceSm) : ({})
-            bottomBar.syncPreviewShown()      // 缓存已命中（batch 已就绪）⇒ 立即换上
-        }
     }
 
     // ── OSD 信息面板：**只被 OSD 开关控制，不随控件条显隐**（用户 2026-10-11）──
@@ -454,13 +448,6 @@ Item {
         osdVisible: ui.viewer ? ui.viewer.osdVisible : false
         //   行由 viewer 按需读（`osdRows()`）：文件 / 图像 / EXIF 三组，
         //   EXIF 是**动态的**（不同图片标签不同）⇒ 面板不再有固定字段
-    }
-
-    //   预览缩略图缓存变化 ⇒ 按**当前请求**重查一次就绪状态（不靠完成事件推进）
-    Connections {
-        target: ui.viewer
-        ignoreUnknownSignals: true
-        function onPreviewCacheChanged() { bottomBar.syncPreviewShown() }
     }
 
     // ── 窗口全屏：状态在 ViewModel，窗口跟随（照 vsr-player 的双向同步）──

@@ -179,24 +179,26 @@ public:
     //     前端要**重判一次**才能跳屏 / 挂节拍（否则幻灯片会停在一页永远等不到的图上）。
     //     与上面的区别：**不重取、不清别的结论**。
     void passwordStateChanged();
-    //   ★ 时间轴悬停预览（用户 2026-11-03）：以 `center` 为中心取邻近条目，按固定高度等比铺开，
-    //     返回 [{ index, w, h, url }]（url 是 `image://preview/…`）。GUI 线程调用；位置表交给 provider。
-    //     `heightPx` = 预览条高度；`maxWidthPx` = 窗口宽度（填满即停，最多 12 张）。
-    //   返回 { items: [...], focusX, focusW } —— **几何和条目一次算完**，避免 QML 侧
-    //   分几次赋值造成的中间态（用户 2026-11-03：框来回乱跳）
+    //   ★ 时间轴悬停预览的**查询**（用户 2026-11-03 / 2026-11-06 定稿的模型，见 .cpp 头注释）：
+    //     以 `center` 为中心取邻近条目，按固定高度等比铺开，返回 [{ index, w, h, url }]
+    //     （url 是 `image://preview/…`）。GUI 线程调用；位置表交给 provider 解码。
+    //     `heightPx` = 图片解码高度；`maxWidthPx` = 窗口宽度（铺满即停，最多 40 张）。
+    //   返回 { items, stripX, focusX, focusW, ready } —— **几何和条目一次算完**，避免 QML 侧
+    //   分几次赋值造成的中间态（用户 2026-11-03：框来回乱跳）；`ready` = 这一批的缩略图
+    //   **全部有结论**（解出来了 / 判了"解不出来"），界面据此决定换不换正在显示的那一份。
+    //   ★ **本函数不发活**（只算几何 + 登记位置表）：派活是 `previewEnsure()`，且只在"组件空闲"
+    //     时由前端调用 —— 调度归前端（用户 2026-11-06）。
     //   `gapPx` = 预览条**图片之间的间距**（由 QML 的 `Theme.spaceSm` 传进来，
     //   不能在 C++ 里另写一个数 —— 否则布局和定位框的计算会差一点，用户 2026-11-03 指出）
     Q_INVOKABLE QVariantMap previewStrip(int center, int heightPx, int maxWidthPx, int gapPx);
     //   预览条里"第 index 条"的**显示宽度**（数据来自序列本身，不看预览条里有没有它）
     Q_INVOKABLE int previewItemWidth(int index, int heightPx) const;
 
-    //   ★ 预览缩略图的批量解码（用户 2026-11-04）：
-    //     · `previewStrip()` 为当前这一批起并行解码，**解完只更新缓存**，不去"直接给界面赋值"；
-    //     · `previewCacheVersion` 只在缓存变化时 +1（界面据此**按当前位置查**是否就绪）；
-    //     · `previewBatchReady(batch)` = 这一批要的图现在**是否都在缓存里**（查询，不是状态推进）。
-    Q_PROPERTY(int previewCacheVersion READ previewCacheVersion NOTIFY previewCacheChanged)
-    int previewCacheVersion() const { return m_previewCacheVersion; }
-    Q_INVOKABLE bool previewBatchReady(int batch) const;
+    //   ★★ 派活（用户 2026-11-06 定的模型）：只派"此刻还缺的"那几张 ——
+    //     已缓存 / 已判失败 / 正在解**都跳过**（幂等：调一次和调十次一样，不会重复解）。
+    //     **忙的时候不派**（返回 false）：前端据此保持"忙"，等 `previewIdle` 再按当时的位置重算。
+    //     返回 true = 这一批开跑了（前端置"忙"）。
+    Q_INVOKABLE bool previewEnsure(int center, int heightPx, int maxWidthPx, int gapPx);
     //   退出前用：正在解码的条目数（有界排空用）
     int inFlightCount() const { return m_inFlight; }
     //   退出前用：停掉预览批次（不停在飞的那几个，只不再派新活）
@@ -246,7 +248,10 @@ Q_SIGNALS:
     void zoomChanged();
     //   ★ 解码失败且原因是密码：`item` = 条目下标，`level` = 层号（0 = 最外层容器）
     void passwordRequired(int item, int level);
-    void previewCacheChanged();
+    //   ★ 预览批次的**完成通知**（用户 2026-11-06）：一批跑完 = **组件回到空闲**。
+    //     **不带批次号、不带 key 列表** —— 前端收到后按"此刻"的位置重算所需集合：
+    //     齐了就显示、没齐就再派。位置早滑走了也不用管（从来就没有队列，只有"当前需求"）。
+    void previewIdle();
     void panChanged();
     void zoomLockedChanged();
     void osdVisibleChanged();
@@ -391,16 +396,28 @@ private:
     bool    m_notifyPending = false;
     struct PreviewJob { QString key; imageread::Location loc; QSize target; };
     std::shared_ptr<PreviewStore> m_previewStore;   // 预览位置表（provider 线程读）
-    int m_previewBatch = 0;           // 最近一批的批号
-    int m_previewCacheVersion = 0;    // 缓存变化计数（界面据此重查）
-    QHash<int, QStringList> m_previewBatchKeys;   // 批号 → 这一批要的 key（查就绪用）
-    //   ★ 批次调度（用户 2026-11-04）：**同一时刻只跑一批**；跑完时再看"当前要的是哪一页"，
-    //     不是最新就接着为最新那页起下一批 —— 中间滑过的位置不排队、也不额外起批次。
-    bool     m_previewRunning = false;
-    QVector<PreviewJob> m_previewPendingJobs;   // 最近一次请求"还缺的那几张"
-    int      m_previewPendingBatch = 0;         // 对应的批号
-    QFutureWatcher<int> *m_previewWatcher = nullptr;
+    //   ★★ 预览的三块状态（用户 2026-11-06 定稿；**全在主线程**，工作线程只写 `store->images`）：
+    //     · `m_previewBusy`：派了活、还没收到 finish ⇒ **前端不该再派**（"只有空闲才发"）；
+    //     · `m_previewInFlight`：正在解的 key —— "缺哪几张"要减掉它们（否则会重复解同一张）；
+    //     · `m_previewFailed`：解不出来的 key ⇒ **算已了结**（否则这一批永远不就绪，条永远不换）
+    //       且**永不重派**（否则 失败 → 未就绪 → 派活 → 又失败 …… 死循环）。
+    //     ★ 没有批次号：通知不带批次，前端每次按"当时"的位置重算 —— 见 `.cpp` 的头注释。
+    bool     m_previewBusy    = false;
+    bool     m_previewStopped = false;   // 退出中：不再派新活（在飞的回来自然落缓存）
+    QSet<QString> m_previewInFlight;
+    QSet<QString> m_previewFailed;
+    //   ★ 换来源的"代"（2026-11-06）：缓存键里带它 —— 否则换到另一个文件夹后，
+    //     `<高度>-<下标>` 会命中**上一个来源**的缩略图（同一序号，图完全不同）。
+    //     老图留在表里自然老化（上限 512），不需要谁去清。
+    quint64  m_previewGen = 0;
+    //   缓存键 = `代-高度-下标`
+    QString previewKeyOf(int heightPx, int index) const;
+    QFutureWatcher<QString> *m_previewWatcher = nullptr;
     void startPreviewBatch(const QVector<PreviewJob> &jobs);
+    //   `center` 附近要铺的那几条（纯几何，O(条数)；`previewStrip` / `previewEnsure` 共用）
+    QVector<int> previewNeighbors(int center, int heightPx, int maxWidthPx, int gapPx) const;
+    //   "这一张有结论了吗" = 解出来了 ∨ 判了失败（**在飞不算**）
+    bool previewSettled(const QString &key) const;
     int             m_promptedItem = -1;   // 已经为哪一条问过密码（不重复问）
     int     m_inFlight = 0;                  // 在飞计数
     int     m_skipped  = 0;                  // 跳过（整屏都缺）计数

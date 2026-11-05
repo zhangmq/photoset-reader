@@ -211,6 +211,9 @@ void ViewerModel::setSequence(const Sequence *seq)
     m_entries.clear();
     m_missing.clear();               // 结论的生命周期 = 一次查看（换来源一起清）
     m_needsPassword.clear();
+    //   ★ 预览也换代（2026-11-06）：键里带代号 ⇒ 上一个来源的缩略图/结论一律不再命中。
+    ++m_previewGen;
+    m_previewFailed.clear();
     m_promptedItem = -1;
     m_inFlight = 0;
     m_skipped  = 0;
@@ -1054,29 +1057,44 @@ void ViewerModel::markNeedsPassword(int item, int level)
     m_needsPassword.insert(item, level);
 }
 
-//   时间轴悬停预览：一次算完 **条目 + 定位框几何**（以 center 为中心，左右交替取）
-QVariantMap ViewerModel::previewStrip(int center, int heightPx, int maxWidthPx, int gapPx)
-{
-    QVariantMap result;
-    QVariantList items;
-    result.insert(QStringLiteral("items"), items);
-    result.insert(QStringLiteral("stripX"), 0);
-    result.insert(QStringLiteral("focusX"), 0);
-    result.insert(QStringLiteral("focusW"), 0);
-    if (!m_seq || m_seq->count() <= 0 || heightPx <= 0 || maxWidthPx <= 0 || !m_previewStore)
-        return result;
+// ══ 时间轴悬停预览（用户 2026-11-03 / 2026-11-06 定稿）══════════════════════════
+//   ★★ 分工 —— 这一节存在的理由就是"别再让组件自己调度"：
+//     · **前端**（QML `FullscreenBottomBar`）= **唯一的调度者 + 唯一的显示决定者**。
+//       它持有"指针指在哪一条"这个事实，在**两个事件**（进度变化 / 空闲通知）上跑同一段判定：
+//       算当前位置要哪几张（`previewStrip`）⇒ 缺就 `previewEnsure`（幂等）⇒ `ready` 就换显示，
+//       不 ready **保持上一份**（绝不显示半条 / 过期几何）。
+//     · **本类**（组件）= 缓存 + pending + **一条"我空闲了"的通知**：
+//       不知道"当前位置"、不比较新旧、不采样、**没有队列**。
+//     · "忙"在前端只是一个布尔（派了活、还没收到 `previewIdle`）；前端是唯一的派活者 ⇒ 精确。
+//   ★ 为什么没有批次号（2026-11-06 删掉 `m_previewBatch` / `m_previewBatchKeys` /
+//     `previewBatchReady`）：批次号唯一的用途是让**组件**判断"我这批还用得上吗" ——
+//     那正是把调度塞回组件里。通知不带批次 ⇒ 前端每次都按**当时**的位置重算，
+//     "最新优先"是自然结果（旧请求的活照跑完、落缓存，只是没人再等它）。
+//   ★ 用户报的 bug（2026-11-06）："停在某一位置时会先显示一个非当前状态的预览，再跳到正确的"。
+//     成因两条，都在前端：① 请求被 600 ms 节流推迟（几何一直是旧的）；
+//     ② 显示跟着"请求"走而不是跟着"就绪"走（`0e4f563` 把 2026-11-04 的就绪门控拆了）。
 
-    const int n = m_seq->count();
+//   缩略图的缓存键 = **代 + 解码高度 + 条目下标**：换条高是另一张缩略图；
+//   换来源后"代"变了 ⇒ 同序号也不会命中上一个来源的图（2026-11-06）。
+QString ViewerModel::previewKeyOf(int heightPx, int index) const
+{
+    return QStringLiteral("%1-%2-%3").arg(m_previewGen).arg(heightPx).arg(index);
+}
+
+//   以 `center` 为中心左右交替取，直到铺满 `maxWidthPx`（最多 40 张）。
+//   ★ 纯几何：`previewStrip()`（要哪几张 → 给界面）与 `previewEnsure()`（派哪几张）共用，
+//     两边的 key 集合必须一模一样，否则"算出来的"和"去解的"会对不上。
+QVector<int> ViewerModel::previewNeighbors(int center, int heightPx, int maxWidthPx, int gapPx) const
+{
+    QVector<int> idx;
+    const int n = m_seq ? m_seq->count() : 0;
+    if (n <= 0 || heightPx <= 0 || maxWidthPx <= 0) return idx;
+
     center = qBound(0, center, n - 1);
-    const auto widthOf = [this, heightPx](int i) {
-        const QSize s = m_seq->at(i).size;
-        const qreal ratio = (s.isValid() && s.height() > 0) ? qreal(s.width()) / s.height() : 0.7;
-        return qMax(24, int(qRound(heightPx * ratio)));
-    };
+    const auto widthOf = [this, heightPx](int i) { return previewItemWidth(i, heightPx); };
 
     const int half = maxWidthPx / 2 + heightPx;
     const int gap = qMax(0, gapPx);        // ★ 间距由调用方给（与 QML 的 Row spacing 同一个值）
-    QVector<int> idx;
     idx << center;
     int total = widthOf(center);
     int leftW = 0, rightW = 0;
@@ -1097,6 +1115,28 @@ QVariantMap ViewerModel::previewStrip(int center, int heightPx, int maxWidthPx, 
         if (!added) break;
     }
     std::sort(idx.begin(), idx.end());
+    return idx;
+}
+
+//   时间轴悬停预览：一次算完 **条目 + 定位框几何 + 就绪与否**（以 center 为中心，左右交替取）
+//   ★ **不发活**：`ready=false` 时前端自己去调 `previewEnsure()`（而且只在它认为组件空闲时）。
+QVariantMap ViewerModel::previewStrip(int center, int heightPx, int maxWidthPx, int gapPx)
+{
+    QVariantMap result;
+    result.insert(QStringLiteral("items"), QVariantList());
+    result.insert(QStringLiteral("stripX"), 0);
+    result.insert(QStringLiteral("focusX"), 0);
+    result.insert(QStringLiteral("focusW"), 0);
+    result.insert(QStringLiteral("ready"), false);
+    if (!m_seq || m_seq->count() <= 0 || heightPx <= 0 || maxWidthPx <= 0 || !m_previewStore)
+        return result;
+
+    const QVector<int> idx = previewNeighbors(center, heightPx, maxWidthPx, gapPx);
+    if (idx.isEmpty()) return result;
+
+    center = qBound(0, center, m_seq->count() - 1);
+    const auto widthOf = [this, heightPx](int i) { return previewItemWidth(i, heightPx); };
+    const int gap = qMax(0, gapPx);
 
     //   定位框几何（**同一份数据**）：width = 该条宽度；position = 整条该在的 x + 该条之前的宽度
     int leftSum = 0, rowW = -gap;
@@ -1113,16 +1153,19 @@ QVariantMap ViewerModel::previewStrip(int center, int heightPx, int maxWidthPx, 
     result.insert(QStringLiteral("focusW"), w);
 
     QHash<QString, PreviewStore::Entry> entries;
+    QVariantList items;
     int xAcc = 0;                       // 该条在"条内"的左偏移（数据，供定位框按 hoverIndex 取用）
+    bool ready = true;
     for (int i : idx) {
         const int iw = widthOf(i);
         const int ix = xAcc;
         xAcc += iw + gap;
-        const QString key = QStringLiteral("%1-%2").arg(heightPx).arg(i);
+        const QString key = previewKeyOf(heightPx, i);
         PreviewStore::Entry e;
         e.loc    = m_seq->at(i).loc;
         e.target = QSize(iw * 2, heightPx * 2);
         entries.insert(key, e);
+        if (!previewSettled(key)) ready = false;    // 在飞 / 还没解 ⇒ 这一批**还不能显示**
 
         QVariantMap m;
         m.insert(QStringLiteral("index"), i);
@@ -1134,53 +1177,14 @@ QVariantMap ViewerModel::previewStrip(int center, int heightPx, int maxWidthPx, 
     }
     {
         QMutexLocker lk(&m_previewStore->mutex);
+        //   表的规模上限；**先清后插** —— 以前是插完再清，会把刚放进去的这一批也抹掉，
+        //   然后 provider 找不到位置 ⇒ 那一格报 "Failed to get image from provider"。
+        if (m_previewStore->entries.size() + entries.size() > 512) m_previewStore->entries.clear();
         for (auto it = entries.constBegin(); it != entries.constEnd(); ++it)
             m_previewStore->entries.insert(it.key(), it.value());
-        if (m_previewStore->entries.size() > 512) m_previewStore->entries.clear();
     }
     result.insert(QStringLiteral("items"), items);
-
-    //   ★ 批量并行解码（用户 2026-11-04）：**只解缺的**（已经缓存过的直接复用）
-    //     ⇒ 指针滑动时通常只多 1–2 张新图，解码量与延迟都很小；停在哪一页都能**立刻**出图，
-    //     不需要"停下等一会儿再解"那种 debounce（那样会明显拖慢响应）。
-    QVector<PreviewJob> jobs;
-    jobs.reserve(idx.size());
-    int cached = 0;
-    {
-        QMutexLocker lk(&m_previewStore->mutex);
-        for (int i : idx) {
-            const int iw = widthOf(i);
-            const QString key = QStringLiteral("%1-%2").arg(heightPx).arg(i);
-            if (m_previewStore->images.contains(key)) { ++cached; continue; }
-            PreviewJob j;
-            j.key    = key;
-            j.loc    = m_seq->at(i).loc;
-            j.target = QSize(iw * 2, heightPx * 2);
-            jobs.append(j);
-        }
-    }
-    ++m_previewBatch;
-    result.insert(QStringLiteral("batch"), m_previewBatch);
-    m_previewPendingJobs  = jobs;
-    m_previewPendingBatch = m_previewBatch;
-
-    //   这一批"要哪些 key"记下来 —— 界面用它查"现在是否都就绪"（不靠完成事件推进状态）
-    {
-        QStringList keys;
-        keys.reserve(idx.size());
-        for (int i : idx) keys << QStringLiteral("%1-%2").arg(heightPx).arg(i);
-        m_previewBatchKeys.insert(m_previewBatch, keys);
-        while (m_previewBatchKeys.size() > 8) {        // 只留最近几批（够查就绪即可）
-            int oldest = m_previewBatch;
-            for (auto it = m_previewBatchKeys.constBegin(); it != m_previewBatchKeys.constEnd(); ++it)
-                oldest = qMin(oldest, it.key());
-            m_previewBatchKeys.remove(oldest);
-        }
-    }
-
-    if (!jobs.isEmpty() && !m_previewRunning)
-        startPreviewBatch(jobs);            // 空闲 ⇒ 立刻开始（不等待、不 debounce）
-    Q_UNUSED(cached);
+    result.insert(QStringLiteral("ready"), ready);
     return result;
 }
 
@@ -1188,49 +1192,74 @@ QVariantMap ViewerModel::previewStrip(int center, int heightPx, int maxWidthPx, 
 void ViewerModel::startPreviewBatch(const QVector<PreviewJob> &jobs)
 {
     if (jobs.isEmpty() || !m_previewStore) return;
-    m_previewRunning = true;
+    m_previewBusy = true;
+    for (const PreviewJob &j : jobs) m_previewInFlight.insert(j.key);
 
     const auto store = m_previewStore;
     if (!m_previewWatcher) {
-        m_previewWatcher = new QFutureWatcher<int>(this);
-        //   ★ 一批结束时**采样当前位置**（用户 2026-11-04）：
-        //     刚跑完的不是最新请求 ⇒ 立刻为最新那页起下一批（中间滑过的位置不排队、不额外起批次）；
-        //     是最新 ⇒ 标记就绪，QML 换上新内容。
+        m_previewWatcher = new QFutureWatcher<QString>(this);
+        //   ★ 唯一的通知入口（用户 2026-11-06）：跑完 = **组件回到空闲**。
+        //     不带批次号 ⇒ 前端按"此刻"的位置重算：位置变了就是新需求，没变就把剩下的补上。
+        //     ★ 也**不在这里继续起下一批**（以前那套"采样当前位置再起一批"就是组件在调度）。
         QObject::connect(m_previewWatcher, &QFutureWatcherBase::finished, this, [this] {
-            m_previewRunning = false;
-            ++m_previewCacheVersion;                 // 缓存变了 ⇒ 界面按当前位置重查
-            emit previewCacheChanged();
-            //   ★ 跑完的这批不是最新请求 ⇒ **为最新位置接着起下一批**（采样，不排队）
-            if (m_previewPendingBatch != m_previewBatch && !m_previewPendingJobs.isEmpty())
-                startPreviewBatch(m_previewPendingJobs);
+            m_previewBusy = false;
+            m_previewInFlight.clear();                     // 同一时刻只有一批 ⇒ 全清
+            const QList<QString> failed = m_previewWatcher->future().results();
+            for (const QString &k : failed)
+                if (!k.isEmpty()) m_previewFailed.insert(k);   // 解不出来：算已了结、永不重派
+            emit previewIdle();
         });
     }
-    m_previewWatcher->setFuture(QtConcurrent::mapped(jobs, [store](const PreviewJob &j) {
+    m_previewWatcher->setFuture(QtConcurrent::mapped(jobs, [store](const PreviewJob &j) -> QString {
         const QImage img = imageread::imageScaled(j.loc, j.target);
-        if (!img.isNull()) {
-            QMutexLocker lk(&store->mutex);                 // 锁只护内存读写，锁里不解码
-            store->images.insert(j.key, img);
-            if (store->images.size() > 512) store->images.clear();
-        }
-        return 0;
+        if (img.isNull()) return j.key;                    // 解不出来 ⇒ 报给主线程记一笔
+        QMutexLocker lk(&store->mutex);                    // 锁只护内存读写，锁里不解码
+        if (store->images.size() >= 512) store->images.clear();   // **先清后插**（别抹掉刚写进去的）
+        store->images.insert(j.key, img);
+        return QString();
     }));
 }
 
 void ViewerModel::shutdownPreviewWork()
 {
-    m_previewPendingJobs.clear();
-    m_previewPendingBatch = -1;          // 不会再起新批次
+    //   不再派新活；在飞的那几个回来时照旧落缓存 + 发一次 `previewIdle`（这时已经没人在听了）。
+    m_previewStopped = true;
 }
 
-//   "这一批现在是否都就绪" —— **查询**（按 key 查缓存），不是状态推进
-bool ViewerModel::previewBatchReady(int batch) const
+//   "这一张有结论了吗" = **解出来了 ∨ 判了失败**（在飞**不算**）
+//   ★ 失败必须算"有结论"：否则一张坏图能让整批永远不就绪 ⇒ 预览条永远停在上一次的内容；
+//     而且"未就绪 ⇒ 再派"会绕成死循环（派 → 失败 → 未就绪 → 再派）。
+bool ViewerModel::previewSettled(const QString &key) const
 {
-    if (!m_previewStore) return false;
-    const auto it = m_previewBatchKeys.constFind(batch);
-    if (it == m_previewBatchKeys.constEnd() || it.value().isEmpty()) return false;
+    if (key.isEmpty() || !m_previewStore) return false;
+    if (m_previewFailed.contains(key)) return true;
     QMutexLocker lk(&m_previewStore->mutex);
-    for (const QString &k : it.value())
-        if (!m_previewStore->images.contains(k)) return false;
+    return m_previewStore->images.contains(key);
+}
+
+//   派活（用户 2026-11-06）：**只派此刻还缺的**，而且**忙的时候一概不派**。
+//   ★ 幂等：已缓存 / 已判失败 / 正在解 都跳过 ⇒ 前端调多少次都不会重复解。
+//   ★ 返回 false 的两种含义对前端是一样的："现在没有活能干，等通知 / 等下一次事件"。
+bool ViewerModel::previewEnsure(int center, int heightPx, int maxWidthPx, int gapPx)
+{
+    if (!m_seq || !m_previewStore || m_previewStopped) return false;
+    if (m_previewBusy) return false;                   // ★ 组件忙 ⇒ 不派（同一个时刻只有一批）
+    const QVector<int> idx = previewNeighbors(center, heightPx, maxWidthPx, gapPx);
+    if (idx.isEmpty()) return false;
+
+    QVector<PreviewJob> jobs;
+    jobs.reserve(idx.size());
+    for (int i : idx) {
+        const QString key = previewKeyOf(heightPx, i);
+        if (previewSettled(key) || m_previewInFlight.contains(key)) continue;
+        PreviewJob j;
+        j.key    = key;
+        j.loc    = m_seq->at(i).loc;
+        j.target = QSize(previewItemWidth(i, heightPx) * 2, heightPx * 2);
+        jobs.append(j);
+    }
+    if (jobs.isEmpty()) return false;
+    startPreviewBatch(jobs);
     return true;
 }
 

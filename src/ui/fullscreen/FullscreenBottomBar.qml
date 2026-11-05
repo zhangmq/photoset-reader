@@ -61,32 +61,54 @@ Item {
     //     时间轴、锁定缩放、OSD）；**不依赖文件的**（画面缩放 / 版面 / 算法 / 切换速度 / 循环 /
     //     全屏窗口）照常可用 —— 它们改的是**全局默认**，打开文件后自动生效。
     property bool   hasSource: true
-    //   ── 时间轴悬停预览（用户 2026-11-03）──
-    //   ── 悬停预览条（用户 2026-11-04 定稿的关系）──
-    //     · 数据：`previewData = { items, stripX, focusX, focusW }`，由上层调 `ui.viewer.previewStrip()` 填；
-    //     · 显隐：**只看指针在哪儿**（进度条 / 预览条），不用延时收起；
-    //     · 它在底栏内部，但"预览条在屏"会让底栏不淡出（`previewStripVisible` 进 `showUi`）。
+    //   ── 时间轴悬停预览（用户 2026-11-03 / 2026-11-06 定稿）──
+    //     ★ **本组件就是"前端"**：它持有"指针指在哪一条"（`timeline.hoverIndex`），
+    //       所以**调度和显示决定都在这里** —— `ViewerModel` 只是缓存 + 执行器 + 一条
+    //       "我空闲了"的通知（`previewIdle`），它不知道"当前位置"，也没有队列。
+    //     · `viewer`：上层给的 `ui.viewer`（null = 没有来源）；
+    //     · `previewShown`：**正在显示**的那一份（`{items, stripX, focusX, focusW}`）；
+    //     · `previewShownKey`：那一份的身份（center:imgH:width）—— 同一批不重建 delegate；
+    //     · `previewBusy`：组件忙？（派了活、还没收到 `previewIdle`）
+    property var    viewer: null
     property bool   previewEnabled: true
-    property var    previewData: ({})           // **最新**请求
-    //   ★ 正在显示的那一份：**新批次就绪才换**（用户 2026-11-04）——
-    //     指针滑走时旧的一批还在解，界面保持上一份内容，不会先空一块再跳。
     property var    previewShown: ({})
-    //   ★ 内容**立即**换（预览条要马上出现）；图片由 provider 按需给：
-    //     已解码的在缓存里 ⇒ 立刻就有；没解完的逐张补上（RAR 必须串行读，见 archive.cpp）。
-    function syncPreviewShown() {
-        if (previewData && previewData.items && previewData.items.length > 0)
-            previewShown = previewData
-    }
-    //   ★ 指针扫动时的换页**节流**（throttle，不是 debounce）：持续移动也按间隔换页
-    readonly property int previewDelayMs: 600
-    property real   previewLastAt: 0          // 上次真正换页的时刻（节流窗口起点）
+    property string previewShownKey: ""
+    property bool   previewBusy: false
+    readonly property int previewImgH: Math.max(1, Theme.timelinePreviewH - Theme.spaceSm * 2)
 
-    //   节流：到窗口就立刻换；不到窗口就排一次尾随触发（保证持续移动也有输出）
+    //   ★ 判定只有这一段，**两个事件共用**（进度变化 / 批次完成）：
+    //     · 就绪 ⇒ 换显示（`ready` 只在这条路上为真 ⇒ 绝不会显示半条 / 过期几何）；
+    //     · 未就绪 ⇒ **不换**，保持上一份 —— 例外：**还没有任何一份**时（刚进进度条）不门控，
+    //       条立刻出现、缩略图逐张补（2026-11-03 用户要的"立即出现"；否则冷缓存要等整批，
+    //       条出不来 —— 那正是 2026-11-04 删掉门控的原因，见 TimelinePreview 的注释）；
+    //     · 未就绪且**空闲**才派活；忙 ⇒ 什么都不发（等通知，到那时再按"当时"的位置算）。
+    function decidePreview() {
+        if (!viewer || !previewEnabled || width <= 0) return
+        if (!timeline.hovered && !previewStrip.hovered) return   // 指针不在预览区：不为放弃的位置派活
+        var i = timeline.hoverIndex
+        var key = i + ":" + previewImgH + ":" + width
+        var d = viewer.previewStrip(i, previewImgH, width, Theme.spaceSm)
+        if (d.ready) {
+            if (key !== previewShownKey) { previewShown = d; previewShownKey = key }
+            return
+        }
+        if (previewShownKey === "") { previewShown = d; previewShownKey = key }   // 首份：不门控
+        if (previewBusy) return
+        previewBusy = viewer.previewEnsure(i, previewImgH, width, Theme.spaceSm)
+    }
+
+    //   ★ 指针扫动时的换页**节流**（throttle，不是 debounce）：持续移动也按间隔换页。
+    //     2026-11-06 从 600 ms 收到 100 ms：600 ms 是"停住之后还挂着旧预览"的直接原因；
+    //     现在有就绪门控兜着，节流只负责"别让拖动把 delegate 重建到卡"。
+    readonly property int previewDelayMs: 100
+    property real   previewLastAt: 0          // 上次真正判定的时刻（节流窗口起点）
+
+    //   节流：到窗口就立刻判定；不到窗口就排一次尾随触发（保证持续移动也有输出）
     function requestPreview() {
         const now = Date.now()
         if (now - previewLastAt >= previewDelayMs) {
             previewLastAt = now
-            previewHover(timeline.hoverIndex)
+            decidePreview()
         } else if (!previewThrottleTimer.running) {
             previewThrottleTimer.start()
         }
@@ -107,16 +129,15 @@ Item {
     signal windowFullscreenToggled()
     signal osdToggled()
     signal seeked(int index)
-    signal previewHover(int index)          // 鼠标进/移到进度条上（指到的条目）
 
-    //   节流的尾随触发：到点用**最新**那一页换（持续移动也有输出）
+    //   节流的尾随触发：到点就用**最新**那一页判定（持续移动也有输出）
     Timer {
         id: previewThrottleTimer
         interval: root.previewDelayMs
         onTriggered: {
             root.previewLastAt = Date.now()
             if (timeline.hovered)
-                root.previewHover(timeline.hoverIndex)
+                root.decidePreview()
         }
     }
     Connections {
@@ -125,7 +146,7 @@ Item {
             if (timeline.hovered) {
                 previewThrottleTimer.stop()
                 root.previewLastAt = Date.now()
-                root.previewHover(timeline.hoverIndex)   // 刚进入进度条：立刻换
+                root.decidePreview()             // 刚进入进度条：立刻判定一次
             } else {
                 previewThrottleTimer.stop()
             }
@@ -133,6 +154,22 @@ Item {
         function onHoverIndexChanged() {
             if (timeline.hovered) root.requestPreview()
         }
+    }
+
+    //   ★ 批次完成 = **组件回到空闲**（用户 2026-11-06）：清"忙"，再按**此刻**的位置重算一遍。
+    //     位置早滑走了也不用管 —— 从来就没有队列，只有"当前需求"。
+    Connections {
+        target: root.viewer
+        function onPreviewIdle() {
+            root.previewBusy = false
+            root.decidePreview()
+        }
+    }
+    //   换来源（viewer 换了 / 变成 null）⇒ 已显示的那一份作废（另一个来源的图，序号对不上）
+    onViewerChanged: {
+        root.previewShown = ({})
+        root.previewShownKey = ""
+        root.previewBusy = false
     }
 
     //   ★ 控制条显示条件（用户 2026-11-03）：**指针在进度条 或 控制条**（不含预览条）
@@ -165,7 +202,8 @@ Item {
         anchors.bottom: timeline.top
         anchors.left: parent.left
         width: parent.width
-        //   ★ 显示**已就绪的那一份**（`previewShown`）；未就绪时保持上一份，不会空一块再跳
+        //   ★ 显示的是 `previewShown` —— 它**只在就绪时**被换（首份除外），
+        //     所以不会出现"条跳到新位置、图还是空的"那种半成品（用户 2026-11-06）
         items: root.previewShown.items ?? []
         stripX: root.previewShown.stripX ?? 0
         focusX: root.previewShown.focusX ?? 0
@@ -174,6 +212,17 @@ Item {
         visible: root.previewEnabled && (timeline.hovered || hovered)
                  && (root.previewShown.items ? root.previewShown.items.length > 0 : false)
         onItemClicked: function (i) { root.seeked(i) }      // 点缩略图 = 跳到那一页
+    }
+    //   ★ 预览条收起 ⇒ 作废"已显示的那一份"：下次进入进度条按**首份**处理（不门控、立即出现）。
+    //     否则重新进入时会先亮出上一次遗留的旧内容，再跳到正确的 —— 用户 2026-11-06 报的就是这个。
+    Connections {
+        target: previewStrip
+        function onVisibleChanged() {
+            if (!previewStrip.visible) {
+                root.previewShown = ({})
+                root.previewShownKey = ""
+            }
+        }
     }
     //   给上层用：预览条在屏 ⇒ 底栏不淡出
     readonly property bool previewStripVisible: previewStrip.visible
