@@ -673,16 +673,24 @@ function Invoke-Package {
     }
 
     #   ── ICU：Qt6Core.dll 硬导入 icuuc.dll（Qt 6.12 起），windeployqt 不拷 ──
-    #   ★ Qt 6.12 的 Windows 包不自带 ICU：它用系统 ICU（System32\icuuc.dll，Win10 1703+，
-    #     导出转发到 icu.dll）。Qt 目录里有就拷，否则确认系统有 —— 都没有说明目标系统太旧。
+    #   ★ Qt 6.12 的 Windows 包**不自带** ICU（实测：整个 Qt 目录里没有 icu*.dll），它硬导入
+    #     系统 ICU：`System32\icuuc.dll`（36 KB 的转发壳，导出转发到同目录 `icu.dll`）。
+    #   ★ 为什么"系统一定有"：system32 的 ICU 是 **Windows 10 1703 起**随系统内置的
+    #     （Server 侧对应 Server 2019；.NET 也以 1703 / Server 2019 为可加载 ICU 的分界），
+    #     而 **Qt 6.12 支持的 Windows 起点是 10 1809 / 11（Server 2019+）** —— 比 ICU 的
+    #     内置时间还晚 ⇒ **我们能支持的系统上都有它**，不必随包分发（也不该分发微软的系统 DLL）。
+    #     ⇒ 下面这个 throw 只会在 WinPE / 被裁剪的极简镜像这类"本来也跑不了 Qt 6.12"的环境触发。
+    #   ★ 真要覆盖更老的系统（Win10 ≤1703 / Server 2016）得换 Qt 5.15，不是拷一个 DLL 能解决的；
+    #     若哪天需要在缺失 ICU 的镜像上跑，唯一办法是随包带 ICU（vcpkg 的 icu，+~30 MB，app-local
+    #     优先于 System32）—— 那时把这里改成拷到 stage 即可。
     $icu = Get-ChildItem $QtRoot -Recurse -Include icu*.dll, icu*.dat -ErrorAction SilentlyContinue
     if ($icu) {
         $icu | ForEach-Object { Copy-Item $_.FullName $stage -Force }
         Write-Host "  ICU（来自 Qt）：$(($icu.Name | Sort-Object -Unique) -join ', ')"
     } elseif (Test-Path (Join-Path $env:SystemRoot 'System32\icuuc.dll')) {
-        Write-Host "  ICU：使用系统自带的 $env:SystemRoot\System32\icuuc.dll（Win10 1703+）"
+        Write-Host "  ICU：使用系统自带的 $env:SystemRoot\System32\icuuc.dll（Win10 1703+ / Server 2019+，Qt 6.12 最低要求 10 1809）"
     } else {
-        throw 'ICU 缺失：Qt 未自带，系统也没有 icuuc.dll（目标系统过旧？）'
+        throw 'ICU 缺失：系统没有 System32\icuuc.dll。Qt 6.12 要求 Windows 10 1809+ / Server 2019+（这些系统都自带 ICU）；请确认目标不是 WinPE / 被裁剪的镜像，或需要把 Qt 换成不依赖系统 ICU 的构建。'
     }
 
     #   ── VC++ 运行时：windeployqt 不拷，目标机没装可再发行包就起不来 ──
