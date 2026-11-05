@@ -9,11 +9,29 @@
 #include <QTemporaryFile>
 #include <algorithm>
 #include <cstring>
+#include <string>
 
 #include <archive.h>
 #include <archive_entry.h>
 
-#define _UNIX                     // unrar 的 dll.hpp 在 Unix 上需要它来定义 HANDLE/LPARAM 等
+//   ★★ unrar 的 dll.hpp 在 Unix 上靠 `_UNIX` 自己定义 HANDLE/LPARAM/CALLBACK 等；
+//      Windows 上必须用**真正的 Windows 类型**。
+//      ⚠️ 绝对不能在 Windows 上定义 `_UNIX`：那样 `LPARAM` 会变成 `long` —— Windows 上
+//      `long` 是 **32 位**，而 DLL 传的是 64 位指针 ⇒ 回调里的 `userData` / `p1`（数据指针）
+//      / `p2`（长度）全部被截断 ⇒ 解压第一张图就 0xc0000005（2026-11-05 真机实测，
+//      栈落在 unrarCallback 的 `ctx->out` 解引用上）。
+//      Linux 上 `long` 是 64 位，所以同一份代码不暴露这个问题。
+#ifdef Q_OS_WIN
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
+#else
+#  define _UNIX
+#endif
 #include <unrar/dll.hpp>
 
 namespace {
@@ -86,16 +104,32 @@ int CALLBACK unrarCallback(UINT msg, LPARAM userData, LPARAM p1, LPARAM p2)
 struct UnrarReader {
     HANDLE h = nullptr;
     QByteArray pathUtf8;
+#ifdef Q_OS_WIN
+    std::wstring pathW;                  // ★ Windows：宽字符路径（见 open() 里的说明）
+#endif
     UnrarCtx ctx;
     unsigned int openResult = 0;
     unsigned int flags = 0;              // 打开时返回的归档标志（含 ROADF_SOLID）
 
     bool open(const QString &path, const QString &password, unsigned int mode)
     {
-        pathUtf8 = QFileInfo(path).absoluteFilePath().toUtf8();
+        const QString abs = QFileInfo(path).absoluteFilePath();
+        pathUtf8 = abs.toUtf8();
         RAROpenArchiveDataEx data;
         memset(&data, 0, sizeof(data));
+#ifdef Q_OS_WIN
+        //   ★★ Windows 上**必须**给 `ArcNameW`（宽字符），不能只给 `ArcName`：
+        //      unrar 的 `RAROpenArchiveEx` 先看 `ArcNameW`，为空才把 `ArcName` 的字节按
+        //      **当前 ANSI 代码页**转宽字符（`CharToWide`）。UTF-8 的中文路径在 GBK 系统上
+        //      转换后是乱码路径 ⇒ `Arc.Open` 失败 ⇒ `ERAR_EOPEN`（"open failed"）⇒
+        //      文件夹里的中文名 RAR 被当成坏容器跳过，连"要密码"都走不到
+        //      （2026-11-05 真机实测：日志 `libunrar open failed: open failed`）。
+        //      Linux 不需要处理：那边 `CharToWide` 按 UTF-8 解释，本来就对。
+        pathW = abs.toStdWString();
+        data.ArcNameW = pathW.data();
+#else
         data.ArcName = pathUtf8.data();
+#endif
         data.OpenMode = mode;
         data.Callback = unrarCallback;
         data.UserData = reinterpret_cast<LPARAM>(&ctx);
@@ -625,9 +659,11 @@ QByteArray ArchiveSource::dataUnrar(int index) const
     }
 
     QByteArray out;
-    out.reserve(int(wantSize));
-    seq->r.ctx.out = &out;
-    seq->r.ctx.expected = wantSize;
+    //   ★ 输出缓冲**只在真正要解的那一条上挂**：solid 包往前推进时也要解压前面的条目，
+    //     若此时 `ctx.out` 已挂上，跳过条目的数据会把 buffer 污染掉（长度对不上 ⇒ 报错）。
+    //     挂/摘都在同一线程，回调不会看到半开状态。
+    seq->r.ctx.out = nullptr;
+    seq->r.ctx.expected = 0;
 
     RARHeaderDataEx hdr;
     int rc = 0;
@@ -638,7 +674,10 @@ QByteArray ArchiveSource::dataUnrar(int index) const
         const int i = seq->pos;
         if (i == want) {
             // RAR_TEST 会经回调把解压数据交给我们（不写入磁盘）
+            out.reserve(int(wantSize));
+            seq->r.ctx.out = &out;
             const int pr = RARProcessFile(seq->r.h, RAR_TEST, nullptr, nullptr);
+            seq->r.ctx.out = nullptr;               // 解完就摘掉（跳过阶段不再收数据）
             ++seq->pos;                             // 游标前进
             if (pr != ERAR_SUCCESS) {
                 ++m_readFails;

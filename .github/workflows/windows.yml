@@ -142,14 +142,26 @@ jobs:
           Invoke-WebRequest "https://www.rarlab.com/rar/unrarsrc-$env:UNRAR_VERSION.tar.gz" -OutFile unrar.tar.gz
           tar -xzf unrar.tar.gz
           Push-Location unrar
+          #   ★★ 关掉 unrar 的 SMP（线程池）：7.1.6 在 DLL 模式 + 本工程"逐条读、随时关包"的
+          #     用法下，`RARCloseArchive` 会死等线程池里的工作线程 —— 2026-11-05 真机实测：
+          #     打开加密 solid 包、解到第 ~43 条时整个窗口卡死（线程栈停在
+          #     RARCloseArchive → WaitForSingleObject）。单线程解压只是慢一点，但不会卡死。
+          #     `os.hpp` 里 `#if !defined(ZIPSFX)` 那段就是 `#define RAR_SMP`，屏蔽掉即可。
+          $osHpp = 'os.hpp'
+          $osText = [IO.File]::ReadAllText($osHpp)
+          $patched = $osText -replace '#if !defined\(ZIPSFX\)\s*\r?\n#define RAR_SMP\s*\r?\n#endif',
+            "// [photoset] RAR_SMP disabled (dll-mode deadlock)`r`n#if 0`r`n#define RAR_SMP`r`n#endif"
+          if ($patched -eq $osText) { throw "unrar: RAR_SMP 补丁没匹配上（源码版本变了？）" }
+          [IO.File]::WriteAllText($osHpp, $patched, (New-Object System.Text.UTF8Encoding($false)))
           #   ★ 不用 msbuild：vcxproj 钉死 Windows SDK 8.1 + 工具集 v140_xp，
           #     runner 上两样都没有，而工具集编号又随镜像变。
           #     源文件清单从 vcxproj 里取（<ClCompile Include>），宏照它的 5 个设置。
+          #   ★ `/utf-8`：源码里有非 ASCII 注释；没有它，非英文 locale 下注释会吞掉后面的代码。
           [xml]$proj = Get-Content UnRARDll.vcxproj
           $srcs = @($proj.SelectNodes("//*[local-name()='ClCompile']") |
-                    ForEach-Object { $_.Include } | Where-Object { $_ })
+                    ForEach-Object { $_.GetAttribute('Include') } | Where-Object { $_ })
           Write-Host "libunrar: $($srcs.Count) 个源文件"
-          cl /nologo /MP /O2 /EHsc /MT /DRARDLL /DUNRAR /DSILENT $srcs `
+          cl /nologo /utf-8 /MP /O2 /EHsc /MT /DRARDLL /DUNRAR /DSILENT $srcs `
             /link /DLL /DEF:dll.def /OUT:unrar.dll /IMPLIB:unrar.lib `
             kernel32.lib user32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib
           if ($LASTEXITCODE -ne 0) { throw "libunrar: 编译失败" }
@@ -315,13 +327,18 @@ jobs:
           if (Test-Path "unrar-prefix\lib\unrar.dll") { Copy-Item unrar-prefix\lib\unrar.dll $stage -Force }
 
           #   ── ICU：Qt6Core.dll 硬导入 `icuuc.dll`（Qt 6.12 起），windeployqt 不拷 ──
+          #   ★ 但 Qt 6.12 的 Windows 包**不自带** ICU：它用系统 ICU
+          #     （`%SystemRoot%\System32\icuuc.dll`，Win10 1703+ 自带，导出转发到 `icu.dll`）。
+          #     所以：Qt 目录里有就拷（将来版本若自带），否则确认系统有；都没有说明目标系统太旧。
           $qtRoot = "C:\Qt\$env:QT_VERSION\msvc2022_64"
           $icu = Get-ChildItem $qtRoot -Recurse -Include icu*.dll, icu*.dat -ErrorAction SilentlyContinue
           if ($icu) {
             Copy-Item $icu.FullName $stage -Force
             Write-Host "ICU（来自 Qt）：$(($icu.Name | Sort-Object -Unique) -join ', ')"
+          } elseif (Test-Path "$env:SystemRoot\System32\icuuc.dll") {
+            Write-Host "ICU：使用系统自带的 $env:SystemRoot\System32\icuuc.dll（Win10 1703+）"
           } else {
-            Write-Warning "Qt 目录里找不到 ICU 文件；where icuuc.dll -> $((where.exe icuuc.dll) -join '; ')"
+            throw "ICU 缺失：Qt 未自带，系统也没有 icuuc.dll（目标系统过旧？）"
           }
 
           #   ── VC++ 运行时：windeployqt **不拷**，但目标机没装可再发行包就起不来 ──
