@@ -142,6 +142,12 @@ jobs:
           Invoke-WebRequest "https://www.rarlab.com/rar/unrarsrc-$env:UNRAR_VERSION.tar.gz" -OutFile unrar.tar.gz
           tar -xzf unrar.tar.gz
           Push-Location unrar
+          #   ★★ PowerShell 7 的 `Push-Location` **不同步进程 CWD**（`[Environment]::CurrentDirectory`
+          #     还停在作业起始目录）—— 而 `[IO.File]` 与 `cl` 用的都是**进程 CWD**：
+          #     不显式同步的话，`os.hpp` 找不到（2026-11-06 CI 实测：
+          #     "Could not find file 'D:\a\photoset-reader\photoset-reader\os.hpp'"），
+          #     vcxproj 里 `ClCompile` 的相对路径也全落空。（PS 5.1 会自动同步，PS 7 不会。）
+          [Environment]::CurrentDirectory = (Get-Location).Path
           #   ★★ 关掉 unrar 的 SMP（线程池）：7.1.6 在 DLL 模式 + 本工程"逐条读、随时关包"的
           #     用法下，`RARCloseArchive` 会死等线程池里的工作线程 —— 2026-11-05 真机实测：
           #     打开加密 solid 包、解到第 ~43 条时整个窗口卡死（线程栈停在
