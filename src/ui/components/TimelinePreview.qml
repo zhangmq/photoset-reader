@@ -23,6 +23,14 @@ Rectangle {
     //   ★ 外部只改 `opened`（用户 2026-11-06）：显隐 + 滑入滑出都在本组件里演
     property bool opened: false
     visible: opened || slide < 1
+    //   ★★ 滑动途中**整条不吃事件**（用户 2026-11-06）：滑动开始就关，**再次到位才开启**。
+    //     原因：条滑上来时它的矩形会从指针（指针在进度条上）下面扫过，命中区一碰到指针
+    //     就被当成"指针进条了" ⇒ `updateHoverIndex(指针 x)` 反查到**另一张**（不是居中那张）
+    //     ⇒ 高亮框横着滑过去；条继续上滑离开指针 ⇒ 框又滑回中线 ⇒ 看起来就是"框左右乱晃"。
+    //     `enabled: false` 会连子项一起关 ⇒ 缩略图的 TapHandler 在滑动途中也不会被误触。
+    //     别的都不动：框的横向 `Behavior` 照旧（真实悬停换张仍然"滑过去"，用户 2026-11-04）。
+    readonly property bool settled: opened && slide === 0
+    enabled: settled
     color: Theme.barFill          // 与顶/底栏同一个面（用户 2026-11-03）
     radius: 0          // 不要圆角（用户 2026-11-03）
     clip: true
@@ -46,8 +54,8 @@ Rectangle {
     //   用 MouseArea（API 最稳）：`acceptedButtons: NoButton` ⇒ 不吃点击，缩略图的 TapHandler 照常
     MouseArea {
         anchors.fill: parent
-        //   ★ 收起途中不再吃 hover（否则条滑过底栏时会把自己"顶"回来，来回抖）
-        enabled: root.opened
+        //   事件开关统一在**根项**上（`enabled: settled`）：滑动途中连缩略图点击一起关，
+        //   到位才恢复 —— 见上面 `settled` 的注释
         hoverEnabled: true
         acceptedButtons: Qt.NoButton
         onEntered: { root.hovered = true; root.updateHoverIndex(mouseX) }   // onEntered 没有 mouse 形参
