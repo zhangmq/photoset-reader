@@ -44,8 +44,9 @@ param(
     [string]$BuildDir = '',
     [string]$Config = 'Release',
 
-    #   `-Step run` 传给程序的参数（例如 '"-H:\Dragon Ball"' 或 '--fullscreen'）
-    [string[]]$RunArgs = @(),
+    #   `-Step run` 传给程序的一整条参数（例如 '"H:\Dragon Ball" --log-level debug'；
+    #   ⚠️ 用字符串而不是数组：`powershell -File` 传数组时会被逗号拼成一个参数）
+    [string]$RunArgs = '',
 
     [string]$QtVersion = '6.12.0',
     [string]$QtArch = 'msvc2022_64',
@@ -265,17 +266,18 @@ function Invoke-Run {
         throw '运行期依赖不全 —— 拒绝启动（否则 Windows 会弹「找不到 xxx.dll」的框）'
     }
     foreach ($d in $dirs) { Add-EnvPath $d }
+    $argLine = $RunArgs.Trim()
     #   没给 --log-file 就补一个（GUI 子系统没有控制台，出问题只能看文件）
-    if (-not ($RunArgs -match '^--log-file')) {
-        $RunArgs = @($RunArgs) + @('--log-file', (Join-Path $BuildDir 'run.log'))
+    if ($argLine -notmatch '--log-file') {
+        $argLine = ($argLine + ' --log-file "' + (Join-Path $BuildDir 'run.log') + '"').Trim()
     }
-    Write-Note ("启动: {0} {1}" -f $exe, ($RunArgs -join ' '))
+    Write-Note ("启动: {0} {1}" -f $exe, $argLine)
     #   ★ `--version` / `--help`：GUI 子系统没有控制台，Qt 会把它们弹成**消息框**
     #     （用户 2026-11-05 看到「应用名 + 版本」的框）。这里改成重定向输出直接打印。
-    if ($RunArgs -match '^(--version|-v|--help|-h)$') {
+    if ($argLine -match '(^|\s)(--version|-v|--help|-h)(\s|$)') {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = $exe
-        $psi.Arguments = ($RunArgs -join ' ')
+        $psi.Arguments = $argLine
         $psi.UseShellExecute = $false
         $psi.RedirectStandardOutput = $true
         $psi.RedirectStandardError = $true
@@ -291,7 +293,7 @@ function Invoke-Run {
         Write-Note ("exit={0}" -f $proc.ExitCode)
         return
     }
-    Start-Process -FilePath $exe -ArgumentList $RunArgs -WorkingDirectory $BuildDir
+    Start-Process -FilePath $exe -ArgumentList $argLine -WorkingDirectory $BuildDir
 }
 
 # ══ deps：Qt / vcpkg / libunrar（对应 workflow 的 Restore Qt → vcpkg → libunrar）══
