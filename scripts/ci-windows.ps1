@@ -272,6 +272,18 @@ function Invoke-Run {
         $argLine = ($argLine + ' --log-file "' + (Join-Path $BuildDir 'run.log') + '"').Trim()
     }
     Write-Note ("启动: {0} {1}" -f $exe, $argLine)
+    #   ★ **单实例应用**：已有实例在跑时，新起的进程只会把路径转发给旧进程然后退出
+    #     ⇒ 你看到的窗口可能是**旧进程**（旧代码），"改了没生效"多半是这个（2026-11-05 实测踩过）。
+    $running = @(Get-Process photoset-reader -ErrorAction SilentlyContinue)
+    if ($running.Count -gt 0) {
+        foreach ($p in $running) {
+            $path = ''
+            $started = ''
+            try { $path = $p.Path; $started = $p.StartTime.ToString('HH:mm:ss') } catch { }
+            Write-Warning ("已有实例在跑：pid={0} 启动于 {1} 路径={2}" -f $p.Id, $started, $path)
+        }
+        Write-Warning '新起的 exe 只会把路径转发给它 —— 想让新构建生效，先关掉那个窗口（或 Stop-Process -Name photoset-reader）'
+    }
     #   ★ `--version` / `--help`：GUI 子系统没有控制台，Qt 会把它们弹成**消息框**
     #     （用户 2026-11-05 看到「应用名 + 版本」的框）。这里改成重定向输出直接打印。
     if ($argLine -match '(^|\s)(--version|-v|--help|-h)(\s|$)') {
