@@ -24,14 +24,16 @@ Rectangle {
     property bool wantOpen: false
     property bool opened: false
     visible: opened || slide < 1
-    //   ★★ 滑动途中**整条不吃事件**（用户 2026-11-06）：滑动开始就关，**再次到位才开启**。
-    //     原因：条滑上来时它的矩形会从指针（指针在进度条上）下面扫过，命中区一碰到指针
-    //     就被当成"指针进条了" ⇒ `updateHoverIndex(指针 x)` 反查到**另一张**（不是居中那张）
-    //     ⇒ 高亮框横着滑过去；条继续上滑离开指针 ⇒ 框又滑回中线 ⇒ 看起来就是"框左右乱晃"。
-    //     `enabled: false` 会连子项一起关 ⇒ 缩略图的 TapHandler 在滑动途中也不会被误触。
-    //     别的都不动：框的横向 `Behavior` 照旧（真实悬停换张仍然"滑过去"，用户 2026-11-04）。
+    //   ★★ **本组件只负责"画"，一行输入都没有**（用户 2026-11-06 定案）：
+    //     条滑上来时会从指针（在进度条上）下面扫过，命中区一碰指针就被当成"指针进条了"
+    //     ⇒ `updateHoverIndex(指针 x)` 反查到**另一张**（不是居中那张）⇒ 高亮框横着滑过去，
+    //     条继续上滑离开指针 ⇒ 框又滑回中线 ⇒ 看起来就是"框左右乱晃"；更糟的是这个 hover
+    //     还会把 `opened` 再拉起来 ⇒ 条自己上下蹲起（自激循环）。
+    //     ⇒ **响应层放在外面**（`FullscreenBottomBar.previewInput`，固定位置、只在完全展开时
+    //       存在）。这里没有 MouseArea / 没有 TapHandler 抢 hover，滑动途中这个条对指针
+    //       **彻底不存在** —— Qt 没有 CSS 的 `pointer-events: none`，用"不在场景里"实现同一件事。
+    //     `hovered` / `hoverIndex` 现在是**被外面写**的输入态，本组件只读来算框的位置。
     readonly property bool settled: opened && slide === 0
-    enabled: settled
     color: Theme.barFill          // 与顶/底栏同一个面（用户 2026-11-03）
     radius: 0          // 不要圆角（用户 2026-11-03）
     clip: true
@@ -63,24 +65,14 @@ Rectangle {
         }
     }
 
-    //   开始收起时清掉 hover：滑动途中条会扫过底栏，不能再把自己"顶"回来（会抖）
+    //   开始收起时清掉 hover（外面那层响应也同时消失，这里只保证状态不残留）
     onOpenedChanged: if (!opened) hovered = false
 
     //   ★ 悬停目标**由指针 x 反查数据**（用户 2026-11-04：不再用"每张图一个 HoverHandler"）：
     //     落在两张图之间的 spacing 上时取**最近的一张** —— 天然不会出现"没有目标"的空档，
     //     也就不会在间距处把 hoverIndex 清掉、让框跳回 index 再跳回来。
-    //   用 MouseArea（API 最稳）：`acceptedButtons: NoButton` ⇒ 不吃点击，缩略图的 TapHandler 照常
-    MouseArea {
-        anchors.fill: parent
-        //   事件开关统一在**根项**上（`enabled: settled`）：滑动途中连缩略图点击一起关，
-        //   到位才恢复 —— 见上面 `settled` 的注释
-        hoverEnabled: true
-        acceptedButtons: Qt.NoButton
-        onEntered: { root.hovered = true; root.updateHoverIndex(mouseX) }   // onEntered 没有 mouse 形参
-        onExited:  { root.hovered = false; root.hoverIndex = -1 }
-        onPositionChanged: function (mouse) { if (containsMouse) root.updateHoverIndex(mouse.x) }
-    }
-
+    //   ★ 本组件**没有** MouseArea（见上面注释）：`px` 由外面那层响应层把鼠标 x 传进来
+    //     （响应层与条在"完全展开"时几何完全重合 ⇒ 同一个 x 坐标系）。
     //   指针 x（条内坐标）→ 条目：先找命中的，落在间距里就取最近的一条
     function updateHoverIndex(px) {
         if (items.length === 0) return
@@ -110,8 +102,11 @@ Rectangle {
                 width: modelData.w
                 height: root.imgH
 
+                //   点击跳转：**不吃 hover**（不设 `cursorShape`，否则 TapHandler 会去抢 hover，
+                //   又把"滑动途中"那类自激循环带回来 —— 光标由外面的响应层统一给）；
+                //   滑动途中也不接受点击（`enabled` 跟着 `settled`）。
                 TapHandler {
-                    cursorShape: Qt.PointingHandCursor
+                    enabled: root.settled
                     onTapped: root.itemClicked(modelData.index)
                 }
 

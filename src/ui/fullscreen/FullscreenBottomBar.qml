@@ -203,6 +203,39 @@ Item {
                   && (root.previewShown.items ? root.previewShown.items.length > 0 : false)
         onItemClicked: function (i) { root.seeked(i) }      // 点缩略图 = 跳到那一页
     }
+    //   ★★ **响应层与动画层分开**（用户 2026-11-06 定案）：
+    //     条本体（`TimelinePreview`）里**一行输入都没有**，只负责画；hover / 指针位置由这里
+    //     一个**固定位置**（不跟 `Translate` 走）的 MouseArea 接管，而它**只在条完全展开时
+    //     存在**（`visible: previewStrip.settled`）⇒ 滑动途中这个条对指针**彻底不存在**。
+    //     Qt 没有 CSS 的 `pointer-events: none`，用"不在场景里"实现的是同一件事，而且
+    //     不靠 `slide` 的相位去猜 —— 是结构事实。
+    //   ⚠️ 必须 `acceptedButtons: Qt.NoButton`：点击要**穿透**给每一张缩略图的 TapHandler。
+    Item {
+        id: previewInput
+        anchors.bottom: timeline.top
+        anchors.left: parent.left
+        width: parent.width
+        height: previewStrip.height
+        visible: previewStrip.settled
+        onVisibleChanged: if (!visible) {
+            previewStrip.hovered = false
+            previewStrip.hoverIndex = -1
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.NoButton
+            cursorShape: Qt.PointingHandCursor
+            //   onEntered 没有 mouse 形参 —— 用 `mouseX`
+            onEntered: { previewStrip.hovered = true; previewStrip.updateHoverIndex(mouseX) }
+            onExited:  { previewStrip.hovered = false; previewStrip.hoverIndex = -1 }
+            onPositionChanged: function (mouse) {
+                if (containsMouse) previewStrip.updateHoverIndex(mouse.x)
+            }
+        }
+    }
+
     //   ★ 预览条收起 ⇒ 作废"已显示的那一份"：下次进入进度条按**首份**处理（不门控、立即出现）。
     //     否则重新进入时会先亮出上一次遗留的旧内容，再跳到正确的 —— 用户 2026-11-06 报的就是这个。
     Connections {
