@@ -154,6 +154,11 @@ public:
     QString favoritesDir() const;
     void setFavoritesDir(const QString &dir);
     Q_INVOKABLE void chooseFavoritesDir();
+    //   ★ **恢复所有设置为默认值**（2026-11-05 用户要求）：设置对话框底部的按钮调它。
+    //     默认值的唯一来源仍是 `AppSettings` 的成员初值；这里只是按顺序调每个 setter
+    //     （写盘 / 发信号 / 语言重装 / 日志级别 / 预取下发给 viewer 都复用它们的副作用）。
+    //     **不碰**阅读进度与当前 viewer 的会话态（缩放、平移、位置、循环）。
+    Q_INVOKABLE void resetSettingsToDefaults();
     bool sourceFavorited() const { return m_sourceFavorited; }
     ProgressListModel *favorites() const { return m_favorites; }
     bool scanning() const;

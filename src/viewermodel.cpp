@@ -847,15 +847,26 @@ void ViewerModel::act(int target, int stepDir)
 
 // ══ 后台线：预取（`reconcile`）══════════════════════════════════════════════
 
-//   解码并发上限 = **预取张数 + 本屏图数**，再夹到硬件并发（2026-11-05 用户定）。
-//   ★ 为什么不是固定 4：慢盘实测 1/4/8 线程 = 18/51/121 页每秒，双幅 60 fps 要 ~8 并发；
-//     预取调大就该多给它几条解码，调小（默认 1）就只给本屏那 1~2 条 + 1 条预取。
+//   解码并发 = **当前屏未满足的图数 + 预取张数**，再夹到硬件并发（2026-11-05 用户定）。
+//   ★ 「未满足」= 本屏还没拿到图、且不是缺 / 不是等密码的那些格（真正要解的那几张）。
+//     所以它是**实时值**：本屏越接近齐，这条线就越低（本屏齐了 ⇒ 只剩预取在跑）。
+//   ★ 为什么不是固定 4：慢盘实测 1/4/8 线程 = 18/51/121 页每秒，双幅 60 fps 要约 8 并发；
+//     预取调大就该多给几条解码，调小（默认 1）就只给本屏那 1~2 条 + 1 条预取。
 //   ★ 上限取 `QThread::idealThreadCount()`（逻辑核）：超过它只会互相抢 CPU。
 int ViewerModel::inFlightLimit() const
 {
-    const int members = m_seq ? screenItems(screenStart(m_pos)).size() : 1;
+    int pending = 0;
+    if (m_seq) {
+        for (int i : screenItems(screenStart(m_pos))) {
+            if (!inLoopScope(i)) continue;
+            if (isMissing(i)) continue;
+            if (waitsPassword(i) && !passwordDeclined(i)) continue;   // 等密码：解不了，不算
+            if (entryReady(i)) continue;
+            ++pending;
+        }
+    }
     const int cores = qMax(1, QThread::idealThreadCount());
-    return qBound(1, m_length + qMax(1, members), cores);
+    return qBound(1, pending + m_length, cores);
 }
 
 //   每拍重算一次"现在该有哪些条目"，然后派缺失的、丢不要的。**幂等**，没有历史包袱。

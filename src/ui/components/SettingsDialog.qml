@@ -163,5 +163,38 @@ Popup {
                 }
             }
         }
+
+        // ── 底部：恢复默认（放在对话框底部，任何页都看得到）──
+        //   ★ 2026-11-05 用户要求：加一个"重置设置"按钮；破坏性动作 ⇒ 先过 ConfirmDialog。
+        //     默认值的唯一来源仍是 `AppSettings` 的成员初值（`UiModel::resetSettingsToDefaults`）。
+        Item {
+            Layout.fillWidth: true
+            Layout.preferredHeight: Theme.controlMd + Theme.spaceMd * 2
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                height: Theme.hairline
+                color: Theme.borderL2
+            }
+            Button {
+                anchors.right: parent.right
+                anchors.rightMargin: Theme.spaceLg
+                anchors.verticalCenter: parent.verticalCenter
+                variant: "outline"
+                label: qsTr("Reset all settings")
+                onClicked: resetConfirm.open()
+            }
+        }
+    }
+
+    //   确认框（破坏性 ⇒ danger 样式；默认焦点在「取消」上，见 `ConfirmDialog` 自己的规则）
+    ConfirmDialog {
+        id: resetConfirm
+        title: qsTr("Reset settings")
+        message: qsTr("Restore every setting to its default value? This cannot be undone.")
+        acceptText: qsTr("Reset")
+        danger: true
+        onAccepted: ui.resetSettingsToDefaults()
     }
 }

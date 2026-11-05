@@ -100,7 +100,7 @@ struct AppSettings
     void setPreviewStrip(bool v) { m_previewStrip = v; save(); }
     void setLogLevel(const QString &v) { m_logLevel = v; save(); }
     void setRecurseDepth(int v) { m_recurseDepth = qBound(1, v, 64); save(); }
-    void setPrefetchWindow(int v) { m_prefetchWindow = qBound(0, v, 64); save(); }
+    void setPrefetchWindow(int v) { m_prefetchWindow = qBound(0, v, 8); save(); }
     void setInnerArchiveMaxMb(int v) { m_innerArchiveMaxMb = qBound(64, v, 8192); save(); }
     void setFavoritesDir(const QString &v) { m_favoritesDir = v; save(); }
     void setLanguage(const QString &v) { m_language = v; save(); }
@@ -109,7 +109,7 @@ struct AppSettings
 
 private:
     int  m_themeMode = 0;
-    int  m_intervalMs = 300;
+    int  m_intervalMs = 1000;
     int  m_fitMode = 1;
     int  m_layout = 0;                  // 默认版面：单幅
     int  m_loop = 0;                    // 默认循环：不循环

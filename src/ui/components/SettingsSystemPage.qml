@@ -43,16 +43,24 @@ Item {
             }
         }
 
+        //   ★ 预取窗口（2026-11-05 用户定）：**下拉、只给 0–8**（纯数字，含义写在描述里）。
+        //     0 = 只解当前屏；并行解码 = min(当前屏未满足数 + 预取数, 设备线程数)
+        //     ⇒ 这一项同时也是"功耗旋钮"，不需要让人填 64 那种没有意义的档位。
         SettingsRow {
             label: qsTr("Prefetch window")
-            //   ★ 0 合法（用户 2026-11-05）：预取数量就是预取数量，当前屏那 1~2 张不算在内。
-            description: qsTr("Number of images decoded ahead (0 = none; the window slides as you page)")
-            NumberField {
-                value: ui.prefetchWindow
-                from: 0
-                to: 64
-                suffix: qsTr("images")
-                onEdited: function (v) { ui.prefetchWindow = v }
+            description: qsTr("Images decoded ahead; 0 = current screen only. Higher values raise decoding concurrency and power use")
+            DropdownButton {
+                label: String(ui.prefetchWindow)
+                menuItems: [ { text: "0", selected: ui.prefetchWindow === 0 },
+                             { text: "1", selected: ui.prefetchWindow === 1 },
+                             { text: "2", selected: ui.prefetchWindow === 2 },
+                             { text: "3", selected: ui.prefetchWindow === 3 },
+                             { text: "4", selected: ui.prefetchWindow === 4 },
+                             { text: "5", selected: ui.prefetchWindow === 5 },
+                             { text: "6", selected: ui.prefetchWindow === 6 },
+                             { text: "7", selected: ui.prefetchWindow === 7 },
+                             { text: "8", selected: ui.prefetchWindow === 8 } ]
+                onItemTriggered: function (i) { ui.prefetchWindow = i }
             }
         }
 

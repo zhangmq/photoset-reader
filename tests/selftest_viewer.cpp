@@ -313,8 +313,8 @@ int runViewerSelfTest(const QString &realDir)
         {
             app::AppSettings s;
             s.load();
-            check(s.prefetchWindow() == 8,
-                  QStringLiteral("⑥ 设置：默认预取 8（实际 %1）").arg(s.prefetchWindow()));
+            check(s.prefetchWindow() == 1,
+                  QStringLiteral("⑥ 设置：默认预取 1（实际 %1）").arg(s.prefetchWindow()));
             s.setPrefetchWindow(0);
             check(s.prefetchWindow() == 0,
                   QStringLiteral("⑥ 设置：选 0 **不被夹成 3**（实际 %1）").arg(s.prefetchWindow()));
@@ -322,15 +322,15 @@ int runViewerSelfTest(const QString &realDir)
             check(s.prefetchWindow() == 0,
                   QStringLiteral("⑥ 设置：下限 0（实际 %1）").arg(s.prefetchWindow()));
             s.setPrefetchWindow(999);
-            check(s.prefetchWindow() == 64,
-                  QStringLiteral("⑥ 设置：上限 64（实际 %1）").arg(s.prefetchWindow()));
-            s.setPrefetchWindow(12);          // 留一个"普通值"给下一实例读
+            check(s.prefetchWindow() == 8,
+                  QStringLiteral("⑥ 设置：上限 8（实际 %1）").arg(s.prefetchWindow()));
+            s.setPrefetchWindow(6);           // 留一个"普通值"给下一实例读（0..8 之内）
         }
         {
             app::AppSettings again;           // 新实例 = 重新读盘
             again.load();
-            check(again.prefetchWindow() == 12,
-                  QStringLiteral("⑥ 设置：改完**立刻落盘**（新实例读回 %1，期望 12）")
+            check(again.prefetchWindow() == 6,
+                  QStringLiteral("⑥ 设置：改完**立刻落盘**（新实例读回 %1，期望 6）")
                       .arg(again.prefetchWindow()));
         }
         {
@@ -345,6 +345,16 @@ int runViewerSelfTest(const QString &realDir)
             check(fresh.prefetchWindow() == 8,
                   QStringLiteral("⑥ 设置：经 UiModel 写完后**文件里也是 8**（实际 %1）")
                       .arg(fresh.prefetchWindow()));
+            //   ★ 「恢复全部默认设置」（2026-11-05 用户要求）：刚才把预取改成了 8，
+            //     重置之后必须回到默认值 1，而且**立刻落盘**。
+            ui.resetSettingsToDefaults();
+            check(ui.prefetchWindow() == 1,
+                  QStringLiteral("⑥ 设置：重置后预取回到默认 1（实际 %1）").arg(ui.prefetchWindow()));
+            app::AppSettings afterReset;
+            afterReset.load();
+            check(afterReset.prefetchWindow() == 1 && afterReset.intervalMs() == 1000,
+                  QStringLiteral("⑥ 设置：重置**落盘**（预取 %1，间隔 %2 ms）")
+                      .arg(afterReset.prefetchWindow()).arg(afterReset.intervalMs()));
         }
         QFile::remove(settingsPath);
     }

@@ -618,6 +618,31 @@ void UiModel::setInnerArchiveMaxMb(int v)
     // ★ v7：**不重建 viewer**（避免无谓的重新扫描）；上限在"下一次展开"生效。
 }
 
+//   ★ **恢复所有设置为默认值**（2026-11-05 用户要求，设置对话框底部那个按钮）。
+//     · 默认值的**唯一来源** = `AppSettings` 的成员初值（这里现场构造一份，不抄数字）；
+//     · 逐项调**现有 setter**：写盘、发信号、各自的副作用（语言重装 / 日志级别 / 预取下发给
+//       viewer）全都不用重复实现；setter 发现"已经是这个值"会自己 return，不会多写盘；
+//     · 阅读进度 / 当前 viewer 的会话态（缩放、平移、位置、循环）**不动** —— 只重置设置。
+void UiModel::resetSettingsToDefaults()
+{
+    const AppSettings def;                        // 默认值（成员初值里的那一份）
+    setThemeMode(def.themeMode());
+    setSlideshowIntervalMs(def.intervalMs());
+    setFitMode(def.defaultFitMode());
+    setDefaultLayout(def.defaultLayout());
+    setDefaultLoop(def.defaultLoop());
+    setScaleAlgorithm(def.scaleAlgorithm());
+    setPreviewStrip(def.previewStrip());
+    setScanHidden(def.scanHidden());
+    setRecurseDepth(def.recurseDepth());
+    setPrefetchWindow(def.prefetchWindow());
+    setInnerArchiveMaxMb(def.innerArchiveMaxMb());
+    setFavoritesDir(def.favoritesDir());
+    setLogLevel(def.logLevel());
+    setLanguage(def.language());                  // 语言最后：会重装翻译并重算界面
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] settings reset to defaults");
+}
+
 // ── 图像（缩放）：唯一选项 = 算法 ──────────────────────────────────────────
 QString UiModel::scaleAlgorithm() const { return m_settings.scaleAlgorithm(); }
 
