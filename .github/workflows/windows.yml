@@ -242,7 +242,9 @@ jobs:
           #     否则进程起不来：exit code -1073741515 = 0xC0000135 STATUS_DLL_NOT_FOUND
           $env:PATH = "C:\vcpkg\installed\x64-windows\bin;$env:GITHUB_WORKSPACE\unrar-prefix\lib;C:\Qt\$env:QT_VERSION\msvc2022_64\bin;$env:PATH"
           $failed = @()
-          foreach ($t in "ib-test-scan", "ib-test-progress", "ib-test-meta") {
+          #   ★ 四个套件都要跑：`ib-test-viewer` 是最大的那套（悬停预览 / 幻灯片 / 设置，
+          #     41 项），以前漏在这里 ⇒ CI 绿了但那段逻辑没验过（2026-11-06 补上）。
+          foreach ($t in "ib-test-scan", "ib-test-progress", "ib-test-meta", "ib-test-viewer") {
             Write-Host "== $t =="
             $p = Start-Process -FilePath ".\build\$t.exe" -PassThru -NoNewWindow `
                  -RedirectStandardOutput "$t.out" -RedirectStandardError "$t.err"
@@ -367,6 +369,58 @@ jobs:
           Copy-Item LICENSE, THIRD-PARTY.md, THIRD-PARTY.en.md, LICENSES\*.txt $stage
           Get-ChildItem $stage -Filter *.dll | Measure-Object -Property Length -Sum |
             ForEach-Object { Write-Host ("DLL 共 {0} 个 / {1:N1} MB" -f $_.Count, ($_.Sum / 1MB)) }
+
+      # ── 冒烟②：**打包目录里真把界面跑起来**（`--version` 不会加载 QML）────────
+      #   ★ 为什么必须有这一步：2026-11-06 真机踩到 `import QtQuick.Effects`（无版本）在
+      #     AOT 编译的模块里**运行期**报 "RectangularShadow is not a type"，QML 加载直接失败；
+      #     而 `--version` 根本走不到 QML ⇒ 那种包能通过上一版冒烟、下载下来却起不来。
+      #   ★ 用 offscreen 平台 + 现造 3 张小 PNG 当来源：能覆盖 QML 加载 / 扫描 / 解码，
+      #     并且只看两件确定的事：日志里没有 QML 加载失败、出现过解码统计行。
+      #     （runner 没有 GPU；渲染是否成功不在这一步的断言范围内。）
+      - name: Smoke (packaged UI)
+        shell: pwsh
+        run: |
+          $stage = "stage"
+          $off = "C:\Qt\$env:QT_VERSION\msvc2022_64\plugins\platforms\qoffscreen.dll"
+          if ((Test-Path $off) -and -not (Test-Path "$stage\platforms\qoffscreen.dll")) {
+            Copy-Item $off "$stage\platforms\" -Force
+          }
+          $env:QT_QPA_PLATFORM = "offscreen"
+
+          #   造 3 张 1×1 的 PNG 当来源：**直接写字节**（不依赖 System.Drawing —— runner 上的
+          #   pwsh 是 .NET 7，`Add-Type -AssemblyName System.Drawing` 不保证可用）。
+          $dir = "smoke-pages"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $png = [Convert]::FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+          for ($i = 0; $i -lt 3; $i++) {
+            [IO.File]::WriteAllBytes((Join-Path $dir "p$i.png"), $png)
+          }
+          Get-ChildItem $dir | Select-Object Name, Length | Format-Table -AutoSize
+
+          $log = "smoke-ui.log"
+          Remove-Item $log -ErrorAction SilentlyContinue
+          $p = Start-Process -FilePath "$stage\photoset-reader.exe" `
+               -ArgumentList "`"$((Resolve-Path $dir).Path)`"", "--log-level", "debug", "--log-file", $log `
+               -PassThru
+          $ready = $false
+          $deadline = (Get-Date).AddSeconds(40)
+          while ((Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+            if (Test-Path $log) {
+              if (Select-String -Path $log -Pattern "1s ready=" -Quiet -ErrorAction SilentlyContinue) {
+                $ready = $true
+                break
+              }
+            }
+            if ($p.HasExited) { break }
+          }
+          if (-not $p.HasExited) { $p.Kill() }
+          Get-Content $log -ErrorAction SilentlyContinue
+          $bad = Select-String -Path $log -Pattern "QML load failed|is not a type|is not installed|Type .* unavailable" -ErrorAction SilentlyContinue
+          if ($bad) { throw "打包产物 QML 加载失败：$($bad[0].Line)" }
+          if (-not $ready) { throw "打包产物没跑起来：40 s 内没有解码日志（1s ready=…）" }
+          Write-Host "打包产物冒烟通过（界面已加载、已开始解码）"
 
       #   ★★ 不要再 `Compress-Archive` 一层：`upload-artifact` 自己就会把内容打成 zip，
       #      再压缩一层的话下载下来是「zip 里套 zip」（用户 2026-11-05 指出）。
