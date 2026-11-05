@@ -66,7 +66,7 @@ Item {
     //       所以**调度和显示决定都在这里** —— `ViewerModel` 只是缓存 + 执行器 + 一条
     //       "我空闲了"的通知（`previewIdle`），它不知道"当前位置"，也没有队列。
     //     · `viewer`：上层给的 `ui.viewer`（null = 没有来源）；
-    //     · `previewShown`：**正在显示**的那一份（`{items, stripX, focusX, focusW}`）；
+    //     · `previewShown`：**正在显示**的那一份（`{items, stripX, index}`）；
     //     · `previewShownKey`：那一份的身份（center:imgH:width）—— 同一批不重建 delegate；
     //     · `previewBusy`：组件忙？（派了活、还没收到 `previewIdle`）
     property var    viewer: null
@@ -194,8 +194,9 @@ Item {
         //     所以不会出现"条跳到新位置、图还是空的"那种半成品（用户 2026-11-06）
         items: root.previewShown.items ?? []
         stripX: root.previewShown.stripX ?? 0
-        focusX: root.previewShown.focusX ?? 0
-        focusW: root.previewShown.focusW ?? 0
+        //   ★ 定位框**不接收任何坐标**（用户 2026-11-06）：这里只给"这一批居中哪一页"，
+        //     框的位置/宽度由 `index` / `hoverIndex` 在条内现算（`items` 里每张都带 x/w）。
+        index: root.previewShown.index ?? -1
         //   显示条件：指针在**进度条** 或 在**预览条**里（用户 2026-11-03）
         visible: root.previewEnabled && (timeline.hovered || hovered)
                  && (root.previewShown.items ? root.previewShown.items.length > 0 : false)

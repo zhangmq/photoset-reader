@@ -86,13 +86,31 @@ Rectangle {
         }
     }
 
-    //   ── 定位框：几何由**上层用数据算好**传进来（`focusX` / `focusW`）──
-    //   position = f(index, 该条 items 的宽度)   —— 整条该在哪 + 该条之前的累计宽
-    //   width    = f(该条自己的宽高比)           —— 不看预览条里有没有它
-    //   本组件**不再自己算**，只负责画与过渡动画（用户 2026-11-03）
-    //   （不再按"整批就绪"门控：条立即出现，图片由 provider 按需给，已缓存的立刻有）
-    property real focusX: 0
-    property real focusW: 0
+    //   ── 定位框：几何**全部由 `index` / `hoverIndex` 现算**（用户 2026-11-06 定）──
+    //     · `index`       = 这一批**居中那一页**（C++ 给的，条按它居中；指针离开进度条后保持不动）
+    //     · `hoverIndex`  = 指针**在条里**指着的那一页（-1 = 没在条里）
+    //     两者的位置/宽度都在 `items` 里（`x` / `w`），加上整条偏移 `stripX` 就是绝对位置：
+    //         frameX = stripX + item.x        frameW = item.w
+    //   ★ **不存在"框的坐标"这种缓存值** —— 所以不会出现"条隐藏时被清成 0 / 保留旧值、
+    //     再出现时从那个值飞过来"（那正是用户 2026-11-06 报的位移）。
+    //   ★ 中线情形：`stripX + item(index).x` 恒等于「窗口宽/2 − 框宽/2」⇒ 鼠标沿进度条移动时
+    //     **位置不变、只有宽度在变**；只有 `index` 靠近两端（这一侧凑不够图、条被钳住）时
+    //     位置才靠边。这些都是算出来的，不是谁传进来的。
+    property int index: -1
+
+    //   条里的第 `idx` 条（没有 ⇒ null）。`items` / `index` / `hoverIndex` 变了，下面的绑定自动重算。
+    function itemAt(idx) {
+        if (idx < 0) return null
+        for (var i = 0; i < items.length; ++i)
+            if (items[i].index === idx) return items[i]
+        return null
+    }
+    readonly property var focusItem: itemAt(index)          // 居中那一页
+    readonly property var hoverItem: itemAt(hoverIndex)      // 指针指着那一页
+    //   指针在条里 ⇒ 跟 `hoverIndex`；否则跟 `index`（中线那一页）
+    readonly property var frameItem: hoverItem ? hoverItem : focusItem
+    readonly property real frameXNow: frameItem ? stripX + frameItem.x : 0
+    readonly property real frameWNow: frameItem ? frameItem.w : 0
     //   预览条里"指针正指着的那一张"（-1 = 没有）。**frame 跟着它走**，
     //   而条内容仍按 `index`（进度条上那一页）组织 —— 所以内容不会因悬停而重排（用户 2026-11-04）
     property int  hoverIndex: -1
@@ -103,25 +121,10 @@ Rectangle {
     onHoveredChanged: if (!hovered) hoverIndex = -1
     signal itemClicked(int index)     // 点某张缩略图 ⇒ 跳转（用户 2026-11-03）
 
-    //   hoverIndex 在条内 ⇒ 用它的 (条内偏移, 宽) 算；否则退回 index 的那一份（focusX/focusW）
-    readonly property var hoverItem: {
-        if (hoverIndex < 0) return null
-        for (var i = 0; i < items.length; ++i)
-            if (items[i].index === hoverIndex) return items[i]
-        return null
-    }
-    readonly property real frameXNow: {
-        if (!hoverItem) return focusX
-        var x = stripX + hoverItem.x
-        return x          // 不夹取：边缘图被裁时，框仍按图片真实位置画（容器 clip 负责裁）
-    }
-    readonly property real frameWNow: hoverItem ? hoverItem.w : focusW
-
-    //   ★ **框的过渡只在"条已经在屏上"之后才生效**（用户 2026-11-06："离开进度条再 hover 上来，
-    //     高亮框还会位移一下"）。原因：`focusX` / `focusW` 是普通属性，条隐藏后它们**保留上一次
-    //     的值**；重新 hover 时新的 `previewShown` 一到，`focusX` 就从旧值跳到新值 ⇒
-    //     `Behavior on x` 老老实实做 300 ms 过渡 ⇒ 条出现的同时框从上次的位置横着飞过来。
-    //     所以：**重新出现的那一帧直接到位**（关掉过渡，下一帧再打开）。
+    //   ★ **框的过渡只在"条已经在屏上"之后才生效**（用户 2026-11-06）：
+    //     条隐藏 → 重新 hover 时，`items` 会换一批；虽然 `index` 在中线情形下算出来的 x 不变，
+    //     但靠近两端时 x 会变。这一帧不该演过渡 —— 否则条出现的同时框横着滑一下。
+    //     所以：**重新出现的那一帧直接到位**（先关过渡，下一帧再打开）。
     //   条在屏上之后的过渡**照旧**（用户 2026-11-04：悬停换张时框是"滑过去"，不是直接跳）。
     property bool frameTransition: false
     onVisibleChanged: {

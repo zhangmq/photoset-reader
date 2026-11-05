@@ -1118,15 +1118,19 @@ QVector<int> ViewerModel::previewNeighbors(int center, int heightPx, int maxWidt
     return idx;
 }
 
-//   时间轴悬停预览：一次算完 **条目 + 定位框几何 + 就绪与否**（以 center 为中心，左右交替取）
+//   时间轴悬停预览：一次算完 **条目表 + 整条偏移 + 居中的那一页 + 就绪与否**
 //   ★ **不发活**：`ready=false` 时前端自己去调 `previewEnsure()`（而且只在它认为组件空闲时）。
+//   ★ **不返回"框的坐标"**（用户 2026-11-06 定）：定位框的位置与宽度一律由前端
+//     **按 `index`（这批居中那一页）/ `hoverIndex`（指针在条里指着那一页）现算** ——
+//     `items` 每条都带 `index` / `x` / `w`，配上这里的 `stripX` 就够算了。
+//     以前返回 `focusX` / `focusW`（= 居中那一页的绝对 x 和宽）是多余的**快照**：
+//     条一隐藏、快照被清掉就变成兜底值 0，下次出现时定位框会从 0 "飞"过来。
 QVariantMap ViewerModel::previewStrip(int center, int heightPx, int maxWidthPx, int gapPx)
 {
     QVariantMap result;
     result.insert(QStringLiteral("items"), QVariantList());
     result.insert(QStringLiteral("stripX"), 0);
-    result.insert(QStringLiteral("focusX"), 0);
-    result.insert(QStringLiteral("focusW"), 0);
+    result.insert(QStringLiteral("index"), -1);        // 这批居中那一页（没有 = -1）
     result.insert(QStringLiteral("ready"), false);
     if (!m_seq || m_seq->count() <= 0 || heightPx <= 0 || maxWidthPx <= 0 || !m_previewStore)
         return result;
@@ -1138,19 +1142,20 @@ QVariantMap ViewerModel::previewStrip(int center, int heightPx, int maxWidthPx, 
     const auto widthOf = [this, heightPx](int i) { return previewItemWidth(i, heightPx); };
     const int gap = qMax(0, gapPx);
 
-    //   定位框几何（**同一份数据**）：width = 该条宽度；position = 整条该在的 x + 该条之前的宽度
+    //   整条该在哪（Row 的唯一来源）：
+    //   `wanted` = 让居中那一页落在窗口中线所需的位置；两端凑不够图时钳在 [maxWidth-rowW, 0]
+    //   ⇒ 定位框的 x 由前端算 `stripX + item(index).x`，中线情形自然就是"窗口宽/2 − 框宽/2"。
     int leftSum = 0, rowW = -gap;
     for (int i : idx) rowW += widthOf(i) + gap;
     for (int i : idx) { if (i == center) break; leftSum += widthOf(i) + gap; }
     const int w = widthOf(center);
     const double wanted = maxWidthPx / 2.0 - (leftSum + w / 2.0);
     const double stripX = qMin(0.0, qMax(double(maxWidthPx - rowW), wanted));
-    //   ★ 定位框**不夹取**（用户 2026-11-04 取消该规则）：边缘处的图可能被窗口裁掉一截，
-    //     框必须跟着那张图的真实位置走（超出部分由容器的 clip 自然裁掉），否则会对不齐。
-    const double fx = stripX + leftSum;
-    result.insert(QStringLiteral("stripX"), int(qRound(stripX)));   // 整条该在哪（Row 的唯一来源）
-    result.insert(QStringLiteral("focusX"), int(qRound(fx)));
-    result.insert(QStringLiteral("focusW"), w);
+    result.insert(QStringLiteral("stripX"), int(qRound(stripX)));   // 整条该在哪
+    result.insert(QStringLiteral("index"), center);                 // 居中那一页
+    //   ★ 框**不夹取**（用户 2026-11-04）：边缘处的图可能被窗口裁掉一截，框必须跟着那张图的
+    //     真实位置走（超出部分由容器的 clip 自然裁掉），否则会对不齐 —— 前端用同一份数据算，
+    //     天然满足。
 
     QHash<QString, PreviewStore::Entry> entries;
     QVariantList items;
