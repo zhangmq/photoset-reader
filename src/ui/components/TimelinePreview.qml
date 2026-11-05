@@ -96,7 +96,6 @@ Rectangle {
     //   预览条里"指针正指着的那一张"（-1 = 没有）。**frame 跟着它走**，
     //   而条内容仍按 `index`（进度条上那一页）组织 —— 所以内容不会因悬停而重排（用户 2026-11-04）
     property int  hoverIndex: -1
-    onVisibleChanged: if (!visible) hoverIndex = -1     // 收起时清掉，避免下次带着旧值
     //   整条（`stripH` = 120）都是 hover 区（用户 2026-11-03）：
     //   hover 覆盖整个预览区，指针落在条内任何位置都算"还在预览区里"
     property bool hovered: false
@@ -118,6 +117,24 @@ Rectangle {
     }
     readonly property real frameWNow: hoverItem ? hoverItem.w : focusW
 
+    //   ★ **框的过渡只在"条已经在屏上"之后才生效**（用户 2026-11-06："离开进度条再 hover 上来，
+    //     高亮框还会位移一下"）。原因：`focusX` / `focusW` 是普通属性，条隐藏后它们**保留上一次
+    //     的值**；重新 hover 时新的 `previewShown` 一到，`focusX` 就从旧值跳到新值 ⇒
+    //     `Behavior on x` 老老实实做 300 ms 过渡 ⇒ 条出现的同时框从上次的位置横着飞过来。
+    //     所以：**重新出现的那一帧直接到位**（关掉过渡，下一帧再打开）。
+    //   条在屏上之后的过渡**照旧**（用户 2026-11-04：悬停换张时框是"滑过去"，不是直接跳）。
+    property bool frameTransition: false
+    onVisibleChanged: {
+        if (!visible) hoverIndex = -1           // 收起时清掉，避免下次带着旧值
+        frameTransition = false                 // 刚出现 / 刚消失：先不做过渡
+        if (visible) frameTransitionTimer.restart()
+    }
+    Timer {
+        id: frameTransitionTimer
+        interval: 0                             // 下一轮事件循环（≈ 下一帧）再打开
+        onTriggered: root.frameTransition = true
+    }
+
     Rectangle {
         visible: root.frameWNow > 0
         x: root.frameXNow
@@ -130,8 +147,8 @@ Rectangle {
         //   居中情形：只有宽度在变（x 跟着涨一半）；靠边情形：位移 + 宽度一起过渡
         //   index 与 hoverIndex 走**同一个**过渡（用户 2026-11-04）：
         //   位置和宽度都用 `Theme.durMed` 动画 —— 悬停换张时框是"滑过去"，不是直接跳
-        Behavior on x     { NumberAnimation { duration: Theme.durMed; easing.type: Easing.OutCubic } }
-        Behavior on width  { NumberAnimation { duration: Theme.durMed; easing.type: Easing.OutCubic } }
+        Behavior on x     { enabled: root.frameTransition; NumberAnimation { duration: Theme.durMed; easing.type: Easing.OutCubic } }
+        Behavior on width  { enabled: root.frameTransition; NumberAnimation { duration: Theme.durMed; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: Theme.durFast } }
         opacity: visible ? 1 : 0
     }
