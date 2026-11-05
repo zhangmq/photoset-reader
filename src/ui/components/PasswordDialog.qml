@@ -62,9 +62,19 @@ Popup {
     height: implicitHeight
 
     Overlay.modal: Rectangle { color: Theme.mask }
-    background: Rectangle {
-        color: Theme.bgLayer2
-        radius: Theme.radiusPanel
+    background: Item {
+        Rectangle {
+            id: panel
+            anchors.fill: parent
+            color: Theme.bgLayer2
+            radius: Theme.radiusPanel
+        }
+        //   ★ 与设置框 / 关于框同一份投影（用户 2026-11-06）
+        SurfaceShadow {
+            anchors.fill: panel
+            radius: panel.radius
+            z: -1
+        }
     }
     anchors.centerIn: Overlay.overlay
 
