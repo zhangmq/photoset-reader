@@ -15,7 +15,7 @@
 #include <QLoggingCategory>
 #include <QString>
 
-// 启动与工具链：main / appsettings / iconpicker
+// 启动与工具链：main / appsettings
 Q_DECLARE_LOGGING_CATEGORY(lcApp)
 // 界面模型：uimodel / viewermodel / progresslistmodel
 Q_DECLARE_LOGGING_CATEGORY(lcUi)

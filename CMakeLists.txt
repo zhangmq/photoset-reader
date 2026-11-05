@@ -347,8 +347,9 @@ function(ib_add_qml_resources target)
             PROPERTIES QT_RESOURCE_ALIAS "${f}")
         list(APPEND qml_files_abs "${CMAKE_SOURCE_DIR}/${f}")
     endforeach()
-    #   ★ 额外文件（`ARGN`）：工具自己的页面，**只进工具那个目标**的模块（不进产品）。
-    #     别名取文件名 ⇒ 落在模块根，类型名 = 文件名（如 `IconPicker`）。
+    #   ★ 额外文件（`ARGN`）：只进**调用方那个目标**的模块（不进产品）。
+    #     别名取文件名 ⇒ 落在模块根，类型名 = 文件名。
+    #     （2026-11-06 起没有调用方再用它了 —— 留着是为了以后加工具页面时不必改这里。）
     foreach(f IN LISTS ARGN)
         get_filename_component(_name "${f}" NAME)
         set_source_files_properties("${f}" PROPERTIES QT_RESOURCE_ALIAS "${_name}")
@@ -414,12 +415,13 @@ if(_qtcore_type STREQUAL "STATIC_LIBRARY")
 endif()
 
 
-# ══ 开发工具：`ib-iconpicker`（设计 14 §11.1）══════════════════════════════════
+# ══ 开发工具（`tools/`，设计 14 §11.1）════════════════════════════════════════
 #   自带 `main()` 的独立可执行（**不是测试**：不进 `tests/`、不挂 `add_test`）。
 #   ★ 放**子目录**定义：`qt_add_qml_module` 的 `qmake_<URI>.qrc` 生成在
 #     `${CMAKE_CURRENT_BINARY_DIR}/.qt/rcc/` —— 与 `photoset-reader` 同目录会让两个
 #     目标的 QML 模块共用同一个 qrc（qmldir 里 `typeinfo` 指向谁就看谁最后配置）。
 #     子目录 = 独立二进制目录 = 每个目标一份真资源（与 `tests/` 同一手法）。
+#   ★ 2026-11-06：`ib-iconpicker` 已删除（它绑整套 QML 模块，任何 .qml 改动都白编一份）。
 add_subdirectory(tools)
 
 
