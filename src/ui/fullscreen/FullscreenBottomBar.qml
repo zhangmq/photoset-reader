@@ -49,7 +49,7 @@ Item {
         { text: qsTr("Faster"), keepOpen: true },
         { text: qsTr("Slower"), keepOpen: true }
     ]
-    property int    fitMode: 1            // 0=原始 1=适应窗口 2=适应宽度 3=适应高度
+    property int    fitMode: 1            // 0=原始 1=适应屏幕 2=适应宽度 3=适应高度
     property bool   doublePage: false     // 阅读版面：单幅 / 双幅
     property bool   zoomLocked: false     // 锁定缩放（跨画面保留 zoom/pan；属于 viewer 态）
     property bool   windowFullscreen: false   // 窗口全屏
@@ -197,45 +197,10 @@ Item {
         focusX: root.previewShown.focusX ?? 0
         focusW: root.previewShown.focusW ?? 0
         //   显示条件：指针在**进度条** 或 在**预览条**里（用户 2026-11-03）
-        //   ★ 这里只给**意图** `wantOpen`：开合状态由 `TimelinePreview` 锁存
-        //     （"打开"只在完全收起时接受，防止条滑过指针把自己重新拉起来 ⇒ 上下蹲起）
-        wantOpen: root.previewEnabled && (timeline.hovered || previewStrip.hovered)
-                  && (root.previewShown.items ? root.previewShown.items.length > 0 : false)
+        visible: root.previewEnabled && (timeline.hovered || hovered)
+                 && (root.previewShown.items ? root.previewShown.items.length > 0 : false)
         onItemClicked: function (i) { root.seeked(i) }      // 点缩略图 = 跳到那一页
     }
-    //   ★★ **响应层与动画层分开**（用户 2026-11-06 定案）：
-    //     条本体（`TimelinePreview`）里**一行输入都没有**，只负责画；hover / 指针位置由这里
-    //     一个**固定位置**（不跟 `Translate` 走）的 MouseArea 接管，而它**只在条完全展开时
-    //     存在**（`visible: previewStrip.settled`）⇒ 滑动途中这个条对指针**彻底不存在**。
-    //     Qt 没有 CSS 的 `pointer-events: none`，用"不在场景里"实现的是同一件事，而且
-    //     不靠 `slide` 的相位去猜 —— 是结构事实。
-    //   ⚠️ 必须 `acceptedButtons: Qt.NoButton`：点击要**穿透**给每一张缩略图的 TapHandler。
-    Item {
-        id: previewInput
-        anchors.bottom: timeline.top
-        anchors.left: parent.left
-        width: parent.width
-        height: previewStrip.height
-        visible: previewStrip.settled
-        onVisibleChanged: if (!visible) {
-            previewStrip.hovered = false
-            previewStrip.hoverIndex = -1
-        }
-
-        MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            acceptedButtons: Qt.NoButton
-            cursorShape: Qt.PointingHandCursor
-            //   onEntered 没有 mouse 形参 —— 用 `mouseX`
-            onEntered: { previewStrip.hovered = true; previewStrip.updateHoverIndex(mouseX) }
-            onExited:  { previewStrip.hovered = false; previewStrip.hoverIndex = -1 }
-            onPositionChanged: function (mouse) {
-                if (containsMouse) previewStrip.updateHoverIndex(mouse.x)
-            }
-        }
-    }
-
     //   ★ 预览条收起 ⇒ 作废"已显示的那一份"：下次进入进度条按**首份**处理（不门控、立即出现）。
     //     否则重新进入时会先亮出上一次遗留的旧内容，再跳到正确的 —— 用户 2026-11-06 报的就是这个。
     Connections {

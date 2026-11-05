@@ -20,59 +20,24 @@ Rectangle {
 
     height: stripH
     width: parent ? parent.width : 0
-    //   ★ 外部只改 `wantOpen`（**意图**）；真正的开合 `opened` 由本组件自己锁存（见下）。
-    property bool wantOpen: false
-    property bool opened: false
-    visible: opened || slide < 1
-    //   ★★ **本组件只负责"画"，一行输入都没有**（用户 2026-11-06 定案）：
-    //     条滑上来时会从指针（在进度条上）下面扫过，命中区一碰指针就被当成"指针进条了"
-    //     ⇒ `updateHoverIndex(指针 x)` 反查到**另一张**（不是居中那张）⇒ 高亮框横着滑过去，
-    //     条继续上滑离开指针 ⇒ 框又滑回中线 ⇒ 看起来就是"框左右乱晃"；更糟的是这个 hover
-    //     还会把 `opened` 再拉起来 ⇒ 条自己上下蹲起（自激循环）。
-    //     ⇒ **响应层放在外面**（`FullscreenBottomBar.previewInput`，固定位置、只在完全展开时
-    //       存在）。这里没有 MouseArea / 没有 TapHandler 抢 hover，滑动途中这个条对指针
-    //       **彻底不存在** —— Qt 没有 CSS 的 `pointer-events: none`，用"不在场景里"实现同一件事。
-    //     `hovered` / `hoverIndex` 现在是**被外面写**的输入态，本组件只读来算框的位置。
-    readonly property bool settled: opened && slide === 0
+    visible: items.length > 0
     color: Theme.barFill          // 与顶/底栏同一个面（用户 2026-11-03）
     radius: 0          // 不要圆角（用户 2026-11-03）
     clip: true
 
-    //   ★ 滑入 / 滑出（用户 2026-11-06）：整条从**底栏后面**滑上来、再滑回去。
-    //     收起位 = 下移一个条高：正好落到"进度条 + 控制条"那一块，被不透明底栏挡住
-    //     （`bar` 在 FullscreenBottomBar 里声明在本组件之后 ⇒ 画在上层）。
-    //   ★ 只做位移、不叠淡出：位移本身已经说明方向，再淡出会糊成一团。
-    property real slide: opened ? 0 : 1
-    Behavior on slide {
-        NumberAnimation { duration: Theme.durMed; easing.type: Easing.OutCubic }
-    }
-    transform: Translate { y: root.slide * root.height }
-
-    //   ★★ **"打开"只在完全收起时接受**（用户 2026-11-06 报的"上下蹲起"的根因）：
-    //     条的收起位盖住"进度条 + 控制条"那一块，指针就在那儿 ⇒ 条一滑动就等于**从指针
-    //     身下扫过**，hover 会在"在条里 / 不在条里"之间反复跳；如果把这个信号直接接到
-    //     `opened` 上，一次滑出会被自己重新拉起来 —— 进→出→进→出，条就上下蹲起。
-    //     ⇒ 收起随时可以（安全方向）；**打开只允许在 `slide === 1`（完全收起）时**，
-    //       也就是"一滑出必须走完，才允许再滑入"。滑动途中整条又是 `enabled: false`，
-    //       两条一起把这一类自激循环堵死。
-    onWantOpenChanged: syncOpened()
-    onSlideChanged: if (slide === 1) syncOpened()
-    function syncOpened() {
-        if (!wantOpen) {
-            if (opened) opened = false
-        } else if (!opened && slide === 1) {
-            opened = true
-        }
-    }
-
-    //   开始收起时清掉 hover（外面那层响应也同时消失，这里只保证状态不残留）
-    onOpenedChanged: if (!opened) hovered = false
-
     //   ★ 悬停目标**由指针 x 反查数据**（用户 2026-11-04：不再用"每张图一个 HoverHandler"）：
     //     落在两张图之间的 spacing 上时取**最近的一张** —— 天然不会出现"没有目标"的空档，
     //     也就不会在间距处把 hoverIndex 清掉、让框跳回 index 再跳回来。
-    //   ★ 本组件**没有** MouseArea（见上面注释）：`px` 由外面那层响应层把鼠标 x 传进来
-    //     （响应层与条在"完全展开"时几何完全重合 ⇒ 同一个 x 坐标系）。
+    //   用 MouseArea（API 最稳）：`acceptedButtons: NoButton` ⇒ 不吃点击，缩略图的 TapHandler 照常
+    MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+        acceptedButtons: Qt.NoButton
+        onEntered: { root.hovered = true; root.updateHoverIndex(mouseX) }   // onEntered 没有 mouse 形参
+        onExited:  { root.hovered = false; root.hoverIndex = -1 }
+        onPositionChanged: function (mouse) { if (containsMouse) root.updateHoverIndex(mouse.x) }
+    }
+
     //   指针 x（条内坐标）→ 条目：先找命中的，落在间距里就取最近的一条
     function updateHoverIndex(px) {
         if (items.length === 0) return
@@ -102,11 +67,8 @@ Rectangle {
                 width: modelData.w
                 height: root.imgH
 
-                //   点击跳转：**不吃 hover**（不设 `cursorShape`，否则 TapHandler 会去抢 hover，
-                //   又把"滑动途中"那类自激循环带回来 —— 光标由外面的响应层统一给）；
-                //   滑动途中也不接受点击（`enabled` 跟着 `settled`）。
                 TapHandler {
-                    enabled: root.settled
+                    cursorShape: Qt.PointingHandCursor
                     onTapped: root.itemClicked(modelData.index)
                 }
 
