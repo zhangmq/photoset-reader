@@ -616,6 +616,9 @@ function Invoke-Package {
     New-Item -ItemType Directory -Force -Path $dist | Out-Null
     $zip = Join-Path $dist 'photoset-reader-windows-x64.zip'
     if (Test-Path $zip) { Remove-Item $zip -Force }
+    #   ★ 本地这里压的是**发布用**的单层 zip（解开就是 exe + DLL）。
+    #     CI 那边不再压这一层：`upload-artifact` 自己会打包，再压就成「zip 里套 zip」
+    #     （用户 2026-11-05 指出）——CI 直接上传 stage 的内容。
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
     Write-Host "  产物：$zip" -ForegroundColor Green
 }

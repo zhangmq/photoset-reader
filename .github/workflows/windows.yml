@@ -367,10 +367,14 @@ jobs:
           Copy-Item LICENSE, THIRD-PARTY.md, THIRD-PARTY.en.md, LICENSES\*.txt $stage
           Get-ChildItem $stage -Filter *.dll | Measure-Object -Property Length -Sum |
             ForEach-Object { Write-Host ("DLL 共 {0} 个 / {1:N1} MB" -f $_.Count, ($_.Sum / 1MB)) }
-          Compress-Archive -Path "$stage\*" -DestinationPath photoset-reader-windows-x64.zip -Force
 
+      #   ★★ 不要再 `Compress-Archive` 一层：`upload-artifact` 自己就会把内容打成 zip，
+      #      再压缩一层的话下载下来是「zip 里套 zip」（用户 2026-11-05 指出）。
+      #      这里直接上传 stage 的内容 ⇒ 下载得到一个 zip，解开就是 exe + DLL。
+      #      需要发布单文件 zip 时，在 release 那步再压（本地 `scripts/ci-windows.ps1 -Step package`
+      #      产出的 `dist/photoset-reader-windows-x64.zip` 就是那个形态）。
       - uses: actions/upload-artifact@v4
         with:
           name: photoset-reader-windows-x64
-          path: photoset-reader-windows-x64.zip
+          path: stage/**
           retention-days: 30
