@@ -1226,21 +1226,20 @@ void ViewerModel::evaluateScreen()
             if (cellOf(i) == Cell::Pending) ++pending;
             else if (cellOf(i) == Cell::Ready) ++ready;
         }
-        //   ★★ 等密码 ⇒ **先问、且不挂节拍**（2026-11-05 用户纠正：它不是"有结论"）。
-        //     双幅里另一页就绪也照问 —— 否则那一页永远空着、幻灯片还继续往前翻。
+        //   ★★ 等密码 ⇒ **先问、不挂节拍、也不渲染**（2026-11-05 用户定：见下面 pending 那段）。
         if (needsPw > 0) {
-            if (ready > 0) updateDisplay(start, items);   // 能显示的先显示（另一格留空）
             maybeAskPassword(items);
             return;
         }
-        if (pending > 0) {                // ★ 还有位置没结论 ⇒ 不宣布、不挂节拍
-            //   ★ ★ 一格都没就绪时**什么都不动**（画面 / 页码都不许跳）：
-            //     旧实现的口径"等缓存期间画面上还是上一屏"必须保住，否则翻页会闪一下白。
-            //     双幅里有一格好了 ⇒ 先把这一屏显示出来（另一格留空）。
-            if (ready > 0) updateDisplay(start, items);
+        if (pending > 0) {                // ★ 还有位置没结论 ⇒ 不渲染、不宣布、不挂节拍
+            //   ★★ **双幅必须两幅都到稳定态才渲染一次**（2026-11-05 用户定）：
+            //     以前"先出已就绪的一格"会在一屏里**刷两次**（一格到、两格到各一次），
+            //     渲染压力翻倍；而且**两次提交挤在同一帧里，后一次（＝右半）会被刷新率吃掉**
+            //     ⇒ 视觉上就是"左边在动、右边不动"。
+            //   ⇒ 未稳定时**什么都不动**：画面上还是上一屏，页码也不跳（老口径一并回来了）。
             return;
         }
-        if (ready > 0) {                  // 有图 ⇒ 显示 + 宣布（宣布那一刻挂节拍）
+        if (ready > 0) {                  // 全屏稳定且有图 ⇒ **一次**渲染 + 宣布（挂节拍）
             updateDisplay(start, items);
             announce(start, items);
             return;
@@ -1361,10 +1360,13 @@ bool ViewerModel::passwordDeclined(int item) const
     return m_seq->isPasswordDeclined(key);
 }
 
-//   上屏（**可增量**）：按**位置**写 `imageA` / `imageB`（备好 ⇒ 那张图；没结论 ⇒ 空图），
+//   上屏：按**位置**写 `imageA` / `imageB`（有图 ⇒ 那张图；缺 ⇒ 空图），
 //   写 `keyCount`（本屏位置数）、`cursor`（本屏起点）、文件名，**变了才** emit。
-//   ★ 位置变过、但这一屏还没就位时**不清 `imageA` / `imageB`**（不许先显示空图或上一张）。
-//   ★ 同一屏补一张图只会 emit 那一次（不刷信号 —— 双幅下 OSD 的 40ms 去抖才等得到静默期）。
+//   ★★ **一屏只调一次**（2026-11-05 用户定）：调用点只剩"全屏稳定、准备宣布"那一处 ——
+//      双幅里绝不在"只到一半"时先刷一次（一屏两次渲染；两次提交挤同一帧，
+//      **后一次＝右半**会被刷新率吃掉 ⇒ 看着像"左边更快"）。
+//   ★ 还没稳定时**根本不动画面**（不清 `imageA` / `imageB`、不跳页码）：见 `evaluateScreen()`。
+//   ★ 按幅判变化、只发变了的那一幅（别让没变的那半白重传一次纹理）。
 void ViewerModel::updateDisplay(int start, const QVector<int> &items)
 {
     const QImage a = imageOf(items.value(0, -1));

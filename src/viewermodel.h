@@ -297,7 +297,8 @@ private:
     void act(int target, int stepDir);
     //   ★ **唯一**决定「显示 / 宣布 / 跳屏 / 问密码」的地方（以前叫 `judge()`）。
     void evaluateScreen();
-    //   写 `imageA` / `imageB` / `cursor` / 文件名（**可增量**：同一屏补图只改变化的那几格）。
+    //   写 `imageA` / `imageB` / `cursor` / 文件名。★ **一屏只调一次**（全屏稳定后、宣布前）：
+    //   双幅绝不"先出一格"（一屏两次渲染；两次提交挤同一帧，**后一次＝右半**会被刷新率吃掉）。
     void updateDisplay(int start, const QVector<int> &items);
     //   宣布这一屏（记"已宣布的屏" + `onScreenUp()`）；同一屏只宣布一次。
     void announce(int start, const QVector<int> &items);

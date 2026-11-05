@@ -169,9 +169,12 @@ int runViewerSelfTest(const QString &realDir)
                       .arg(r.reached).arg(lastStart));
             check(r.advanced >= 19,
                   QStringLiteral("① 双幅：真的翻了 19 屏以上（实际 %1）").arg(r.advanced));
-            check(updB > 0 && updB + 2 >= updA && updA + 2 >= updB,
-                  QStringLiteral("① 双幅：两幅刷新次数对称（A=%1 / B=%2，屏数=%3）")
-                      .arg(updA).arg(updB).arg(r.advanced + 1));
+            //   ★ 一屏**只渲染一次**（2026-11-05 用户定：双幅两幅都稳定才渲染 + 宣告）⇒
+            //     两幅的更新次数都应当**正好等于屏数**（以前"先出一格"会让晚到的那幅多刷一次）。
+            const int screens = r.advanced + 1;
+            check(updA == screens && updB == screens,
+                  QStringLiteral("① 双幅：每屏只渲染一次（A=%1 / B=%2，屏数=%3）")
+                      .arg(updA).arg(updB).arg(screens));
         }
 
         // ══ ② 单幅 / 0ms / L=0：预取深度 0 也得照常播 ══
