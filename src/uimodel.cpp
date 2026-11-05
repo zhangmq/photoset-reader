@@ -814,15 +814,18 @@ void UiModel::cancelPassword()
 void UiModel::onPasswordRequired(int item, int level)
 {
     if (item < 0 || !m_src.seq) return;
-    //   ★ 延迟一拍：打开进度文件时窗口会先落 0、再跳到链位置；瞬态那屏也可能是"空着等密码"，
-    //     立刻弹就会连着弹好几个卷（用户 2026-11-03 实测）。到点复核"还空着"再弹。
+    //   ★ 延迟一拍：打开进度文件时窗口会先落 0、再跳到链位置（瞬态那屏也可能"空着等密码"），
+    //     而同一批解码会有好几条同时撞墙（并发 4）⇒ 只留最后一次 token，一个容器只问一次。
     const int token = ++m_passwordAskToken;
     m_passwordAskItem = item;
     m_passwordAskLevel = level;
     QTimer::singleShot(300, this, [this, token] {
         if (token != m_passwordAskToken) return;
         if (!m_src.vm || !m_src.seq) return;
-        if (!m_src.vm->imageA().isNull()) return;          // 已经看到图了 ⇒ 不需要密码
+        //   ★★ 判据只有一条：**本屏还有没解决的"等密码"格**（已排除用户取消过的）。
+        //     以前这里还多一条 `if (!imageA().isNull()) return;`（"已经看到图了 ⇒ 不需要密码"）——
+        //     那是**只看左半**的不对称 bug（2026-11-05 用户指出）：双幅里"左半有图、右半等密码"
+        //     时 imageA 非空 ⇒ 弹框被吞 ⇒ 那半页永远空着也没人问；反过来却能弹。
         if (!m_src.vm->screenNeedsPassword()) return;
         askPasswordNow(m_passwordAskItem, m_passwordAskLevel);
     });

@@ -177,9 +177,10 @@ void ViewerModel::onLoaded(quint64 epoch, int item, const QImage &image, int pas
         if (passwordLevel >= 0 && !passwordUsed && nowHasPw) {
             m_entries.erase(it);
         } else if (passwordLevel >= 0) {
-            //   ★ **要密码**：记专门的结论（不能记成"缺" —— 那会被**永久跳过**），并带上
-            //     **层号**（弹框要靠它算"是哪个容器"）。这里**不弹框**：预取到的邻居缺密码
-            //     不该打断用户，弹框由"当前这一屏真的空着"决定（`maybeAskPassword` / 设计 22 §5.3）。
+            //   ★ **要密码**：记结论（不能记成"缺" —— 那会被**永久跳过**），带上**层号**
+            //     （弹框要靠它算"是哪个容器"）。这里**不弹框**：预取照常往后取（不暂停，
+            //     2026-11-05 用户定），弹框由前端在"**本屏还有没解决的等密码格**"时发
+            //     （`maybeAskPassword` / 设计 22 §5.3）。
             m_entries.erase(it);
             markNeedsPassword(item, passwordLevel);
         } else {
@@ -1318,6 +1319,9 @@ bool ViewerModel::screenSettled() const
 //   本屏真需要密码才问：挑本屏第一条"等密码"，同一个条目只问一次。
 //   ★ 为什么不在解码失败时直接弹：预取会让**别的卷/别的包**的条目也在飞，
 //     那边缺密码就把框弹出来 ⇒ 打开一份多卷漫画会连着弹好几个（用户 2026-11-03 实测）。
+//   ★★ 判据是"**本屏还有没解决的等密码格**"，**不是**"本屏一条图都没有"
+//      （2026-11-05 用户纠正）：双幅里另一半有图、这一半等密码也要问，
+//      否则那半页会永远空着却没人通知你。
 void ViewerModel::maybeAskPassword(const QVector<int> &items)
 {
     for (int i : items) {
