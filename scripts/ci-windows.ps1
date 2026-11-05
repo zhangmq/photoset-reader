@@ -579,7 +579,8 @@ function Invoke-Tests {
     Add-EnvPath (Join-Path $QtRoot 'bin')
 
     $failed = @()
-    foreach ($t in @('ib-test-scan', 'ib-test-progress', 'ib-test-meta')) {
+    #   ★ 与 `tests/CMakeLists.txt` 里的套件列表一一对应（新增套件时两边都要加）。
+    foreach ($t in @('ib-test-scan', 'ib-test-progress', 'ib-test-meta', 'ib-test-viewer')) {
         Write-Host "  == $t =="
         $exe = Join-Path $BuildDir ("$t.exe")
         if (-not (Test-Path $exe)) { $failed += "$t(missing)"; continue }

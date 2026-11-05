@@ -34,6 +34,13 @@ qt_add_executable(ib-test-meta
 )
 target_link_libraries(ib-test-meta PRIVATE testsupport)
 
+# ── 阅读屏（`ViewerModel`）：**0ms 幻灯片不许卡住**（2026-11-05 那个 bug 的回归套件）──
+#   不需要素材：现造临时目录里的 PNG；`-d <目录>` 时用真图集跑同一件事（手工验收用）。
+qt_add_executable(ib-test-viewer
+    selftest_viewer.cpp
+)
+target_link_libraries(ib-test-viewer PRIVATE testsupport)
+
 # ── ctest：相对 `.testdata` 的套件在**源码根**跑 ──────────────────────────
 add_test(NAME ib-test-scan COMMAND ib-test-scan
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
@@ -41,10 +48,12 @@ add_test(NAME ib-test-progress COMMAND ib-test-progress
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME ib-test-meta COMMAND ib-test-meta
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME ib-test-viewer COMMAND ib-test-viewer
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 # ── 可能**整条套件跳过**（夹具 / 环境不具备 ⇒ rc 77）：ctest 显示 *Skipped* ─────
 #   ⚠️ 必须显式 `SKIP_RETURN_CODE 77`：不设的话 ctest 把 77 当**失败**。
 #      全新克隆里没有 `.testdata/`（gitignore），`ib-test-meta` 会整条跳过 ——
 #      没这条时 `scripts/install.sh`（新用户路径）会在 ctest 这步直接失败（实测）。
-set_tests_properties(ib-test-scan ib-test-progress ib-test-meta
+set_tests_properties(ib-test-scan ib-test-progress ib-test-meta ib-test-viewer
                      PROPERTIES SKIP_RETURN_CODE 77)

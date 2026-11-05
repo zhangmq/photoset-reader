@@ -6,6 +6,9 @@
 
 #include <QCoreApplication>
 #include <QDebug>
+#include <QColor>
+#include <QPainter>
+#include <QPen>
 #include <QVariantMap>
 #include <QMetaObject>
 #include <QTimer>
@@ -26,14 +29,14 @@ static qint64 steadyNowMs()
 }
 
 // ══ 构造 / 析构 ═════════════════════════════════════════════════════════════
-//   `prefetchLength` = 预取长度 L（两个方向的条数相加）。
+//   `prefetchLength` = 预取长度 L（按**图**计；0 合法 = 只备本屏）。
 ViewerModel::ViewerModel(int prefetchLength, QObject *parent)
     : QObject(parent),
-      m_length(qMax(2, prefetchLength)),
+      m_length(qMax(0, prefetchLength)),
       m_poster(std::make_shared<Poster>())
 {
     m_poster->target = this;
-    resetShare();                    // 起始：f = 6（夹到 [1, L−1]）、方向为正
+    m_dir = +1;                      // 起始方向：前向
     m_now = steadyNowMs;
     //   ★ 单发闹钟：只负责"到点叫醒"。**不是节拍器** —— 节奏由单调时钟算
     //     （`到期 = 请求时刻 + 间隔`），所以默认精度够用（Qt 定时器只会晚到、不会早到）。
@@ -54,12 +57,46 @@ ViewerModel::~ViewerModel()
     m_poster->target = nullptr;
 }
 
+// ══ 占位图（2026-11-05）══════════════════════════════════════════════════════
+//   有字节、但解码器给不出图（**截断 / 坏编码**）⇒ 按序列里的**原图尺寸**画一张中性占位图。
+//   ★ 为什么必须有：这种页在长图集里很常见，若当成"没有图"就会**整屏被跳过去** ——
+//     用户永远看不到那一页，而且"跳屏"会把页码和阅读位置带偏。
+//   ★ 尺寸取序列里的显示尺寸（扫描时一定读到过），缩到长边 ≤ 1600 省内存（显示侧本来要缩）。
+//   ★ 只画几何（底色 + 边框 + 破损字形），**不烘文字**（避免 i18n 与字体依赖）。
+//   ★ 只读入参、不碰 `this` ⇒ 可以在**工作线程**里调（GUI 线程不做像素活）。
+static QImage placeholderImage(const QSize &size)
+{
+    QSize s = (!size.isValid() || size.isEmpty()) ? QSize(600, 800) : size;
+    if (s.width() > 1600 || s.height() > 1600) s.scale(1600, 1600, Qt::KeepAspectRatio);
+
+    QImage img(s, QImage::Format_ARGB32_Premultiplied);
+    img.fill(QColor(0x2a, 0x2a, 0x2e));
+
+    QPainter p(&img);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    // 细边框：宽度跟着尺寸走（缩略看也看得见、大图不显粗）
+    const qreal line = qMax(2.0, qMin(s.width(), s.height()) / 200.0);
+    p.setPen(QPen(QColor(0x4a, 0x4a, 0x52), line));
+    p.setBrush(Qt::NoBrush);
+    p.drawRect(QRectF(line, line, s.width() - 2 * line, s.height() - 2 * line));
+    // 中央"破损图片"字形：一个方框 + 一条斜杠
+    const qreal side = qMin(s.width(), s.height()) * 0.22;
+    const QRectF box((s.width() - side) / 2.0, (s.height() - side) / 2.0, side, side);
+    p.setPen(QPen(QColor(0x66, 0x66, 0x72), qMax(2.0, side / 24.0)));
+    p.drawRoundedRect(box, side * 0.08, side * 0.08);
+    const qreal pad = side * 0.18;
+    p.drawLine(QPointF(box.left() + pad, box.top() + pad),
+               QPointF(box.right() - pad, box.bottom() - pad));
+    p.end();
+    return img;
+}
+
 // ══ 工作线程：加载并解码 → post 回主线程 ════════════════════════════════════
-//   只做两件：`imageread::image`（唯一解码实现）；解完把结果 post 回主线程。
-//   不做取消；解码失败（空图）当成"坏（不可读）"。
+//   只做三件：`imageread::load`（唯一解码实现）；**解码失败但字节在 ⇒ 画占位图**；
+//   解完把结果 post 回主线程。
 //   ★ **不碰 `ViewerModel`、也不读 `valid` / `target`**：对象已销毁时该丢的由主线程那次检查丢掉
 //     （多投一次无害）；析构**不 join**，所以这里绝不会有"等对象"的事。
-void ViewerModel::preload(const Sequence::Item &imageMeta, int slot)
+void ViewerModel::preload(const Sequence::Item &imageMeta, int item)
 {
     const Sequence::Item meta  = imageMeta;   // ★ 工作线程只拿到一份条目信息的副本
     const quint64        epoch = m_epoch;     // 记号在这一刻定下（主线程读）
@@ -73,98 +110,115 @@ void ViewerModel::preload(const Sequence::Item &imageMeta, int slot)
     //   这次解码**手里有没有密码**（嵌套时密码可能只在某一层，不能只看第 0 项）
     const bool passwordUsed = std::any_of(meta.loc.passwords.cbegin(), meta.loc.passwords.cend(),
                                           [](const QString &pw) { return !pw.isEmpty(); });
-    std::thread([poster, epoch, slot, meta, passwordUsed] {
+    std::thread([poster, epoch, item, meta, passwordUsed] {
         int passwordLevel = -1;
-        const QImage image = imageread::image(meta.loc, &passwordLevel);
+        const imageread::Loaded r = imageread::load(meta.loc);
+        QImage image = r.image;
+        passwordLevel = r.passwordLevel;
+        //   ★ 有字节、解不出图、也不是密码问题 ⇒ **占位图**（结论 = "这一条有图"）。
+        //     只在这里做（工作线程）：GUI 线程不该为一张占位图刷几百万像素。
+        if (image.isNull() && passwordLevel < 0 && r.hasBytes) image = placeholderImage(meta.size);
         //   ★ 工作线程到此为止：只投递、不看任何共享标志。丢掉与否在主线程判。
-        QMetaObject::invokeMethod(sink, [poster, epoch, slot, image, passwordLevel, passwordUsed] {
+        QMetaObject::invokeMethod(sink, [poster, epoch, item, image, passwordLevel, passwordUsed] {
             //   ★★ **第一步**：这份结果所属的那个 `ViewerModel` 还在不在？
             //     · **不在 ⇒ 把收到的东西整个抛弃** —— 不写状态、不 emit、不判、不派活、
-            //       不碰任何槽位（`image` 随之释放）。这是**正常路径**，不是异常情况：
+            //       不碰任何条目（`image` 随之释放）。这是**正常路径**，不是异常情况：
             //       每个 `ViewerModel` 都是短的（随查看建了又毁），长期存在的只有上面那个接收者。
-            //     · 在 ⇒ 才继续走"比记号 → 比这个槽还等不等这一条"。
+            //     · 在 ⇒ 才继续走"比记号 → 比条目表里还要不要这一条"。
             //   ⚠️ 这里的丢弃**不打日志**（要留痕最多 debug 级，不许刷屏）。
             //   读 `valid` / `target` 与析构的写**同在主线程** ⇒ 无需锁、无需 atomic。
             if (!poster->valid || !poster->target) return;
-            poster->target->onLoaded(epoch, slot, image, passwordLevel, passwordUsed);
+            poster->target->onLoaded(epoch, item, image, passwordLevel, passwordUsed);
         }, Qt::QueuedConnection);
     }).detach();
 }
 
 //   设置里改「预取窗口」：**即时生效**，不重建 viewmodel、不重扫。
+//   ★ `0` 合法（用户 2026-11-05：预取深度 0 = 只备本屏，前端行为不许变）。
 void ViewerModel::setPrefetchWindow(int prefetchLength)
 {
-    const int v = qMax(2, prefetchLength);
+    const int v = qMax(0, prefetchLength);
     if (v == m_length) return;
     m_length = v;
-    judge();                     // 按新窗口派活（多要的照派；少要的不回收）
+    evaluateScreen();
+    reconcile();                 // 按新窗口重拍（多要的照派；少要的丢掉）
 }
 
 // ══ 结果回主线程 ════════════════════════════════════════════════════════════
-//   先比记号，再比"这个槽现在还等不等这一条"；任一条不符 ⇒ **直接丢**（白干，不算数）。
-//   解码失败（空图）⇒ **坏因写进小表**（不可读），并**释放那个槽**（坏不占槽位额度）。
-void ViewerModel::onLoaded(quint64 epoch, int slot, const QImage &image, int passwordLevel,
+//   先比记号，再比"条目表里还要不要这一条"；任一条不符 ⇒ **直接丢**（白干，不算数）。
+//   ★ 三种"没图"分开处理（2026-11-05）：**等密码 / 缺 / 占位图**（占位图已在工作线程画好，
+//     到这里就是一张普通图）。
+void ViewerModel::onLoaded(quint64 epoch, int item, const QImage &image, int passwordLevel,
                            bool passwordUsed)
 {
-    if (epoch != m_epoch) return;                        // 换来源记号不符 ⇒ 丢
-    if (slot < 0 || slot >= m_slots.size()) return;
-    if (m_slots[slot].state != Slot::State::InFlight) return;   // 这个槽已经不等它了 ⇒ 丢
 
-    Slot &s = m_slots[slot];
+    if (epoch != m_epoch) return;                        // 换来源记号不符 ⇒ 丢
+    if (m_inFlight > 0) --m_inFlight;                    // 那条线程已经跑完（无论要不要）
+
+    auto it = m_entries.find(item);
+    if (it == m_entries.end() || it->state != Entry::State::InFlight) {
+        reconcile();                                     // 已经不想要了 ⇒ 白干
+        return;
+    }
+
     if (!image.isNull()) {
-        s.image = image;
-        s.state = Slot::State::Ready;
+        it->image = image;
+        it->state = Entry::State::Ready;
     } else {
         //   这次解码是在**用户输入密码之前**发起的（结果回来晚）：条目现在已经有密码了
-        //   ⇒ 丢掉这个结果，别误报"要密码"、也别把它记成坏因（等 retry 的新结果）。
-        const bool nowHasPw = m_seq && s.item >= 0 && s.item < m_seq->count()
-                              && !m_seq->at(s.item).loc.passwords.value(passwordLevel).isEmpty();
+        //   ⇒ 丢掉这个结果，别误报"要密码"、也别把它记成任何结论（等 retry 的新结果）。
+        const bool nowHasPw = m_seq && item >= 0 && item < m_seq->count()
+                              && !m_seq->at(item).loc.passwords.value(passwordLevel).isEmpty();
         if (passwordLevel >= 0 && !passwordUsed && nowHasPw) {
-            // 丢弃（什么都不记）
+            m_entries.erase(it);
         } else if (passwordLevel >= 0) {
-            //   ★ **要密码**：记专门的坏因（不能记 Unreadable —— 那会被永久跳过），并带上
+            //   ★ **要密码**：记专门的结论（不能记成"缺" —— 那会被**永久跳过**），并带上
             //     **层号**（弹框要靠它算"是哪个容器"）。这里**不弹框**：预取到的邻居缺密码
             //     不该打断用户，弹框由"当前这一屏真的空着"决定（`maybeAskPassword` / 设计 22 §5.3）。
-            markBad(s.item, Bad::NeedsPassword, passwordLevel);
+            m_entries.erase(it);
+            markNeedsPassword(item, passwordLevel);
         } else {
-            markBad(s.item, Bad::Unreadable);
+            //   走到这里只剩一种：**没有字节可读**（文件没了 / 容器打不开 / 成员不在）
+            //   —— 解码失败但有字节的那种，工作线程已经换成占位图了。
+            m_entries.erase(it);
+            markMissing(item);
         }
-        s.item  = -1;
-        s.state = Slot::State::Empty;
-        s.image = QImage();
     }
-    --m_inFlight;
-    judge();                                             // 重判一次（里面也会继续派活）
+    notifyFrontend();                                    // 只通知（前端自己判定）
+    reconcile();                                         // 接着按新的 desired 派活
 }
 
 // ══ 来源 / 序列长进了 ═══════════════════════════════════════════════════════
-//   换来源 ⇒ **换个记号就走**：槽位表 + 坏因表整张换掉、在飞计数归零，回到起始（位置 0）。
+//   换来源 ⇒ **换个记号就走**：条目表 + 两张结论表整张换掉、在飞计数归零，回到起始（位置 0）。
 void ViewerModel::setSequence(const Sequence *seq)
 {
     ++m_epoch;                       // 换来源记号：在飞的回来时记号不符 ⇒ 丢
     m_seq = seq;
-    m_slots.clear();
-    m_bad.clear();                   // 坏因的生命周期 = 一次查看（换来源一起清）
-    m_badLevel.clear();
+    m_entries.clear();
+    m_missing.clear();               // 结论的生命周期 = 一次查看（换来源一起清）
+    m_needsPassword.clear();
     m_promptedItem = -1;
     m_inFlight = 0;
     m_skipped  = 0;
+    clearAnnounced();                // 新来源 ⇒ 没有"已宣布的屏"
     //   ★ 初始位置由上层在**装序列之前**给（`setStartPosition`）：恢复进度/从第 N 条开始
     //     都是"初始化时就在那儿"，不是装载完再跳一次（用户 2026-11-04）。
     const int n = m_seq ? m_seq->count() : 0;
     m_pos      = (n > 0) ? qBound(0, m_startIndex, n - 1) : 0;
     m_cursor   = m_pos;
     m_startIndex = 0;                // 一次性：之后换序列默认还是第 0 条
-    resetShare();                    // 换来源 ⇒ 回到起始
+    m_dir = +1;                      // 换来源 ⇒ 方向回前向
     emit currentChanged();           // 条目总数变了（QML 的 count / totalPages 跟它）
-    judge();
+    evaluateScreen();
+    reconcile();
 }
 
 //   序列长进了：条目总数可能变了 ⇒ 通知一次，再判一次（可能这一条现在有了 / 能往后走了）。
 void ViewerModel::sequenceChanged()
 {
     emit currentChanged();
-    judge();
+    evaluateScreen();
+    reconcile();
 }
 
 // ══ 版面 / 屏 ══════════════════════════════════════════════════════════════
@@ -326,21 +380,21 @@ QString ViewerModel::nextFolderName() const
 //   跳相邻容器的第一条（到头按循环模式；`delta` = ±1）
 void ViewerModel::stepFolder(int delta)
 {
-    if (!m_seq || m_seq->count() <= 0) return judge();
-    if (m_loop == Loop::Folder) return judge();     // ★ 文件夹内循环：不许切文件夹
+    if (!m_seq || m_seq->count() <= 0) { evaluateScreen(); return; }
+    if (m_loop == Loop::Folder) { evaluateScreen(); return; }   // ★ 文件夹内循环：不许切文件夹
     if (m_playing) return foldOrRun(Want::Folder, (delta > 0) ? +1 : -1);
     int node = adjacentFolderNode(delta);
     if (node < 0) {
         if (m_loop == Loop::All) node = edgeFolderNode(delta);
-        else return judge();                        // 不循环：到头（按钮本来就是灰的）
+        else { evaluateScreen(); return; }              // 不循环：到头（按钮本来就是灰的）
     }
-    if (node < 0) return judge();
-    const int target = m_seq->subtreeFirst(node);   // 落点 = 那个容器的第一条图
-    if (target < 0) return judge();
+    if (node < 0) { evaluateScreen(); return; }
+    const int target = m_seq->subtreeFirst(node);       // 落点 = 那个容器的第一条图
+    if (target < 0) { evaluateScreen(); return; }
     act(target, 0);
 }
 
-//   换循环模式：会话级、不写盘；**只重判一次**（不重置份额）。
+//   换循环模式：会话级、不写盘；**只重判一次**（不动方向）。
 void ViewerModel::setLoopMode(int mode)
 {
     const Loop want = (mode == int(Loop::All))    ? Loop::All
@@ -349,14 +403,8 @@ void ViewerModel::setLoopMode(int mode)
     if (m_loop == want) return;
     m_loop = want;
     emit loopModeChanged();
-    judge();
-}
-
-// 这一条在不在当前屏上（淘汰槽位时不离手）。
-bool ViewerModel::onScreen(int item) const
-{
-    const QVector<int> items = screenItems(screenStart(m_pos));
-    return items.contains(item);
+    evaluateScreen();
+    reconcile();
 }
 
 // ══ 幻灯片（规则见设计 13 §九·补·二）═══════════════════════════════════════
@@ -372,30 +420,38 @@ bool ViewerModel::onScreen(int item) const
 bool ViewerModel::waitingForCache() const
 {
     if (!m_seq || m_seq->count() <= 0) return true;
-    bool settled = false, anyReady = false;
-    scanScreen(screenItems(screenStart(m_pos)), settled, anyReady);
-    return !settled;                    // 本屏还没结论（既没备好、也不是坏）
+    return !screenSettled();            // 本屏还没结论（既没备好、也不是缺 / 等密码）
 }
 
 void ViewerModel::cancelBeat()
 {
     if (m_beat) m_beat->stop();
+    m_beatArmed = false;
 }
 
-//   挂/重挂闹钟：剩余按**请求时刻**算（不是"上次到期"）⇒ 耗时自然吃掉间隔。
-//   ★ 等缓存期间**不挂**（不变量）；上屏那一刻会再来挂。
+//   挂闹钟：剩余按**请求时刻**算（不是"上次到期"）⇒ 耗时自然吃掉间隔。
+//   ★ 等缓存期间**不挂**（不变量）；只在“宣布新屏”那一刻会话进来。
+//   ★★ **幂等**（2026-11-05，0ms 卡死的根治点）：同一 deadline 且闹钟还在跑 ⇒ 直接返回。
+//      以前这里每次都 `start(remain)`，间隔 0 时等于把一个 0ms 单发定时器无限重启，
+//      `onBeat` 永远轮不到 ⇒ 画面冻结。
 void ViewerModel::armBeat()
 {
-    if (!m_playing || waitingForCache()) return;
-    const qint64 remain = qMax<qint64>(0, m_reqAt + m_intervalMs - nowMs());
-    m_beat->start(int(remain));
+    if (!m_playing || !m_beat) return;
+    if (!screenSettled()) return;                   // 等缓存：不挂（宣布时会再来）
+    const qint64 deadline = m_reqAt + m_intervalMs;
+    const int remain = int(qMax<qint64>(0, deadline - nowMs()));
+    if (m_beatArmed && m_beatDeadline == deadline && m_beat->isActive()) return;
+    m_beatArmed    = true;
+    m_beatDeadline = deadline;
+    m_beat->start(remain);
 }
 
 //   闹钟到点：**不预存目标**，一律按当时状态计算。
 void ViewerModel::onBeat()
 {
+    m_beatArmed = false;                // 单发闹钟已经到点（下一次宣布再挂）
     if (!m_playing) return;
-    if (waitingForCache()) {            // 这一次不推进 ⇒ 置推进等待位；不挂闹钟
+    if (!screenSettled()) {             // 这一次不推进 ⇒ 置推进等待位；不挂闹钟
         m_pendingAdvance = true;
         return;
     }
@@ -404,7 +460,7 @@ void ViewerModel::onBeat()
     requestScreen(next, +1);
 }
 
-//   上屏那一刻（唯一上屏点 `screen()` 里调）：① 折叠器 ② 推进等待位 ③ 挂闹钟。
+//   宣布新屏那一刻（**唯一调用点 = `announce()`**）：① 折叠器 ② 推进等待位 ③ 挂节拍。
 void ViewerModel::onScreenUp()
 {
     if (!m_playing) return;
@@ -721,21 +777,18 @@ void ViewerModel::zoomToRatio(qreal ratio)
 //     拿它来挡按键会让等待期间全放行 ⇒ 一路跳着上屏（跳过一整串）。
 void ViewerModel::stepPage(int delta)
 {
-    if (!m_seq) return judge();
-    if (m_seq->count() <= 0) return judge();
+    if (!m_seq || m_seq->count() <= 0) { evaluateScreen(); return; }
     const int dir = (delta > 0) ? +1 : -1;
 
     //   ★ 幻灯片：走"等闹钟 ⇒ 立刻执行 / 等缓存 ⇒ 进折叠器"（设计 13 §九·补·二 21–24）。
     if (m_playing) return foldOrRun(Want::Step, dir);
 
     //   ── 不播放：维持现状（本屏还没结论 ⇒ 这次按键丢掉）──
-    const int start = screenStart(m_pos);
-    bool settled = false, anyReady = false;
-    scanScreen(screenItems(start), settled, anyReady);
-    if (!settled) return;                     // 本屏还没结论 ⇒ 这次按键丢掉
+    if (!screenSettled()) { evaluateScreen(); return; }   // 还没结论 ⇒ 这次按键丢掉
 
+    const int start = screenStart(m_pos);
     const int next = nextScreen(start, dir);      // 到头 ⇒ -1（位置不动）
-    if (next < 0) return judge();
+    if (next < 0) { evaluateScreen(); return; }
     act(next, dir);
 }
 
@@ -746,175 +799,182 @@ void ViewerModel::setStartPosition(int imageIndex)
 
 void ViewerModel::jump(int imageIndex)
 {
-    if (!m_seq) return judge();
+    if (!m_seq) { evaluateScreen(); return; }
     const int n = m_seq->count();
-    if (n <= 0) return judge();
+    if (n <= 0) { evaluateScreen(); return; }
     if (m_playing) return foldOrRun(Want::Jump, qBound(0, imageIndex, n - 1));
-    act(qBound(0, imageIndex, n - 1), 0);     // 跳转 ⇒ 份额回到起始
+    act(qBound(0, imageIndex, n - 1), 0);     // 跳转 ⇒ 方向回前向
 }
 
 //   换版面：**保留当前位置**，屏由序列按新版面重算（不重新分组）⇒ 再判一次。
-//   预取份额回到起始（`f = 6`、方向为正）。
+//   ★ 换版面**不改方向**（用户 2026-11-05 定）：预取份额只跟"往哪边翻"有关。
 void ViewerModel::setDoublePage(bool on)
 {
     const app::Layout want = on ? app::Layout::Double : app::Layout::Single;
     if (m_layout == want) return;
     m_layout = want;
-    resetShare();
+    clearAnnounced();                 // 屏换了 ⇒ 必须重新宣布（否则节拍不会动）
     emit doublePageChanged();
     //   ★ 幻灯片：换版面**不停播**（设计 13 §九·补·二 28）：取消旧闹钟，按"这一刻"重新计时；
-    //     上屏那一刻会重挂（等缓存期间不挂）。
+    //     宣布那一刻会重挂（等缓存期间不挂）。
     if (m_playing) {
         cancelBeat();
         m_reqAt = nowMs();
     }
-    judge();
+    evaluateScreen();
+    reconcile();
 }
 
 //   `stepDir` = 这次是"换一屏"（±1）；0 = 跳转 / 换版面。
 void ViewerModel::act(int target, int stepDir)
 {
     if (target != m_pos) {
-        if (stepDir == 0) resetShare();       // 跳转 / 换版面 ⇒ 回到起始
-        else observeOperation(stepDir);       // 位置真的变了 ⇒ 才算一次操作
+        //   ★ 方向只看这一次动作：换屏取那一次的方向；跳转 / 换版面（`stepDir == 0`）回前向。
+        m_dir = (stepDir >= 0) ? +1 : -1;
         m_pos = target;
+        clearAnnounced();             // 换位置 ⇒ 新屏还没宣布
     }
-    judge();
+    evaluateScreen();
+    reconcile();
 }
 
-// ══ 份额规则 ═══════════════════════════════════════════════════════════════
-//   同向再换一屏 ⇒ `f+1`；反向 ⇒ `f−1`；夹在 `[1, L−1]`。
-void ViewerModel::observeOperation(int dir)
+// ══ 后台线：预取（`reconcile`）══════════════════════════════════════════════
+//   每拍重算一次"现在该有哪些条目"，然后派缺失的、丢不要的。**幂等**，没有历史包袱。
+//
+//     desired = 本屏（pinned：必取，**不占** L）
+//            ++ 行进方向 ahead 张      （ahead = L − insurance）
+//            ++ 反方向   insurance 张  （insurance = L >= 4 ? max(1, L/4) : 0）
+//
+//   顺序 = 派活顺序（pinned 最前 ⇒ 并发满时永远先派本屏）。
+//   ★ 只认"图"，不认"屏"：双幅的 `L` **不**×2，额度按张数算。
+//   ★ **不做"预取 2 + 钉住 2"这类配额**（用户 2026-11-05 明确否掉）：并发上限只是资源上限，
+//     靠"每完成一条就重拍"保证 pinned 永远排最前。
+void ViewerModel::reconcile()
 {
-    if (dir != m_dir) m_dir = dir;                              // 反向 ⇒ 新方向挪到前面
-    m_f = qBound(1, m_f + ((dir > 0) ? +1 : -1), m_length - 1); // 前向条数只按方向 ±1
-}
-
-void ViewerModel::resetShare()
-{
-    m_f   = qBound(1, kStartForward, m_length - 1);
-    m_dir = +1;
-}
-
-// ══ 派活（主线程）══════════════════════════════════════════════════════════
-//   按"本屏位置 → 份额那串偏移"的顺序逐条查：坏因表里已有 ⇒ 跳过（**永不重派 = 不重试**）；
-//   槽位表里已在等 / 已备好 ⇒ 跳过；元数据已标缺失 ⇒ **只写坏因表，不派解码**；
-//   剩下的找一个空槽，记下"这个槽等的是这一条"，在飞计数 +1，起一条工作线程去 `preload`。
-//   ★ **本屏的位置永远最先派出去**（备图不许拖慢当前这一屏）。
-void ViewerModel::dispatch()
-{
-    if (!m_seq) return;
+    if (!m_seq) { m_entries.clear(); return; }
     const int n = m_seq->count();
-    if (n <= 0) return;
+    if (n <= 0) { m_entries.clear(); return; }
 
-    //   要的条目 = **本屏的位置** + 顺着"下一屏 / 上一屏"各走 f / b 屏（最近方向那侧在前）。
-    //   ★★ **不按下标加减硬算**（用户 2026-10-15 定的 L38）：每一步都过 `nextScreen`
-    //      ⇒ 开了循环就**跟着绕回开头**（到末尾附近时，开头的条目也在队列里）。
-    const QVector<int> items = screenItems(screenStart(m_pos));
-    if (items.isEmpty()) return;
-    const int start = items.first();
+    const int start = screenStart(m_pos);
+    const QVector<int> members = screenItems(start);
 
-    const int f = m_f;
-    const int b = m_length - f;
-    QVector<int> want;
-    want.reserve(m_length + 2);
-    want << items;                                   // 本屏（1 或 2 个位置）
-    const auto walk = [&](int dir, int steps) {
+    QVector<int> order;                 // desired 的顺序（= 派活顺序）
+    QSet<int>    want;                  // desired 的集合（= 判"还要不要"）
+    bool learned = false;               // 本次有没有新写出"缺"
+
+    const auto take = [&](int i) -> bool {
+        if (i < 0 || i >= n) return false;
+        if (!inLoopScope(i)) return false;               // 区间外：本次不显示，也不白解码
+        if (want.contains(i)) return false;
+        if (m_missing.contains(i)) return false;         // 已知缺 ⇒ 永不重派
+        if (m_needsPassword.contains(i)) return false;   // 等密码 ⇒ 不重派（拿到密码会清）
+        const Sequence::Item &it = m_seq->at(i);
+        if (it.missing) {                                // 元数据已标缺失 ⇒ 只写结论，不派解码
+            m_missing.insert(i);
+            learned = true;
+            return false;
+        }
+        want.insert(i);
+        order << i;
+        return true;
+    };
+
+    //   ① 本屏那 1~2 条：**必取**（不占 L —— 这就是 pinned 的独立槽位）
+    for (int i : members) take(i);
+
+    //   ② 行进方向 ahead 张 → 反方向 insurance 张（都按"图"数；走屏不改计数口径）
+    const int insurance = (m_length >= 4) ? qMax(1, m_length / 4) : 0;
+    const auto walk = [&](int dir, int budget) {
         int cur = start;
-        for (int k = 0; k < steps; ++k) {
-            cur = nextScreen(cur, dir);
-            if (cur < 0) return;
-            const QVector<int> its = screenItems(cur);
+        for (int guard = 0; budget > 0 && guard < 256; ++guard) {
+            const int next = nextScreen(cur, dir);
+            if (next < 0) return;
+            const QVector<int> its = screenItems(next);
             if (its.isEmpty()) return;
-            want << its;
+            for (int i : its) {
+                if (budget <= 0) return;
+                if (take(i)) --budget;      // 只数**真的要取**的图（缺 / 区间外不占额度）
+            }
+            cur = next;
         }
     };
-    if (m_dir > 0) { walk(+1, f); walk(-1, b); }
-    else           { walk(-1, b); walk(+1, f); }
+    walk(m_dir, m_length - insurance);
+    walk(-m_dir, insurance);
 
-    for (int i : want) {
-        if (i < 0 || i >= n) continue;                  // 没有这一条
-        if (!inLoopScope(i)) continue;                  // ★ 区间外 ⇒ 不派活（留空，不白解码）
-        if (isBad(i)) continue;                         // 已知是坏的 ⇒ 跳过（**永不重派**）
-        if (slotOf(i) >= 0) continue;                   // 已在等 / 已备好 ⇒ 跳过
+    //   ③ 角色：属于当前屏的才是 pinned（独立槽位；其余都是 lookahead，占 L）
+    for (auto it = m_entries.begin(); it != m_entries.end(); ++it)
+        it->pinned = members.contains(it.key());
 
-        const Sequence::Item &it = m_seq->at(i);
-        if (it.missing) {                               // 元数据已标缺失 ⇒ 不派解码，只写坏因
-            markBad(i, Bad::Missing);
-            continue;
-        }
-        if (m_inFlight >= kMaxInFlight) return;         // 并发上限（写死 4）
-        const int s = takeSlot(i);
-        if (s < 0) return;                              // 池满且没有可淘汰的（在飞的槽不可淘汰）
-        m_slots[s].state = Slot::State::InFlight;
-        ++m_inFlight;
-        preload(it, s);
+    //   ④ 丢：已经不要的。**备好的立刻释放**；在飞的等它回来再丢（线程不能取消，
+    //      而它回来那一刻正好借 `onLoaded` 重拍一次）
+    for (auto it = m_entries.begin(); it != m_entries.end(); ) {
+        if (!want.contains(it.key()) && it->state == Entry::State::Ready)
+            it = m_entries.erase(it);
+        else
+            ++it;
     }
+
+    //   ⑤ 派：按 desired 顺序（pinned 在最前）；受"并发上限"与"lookahead 额度"两条约束
+    int lookahead = 0;
+    for (auto it = m_entries.cbegin(); it != m_entries.cend(); ++it)
+        if (!it->pinned) ++lookahead;
+    for (int item : order) {
+        if (m_entries.contains(item)) continue;              // 在飞 / 已备好
+        const bool pinned = members.contains(item);
+        if (!pinned && lookahead >= m_length) break;          // 额度用完（L = 0 ⇒ 一条不派）
+        if (m_inFlight >= kMaxInFlight) break;                // 资源上限：下一次重拍再派
+        Entry e;
+        e.state  = Entry::State::InFlight;
+        e.pinned = pinned;
+        m_entries.insert(item, e);
+        ++m_inFlight;
+        if (!pinned) ++lookahead;
+        preload(m_seq->at(item), item);
+    }
+
+    if (learned) notifyFrontend();          // 新写出"缺" ⇒ 前端可能能跳屏了
 }
 
-//   这一条备好时的那张图（坏 / 在飞 / 没槽 ⇒ 空图）。
+//   后台完成一条后的**唯一通知**（投递到 GUI 线程、**合并去抖**）：
+//   ★ 它只说"有东西变了"，**不做任何前端判定** —— 这就是这次重构的分界线。
+void ViewerModel::notifyFrontend()
+{
+    if (m_notifyPending) return;            // 同一轮事件里多次完成 ⇒ 只判一次
+    m_notifyPending = true;
+    QMetaObject::invokeMethod(this, [this] {
+        m_notifyPending = false;
+        evaluateScreen();
+    }, Qt::QueuedConnection);
+}
+
+// ══ 条目表的小工具（后台线写、前端只读）════════════════════════════════════
+bool ViewerModel::entryReady(int item) const
+{
+    const auto it = m_entries.constFind(item);
+    return it != m_entries.constEnd() && it->state == Entry::State::Ready;
+}
+
+//   这一条备好时的那张图（缺 / 等密码 / 在飞 / 区间外 ⇒ 空图）。
 QImage ViewerModel::imageOf(int item) const
 {
     if (item < 0) return QImage();
-    if (!inLoopScope(item)) return QImage();         // ★ 区间外 ⇒ **留空**（不是坏，只是本次不显示）
-    const int s = slotOf(item);
-    if (s < 0 || m_slots[s].state != Slot::State::Ready) return QImage();
-    return m_slots[s].image;
+    if (!inLoopScope(item)) return QImage();    // ★ 区间外 ⇒ **留空**（不是缺，只是本次不显示）
+    const auto it = m_entries.constFind(item);
+    if (it == m_entries.constEnd() || it->state != Entry::State::Ready) return QImage();
+    return it->image;
 }
 
-//   管着这一条的槽（-1 = 没有）。
-int ViewerModel::slotOf(int item) const
+//   "缺"：**不占额度、不重试**（写进小表就不再派活；这一条本次查看的命就到这儿）。
+void ViewerModel::markMissing(int item)
 {
-    for (int s = 0; s < m_slots.size(); ++s)
-        if (m_slots[s].item == item && m_slots[s].state != Slot::State::Empty) return s;
-    return -1;
+    m_needsPassword.remove(item);
+    m_missing.insert(item);
 }
 
-//   找一个槽给这一条：先找空槽；池满（上限 = L + 一屏最多位置数）⇒ 丢掉
-//   "离当前位置最远、且已备好"的那个槽；
-//   找不到（没有可淘汰的备好槽）⇒ -1。
-//   ★ 池里只有"在飞 / 备好"两种槽 ⇒ 不会再有"不可淘汰的坏槽"把池堵死（坏因不在池里）。
-//   ★ **本屏的哪些条不离手**（双幅 2 条都算）。
-int ViewerModel::takeSlot(int item)
+void ViewerModel::markNeedsPassword(int item, int level)
 {
-    for (int s = 0; s < m_slots.size(); ++s) {
-        if (m_slots[s].state == Slot::State::Empty) {
-            m_slots[s].item = item;
-            return s;
-        }
-    }
-    if (m_slots.size() < m_length + kMaxPerScreen) {
-        Slot s;
-        s.item = item;
-        m_slots << s;
-        return m_slots.size() - 1;
-    }
-    int victim = -1, farthest = -1;
-    for (int s = 0; s < m_slots.size(); ++s) {
-        if (m_slots[s].state != Slot::State::Ready) continue;
-        if (onScreen(m_slots[s].item)) continue;     // 当前屏的那几条不离手
-        const int d = qAbs(m_slots[s].item - m_pos);
-        if (d > farthest) { farthest = d; victim = s; }
-    }
-    if (victim < 0) return -1;
-    m_slots[victim].item  = item;
-    m_slots[victim].state = Slot::State::Empty;
-    m_slots[victim].image = QImage();
-    return victim;
-}
-
-//   坏因小表（**不占** `L + 1` 的槽位额度）；**两个写点的唯一入口**：
-//   元数据已标缺失（`dispatch` 里当场写）/ 解码回来是空图（`onLoaded` 里写）。
-bool ViewerModel::isBad(int item) const
-{
-    return m_bad.contains(item);
-}
-
-void ViewerModel::markBad(int item, Bad why, int level)
-{
-    m_bad.insert(item, why);
-    if (why == Bad::NeedsPassword) m_badLevel.insert(item, level);
-    else                           m_badLevel.remove(item);
+    m_missing.remove(item);
+    m_needsPassword.insert(item, level);
 }
 
 //   时间轴悬停预览：一次算完 **条目 + 定位框几何**（以 center 为中心，左右交替取）
@@ -1105,92 +1165,145 @@ int ViewerModel::previewItemWidth(int index, int heightPx) const
     return qMax(24, int(qRound(heightPx * ratio)));
 }
 
-// ══ 重判：唯一决定上屏的地方 ═══════════════════════════════════════════════
-//   · 本屏每个位置都有结论（备好 / 坏）**且至少一个备好** ⇒ 上屏（坏的位置留空图）；
-//   · 本屏**整屏都坏**（单幅 = 那一条坏）  ⇒ 跳过计数 +1，位置挪到下一屏（同方向），再派活再判；
-//   · 还有位置没结论                      ⇒ 等下一个结果回来。
-//   每一轮开头都更新一次浮层（`updateLoading()`）⇒ 所有返回路径都更新到，没有早退漏掉。
-//   ★ 加密压缩包（设计 22 §5.3）：用户提交密码后，只清这一条的 `NeedsPassword`
-//     再判一次（重新派解码）。**只有"提交密码"会调它** —— 不是自动重试。
+// ══ 前端线（重判）：唯一决定「显示 / 宣布 / 跳屏 / 问密码」的地方 ══════════
+//   · 这一屏**已经宣布过** ⇒ 只补图（**不许**再宣布、再挂节拍）；
+//   · 还有位置没结论 ⇒ 先把已就绪的格显示出来（双幅可以先出一格），不宣布；
+//   · 有结论但一条图都没有：等密码 ⇒ 停在原地问；否则整屏都缺 ⇒ 同方向跳屏；
+//   · 全都有结论且至少一张图 ⇒ 显示 + 宣布（**节拍只在这一刻挂**）。
+//   以前这里叫 `judge()`，且"上屏"就等于"重新挂节拍" ⇒ 0ms 间隔下闹钟被反复重启。
+//
+//   ★ 加密压缩包（设计 22 §5.3）：用户提交密码后，清掉"等密码"的结论再判一次（重新派解码）。
+//     **只有"提交密码"会调 `retryNeedingPassword()`** —— 不是自动重试。
 void ViewerModel::retryNeedingPassword()
 {
     //   ★ 同一个容器往往**不止一条**因为它失败（预取/本屏几条都在等同一个包）⇒
     //     拿到密码要**全部清掉**重新取，否则只重取"触发弹框的那一条"，
-    //     本屏另一条仍然停在 NeedsPassword ⇒ 画面空白，翻页才出来（用户 2026-11-03 实测）。
+    //     本屏另一条仍然停在等密码 ⇒ 画面空白，翻页才出来（用户 2026-11-03 实测）。
     //     别的容器里的条目也会被重取一次：密码不对就再次失败、再次追问（符合"继续弹框即可"）。
-    for (auto it = m_bad.begin(); it != m_bad.end();) {
-        if (it.value() == Bad::NeedsPassword) {
-            m_badLevel.remove(it.key());
-            it = m_bad.erase(it);
-        } else {
-            ++it;
-        }
-    }
+    m_needsPassword.clear();
     m_promptedItem = -1;                  // 拿到密码了 ⇒ 以后（密码错时）可以再问
-    judge();
+    evaluateScreen();
+    reconcile();
 }
 
-void ViewerModel::judge()
+void ViewerModel::evaluateScreen()
 {
-    const int origin = screenStart(m_pos);     // 出发那一屏（跳过坏屏时"绕一圈回到它就停"）
-    for (;;) {
-        updateLoading();                       // 浮层按当前状态当场算（唯一更新入口）
-        if (!m_seq || m_seq->count() <= 0) return;   // 还没有条目（扫描中 = 浮层显示，扫完 = 不显示）
+    updateLoading();                      // 浮层按当前状态当场算（唯一更新入口）
+    if (!m_seq || m_seq->count() <= 0) return;
 
+    const int origin = screenStart(m_pos);    // 跳屏绕一圈回到它就停
+    for (int guard = 0; guard < 4096; ++guard) {
         const int start = screenStart(m_pos);
         const QVector<int> items = screenItems(start);
         if (items.isEmpty()) return;
 
-        bool settled = false, anyReady = false;
-        scanScreen(items, settled, anyReady);
-        if (settled) {
-            if (anyReady) {
-                screen(start, items);
-                dispatch();                    // 上屏之后接着按份额备图
-                return;
-            }
-            if (screenWaitsPassword(items)) {  // ★ 有"要密码"的条目 ⇒ 停在原地（空白），不跳屏
-                screen(start, items);
-                dispatch();
-                maybeAskPassword(items);       // ★ 只有"这一屏真的空着"才弹框
-                return;
-            }
-            ++m_skipped;                       // 整屏坏 ⇒ 跳过（按当前方向）
-            const int next = nextScreen(start, m_dir);      // 跳过也按当前方向换屏
-            if (next < 0 || next == origin) {               // 到头 / 绕一圈回到出发那屏 ⇒ 停
-                qCWarning(lcUi).noquote() << QStringLiteral("[ui] viewer: screen at %1 is bad and no further "
-                                                    "screen exists (skipped %2)")
-                                         .arg(start).arg(m_skipped);
-                return;
-            }
-            qCDebug(lcUi).noquote() << QStringLiteral("[ui] viewer: screen at %1 is bad, skipping (total skipped %2)")
-                                     .arg(start).arg(m_skipped);
-            observeOperation(m_dir);           // 同方向再换一屏
-            m_pos = next;
-            dispatch();                        // 再派活
-            continue;                          // 再判
+        //   ① 已经宣布过这一屏 ⇒ 只补图（幂等的 armBeat 兜住"播放态但还没挂闹钟"那一瞬间）
+        if (isAnnounced(start, items)) {
+            updateDisplay(start, items);
+            armBeat();
+            return;
         }
-        //   还没结论（没有槽位 / 正在等）⇒ 等下一个结果回来；派活当场给出结论
-        //   （缺失 ⇒ 写坏因）就再判一次
-        dispatch();
-        bool settled2 = false, anyReady2 = false;
-        scanScreen(items, settled2, anyReady2);
-        if (settled2) continue;                // 派活当场写出坏因（缺失）⇒ 再判
-        return;
+
+        //   ② 数三种格：没结论 / 有图 / 缺；另数"等密码"的（含"用户已取消"的不算）
+        int pending = 0, ready = 0, needsPw = 0;
+        for (int i : items) {
+            if (cellOf(i) == Cell::Pending) ++pending;
+            else if (cellOf(i) == Cell::Ready) ++ready;
+            if (waitsPassword(i) && !passwordDeclined(i)) ++needsPw;
+        }
+        if (pending > 0) {                // ★ 还有位置没结论 ⇒ 不宣布、不挂节拍
+            //   ★ ★ 一格都没就绪时**什么都不动**（画面 / 页码都不许跳）：
+            //     旧实现的口径"等缓存期间画面上还是上一屏"必须保住，否则翻页会闪一下白。
+            //     双幅里有一格好了 ⇒ 先把这一屏显示出来（另一格留空）。
+            if (ready > 0) updateDisplay(start, items);
+            return;
+        }
+        if (ready > 0) {                  // 有图 ⇒ 显示 + 宣布（宣布那一刻挂节拍）
+            updateDisplay(start, items);
+            announce(start, items);
+            return;
+        }
+        if (needsPw > 0) {                // 一条图都没有、但要密码 ⇒ **停在原地**（不跳屏）
+            updateDisplay(start, items);
+            maybeAskPassword(items);
+            return;
+        }
+
+        //   ③ 整屏都缺 ⇒ 跳屏（同方向）。★ 不走 `act()`：跳屏不改方向、也不算一次"换屏操作"
+        const int next = nextScreen(start, m_dir);
+        if (next < 0 || next == origin) {     // 到头 / 绕一圈回到出发那屏 ⇒ 停
+            qCWarning(lcUi).noquote()
+                << QStringLiteral("[ui] viewer: screen at %1 is missing and no further screen "
+                                  "exists (skipped %2)").arg(start).arg(m_skipped);
+            if (m_playing) stopPlaying(tr("End reached · slideshow stopped"));
+            return;
+        }
+        ++m_skipped;
+        qCDebug(lcUi).noquote()
+            << QStringLiteral("[ui] viewer: screen at %1 is missing, skipping (total skipped %2)")
+                   .arg(start).arg(m_skipped);
+        m_pos = next;
+        clearAnnounced();
+        reconcile();                      // 派新屏的活（可能当场写出新的"缺"）
     }
+    qCWarning(lcUi) << QStringLiteral("[ui] viewer: evaluateScreen hit the skip guard");
 }
 
-//   本屏真需要密码才问：挑本屏第一条 `Bad::NeedsPassword`，同一个条目只问一次。
+//   宣布这一屏：记下屏键 + 走"宣布那一刻"（折叠器 / 推进等待位 / 挂节拍）。
+//   ★ 唯一写点。同一屏重复判到这儿也只会在 `isAnnounced()` 处被挡住。
+void ViewerModel::announce(int start, const QVector<int> &items)
+{
+    m_announcedStart = start;
+    m_announcedItems = items;
+    onScreenUp();
+}
+
+bool ViewerModel::isAnnounced(int start, const QVector<int> &items) const
+{
+    return m_announcedStart == start && m_announcedItems == items;
+}
+
+void ViewerModel::clearAnnounced()
+{
+    m_announcedStart = -1;
+    m_announcedItems.clear();
+}
+
+//   本屏每一格的**前端口径**：
+//     · 区间外（文件夹循环跨边界那一格）⇒ 缺（不显示、也不等它）；
+//     · 有图（真图 / 占位图）⇒ 有图；已知缺 / 等密码 ⇒ 缺（"等密码"另有专门判定）；
+//     · 其余 ⇒ 还没结论。
+ViewerModel::Cell ViewerModel::cellOf(int item) const
+{
+    if (item < 0) return Cell::Missing;
+    if (!inLoopScope(item)) return Cell::Missing;
+    if (isMissing(item)) return Cell::Missing;
+    if (waitsPassword(item)) return Cell::Missing;   // 结论是"读不到"，图由界面的占位说明承担
+    if (entryReady(item)) return Cell::Ready;
+    return Cell::Pending;
+}
+
+//   本屏每个位置都有结论（有图 / 缺 / 等密码）= **不在等缓存**（节拍能不能挂看它）。
+bool ViewerModel::screenSettled() const
+{
+    if (!m_seq || m_seq->count() <= 0) return false;
+    const QVector<int> items = screenItems(screenStart(m_pos));
+    for (int i : items)
+        if (cellOf(i) == Cell::Pending) return false;
+    return true;
+}
+
+//   本屏真需要密码才问：挑本屏第一条"等密码"，同一个条目只问一次。
 //   ★ 为什么不在解码失败时直接弹：预取会让**别的卷/别的包**的条目也在飞，
 //     那边缺密码就把框弹出来 ⇒ 打开一份多卷漫画会连着弹好几个（用户 2026-11-03 实测）。
 void ViewerModel::maybeAskPassword(const QVector<int> &items)
 {
     for (int i : items) {
-        const auto it = m_bad.constFind(i);
-        if (it == m_bad.constEnd() || it.value() != Bad::NeedsPassword) continue;
+        if (!waitsPassword(i)) continue;
+        if (passwordDeclined(i)) continue;     // 用户已经取消过 ⇒ 不再问
         if (m_promptedItem == i) return;       // 这一条已经问过（不重复问）
         m_promptedItem = i;
-        emit passwordRequired(i, m_badLevel.value(i, 0));
+        emit passwordRequired(i, m_needsPassword.value(i, 0));
         return;
     }
 }
@@ -1199,62 +1312,69 @@ void ViewerModel::maybeAskPassword(const QVector<int> &items)
 bool ViewerModel::screenNeedsPassword() const
 {
     if (!m_seq || m_seq->count() <= 0) return false;
-    const QVector<int> items = screenItems(screenStart(m_pos));
-    return screenWaitsPassword(items);
+    return screenWaitsPassword(screenItems(screenStart(m_pos)));
 }
 
 //   本屏有没有"要密码"的条目（有就**不跳屏**：停在原地等用户输密码，见设计 22 §5.3）
 bool ViewerModel::screenWaitsPassword(const QVector<int> &items) const
 {
-    for (int i : items) {
-        const auto it = m_bad.constFind(i);
-        if (it != m_bad.constEnd() && it.value() == Bad::NeedsPassword) return true;
-    }
+    for (int i : items)
+        if (waitsPassword(i) && !passwordDeclined(i)) return true;
     return false;
 }
 
-//   本屏每个位置的状态：`settled` = 都有结论（备好 / 坏）；`anyReady` = 至少一个备好。
-void ViewerModel::scanScreen(const QVector<int> &items, bool &settled, bool &anyReady) const
+//   这一条的容器**本次会话已经被用户取消过密码** ⇒ 当"缺"处理。
+//   ★ 不这么做的话：用户取消后这一屏永远"等密码" ⇒ 幻灯片停在这一页不动（假死）。
+bool ViewerModel::passwordDeclined(int item) const
 {
-    settled  = true;
-    anyReady = false;
-    for (int i : items) {
-        if (!inLoopScope(i)) continue;                   // 区间外：留空 = 有结论
-        if (isBad(i)) continue;                          // 坏 = 有结论
-        const int s = slotOf(i);
-        if (s >= 0 && m_slots[s].state == Slot::State::Ready) { anyReady = true; continue; }
-        settled = false;                                 // 既没备好、也不是坏 ⇒ 还在等
-    }
+    if (!m_seq || item < 0 || item >= m_seq->count()) return false;
+    if (!waitsPassword(item)) return false;
+    const Sequence::Item &it = m_seq->at(item);
+    const int level = qMax(0, m_needsPassword.value(item, 0));
+    const QString key = Sequence::containerKey(it.loc.diskPath, it.loc.members.mid(0, level));
+    return m_seq->isPasswordDeclined(key);
 }
 
-//   上屏：按**位置**写 `imageA` / `imageB`（备好 ⇒ 那张图；坏 / 没有第二个位置 ⇒ 空图），
-//   写 `keyCount`（本屏位置数）与 `cursor`（本屏起点），emit 信号，再更新一次浮层。
+//   上屏（**可增量**）：按**位置**写 `imageA` / `imageB`（备好 ⇒ 那张图；没结论 ⇒ 空图），
+//   写 `keyCount`（本屏位置数）、`cursor`（本屏起点）、文件名，**变了才** emit。
 //   ★ 位置变过、但这一屏还没就位时**不清 `imageA` / `imageB`**（不许先显示空图或上一张）。
-void ViewerModel::screen(int start, const QVector<int> &items)
+//   ★ 同一屏补一张图只会 emit 那一次（不刷信号 —— 双幅下 OSD 的 40ms 去抖才等得到静默期）。
+void ViewerModel::updateDisplay(int start, const QVector<int> &items)
 {
-    m_imageA = imageOf(items.value(0, -1));
-    m_imageB = imageOf(items.value(1, -1));
-    // 顶栏文件名：按**这一屏真实的条目**取（配对可能跳过坏条目，不能拿 cursor+1 推）
-    m_screenName.clear();
+    const QImage a = imageOf(items.value(0, -1));
+    const QImage b = imageOf(items.value(1, -1));
+    const bool imageChanged = a.cacheKey() != m_imageA.cacheKey()
+                              || b.cacheKey() != m_imageB.cacheKey();
+    const bool screenChanged = (m_cursor != start) || (m_keyCount != items.size());
+
+    // 顶栏文件名：按**这一屏真实的条目**取（配对可能跳过缺条目，不能拿 cursor+1 推）
+    QString name;
     if (m_seq) {
         const auto nameOf = [this](int idx) {
             return (idx >= 0 && idx < m_seq->count()) ? m_seq->at(idx).displayName : QString();
         };
-        m_screenName = nameOf(items.value(0, -1));
-        const QString b = nameOf(items.value(1, -1));
-        if (!b.isEmpty())
-            m_screenName += QStringLiteral(" · ") + b;
+        name = nameOf(items.value(0, -1));
+        const QString bn = nameOf(items.value(1, -1));
+        if (!bn.isEmpty()) name += QStringLiteral(" · ") + bn;
     }
-    m_screenPath = relativePathOf(items.value(0, -1));
-    m_keyCount = items.size();
-    m_cursor = start;
-    updateLoading();                          // 上屏之后也更新一次（浮层与新口径无关，只是不漏路径）
-    emit imageAChanged();
-    emit imageBChanged();
+    const QString path = relativePathOf(items.value(0, -1));
+    const bool metaChanged = (name != m_screenName) || (path != m_screenPath);
+
+    m_imageA     = a;
+    m_imageB     = b;
+    m_screenName = name;
+    m_screenPath = path;
+    m_keyCount   = items.size();
+    m_cursor     = start;
+    updateLoading();                          // 上屏之后也更新一次（浮层与其他状态无关）
+    if (imageChanged) {
+        emit imageAChanged();
+        emit imageBChanged();
+    }
+    if (!imageChanged && !screenChanged && !metaChanged) return;
     emit currentChanged();
     // 换画面 ⇒ 视图态复位（未锁定时按当前 fit 重算 zoom；锁定 ⇒ 保留 zoom/pan）
-    if (!m_zoomLocked) applyFit();
-    onScreenUp();                             // ★ 幻灯片：上屏那一刻（唯一写点就在这里）
+    if (!m_zoomLocked && (imageChanged || screenChanged)) applyFit();
 }
 
 // ══ OSD 信息行（**按需读取**，无状态；用户 2026-10-21 定案）═════════════════

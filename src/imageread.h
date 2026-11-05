@@ -53,10 +53,19 @@ struct Probe {
 };
 Probe probe(const Location &loc);
 
-// 解码（**唯一实现**）。空图 = 不可读
-QImage image(const Location &loc);
-//   ★ 带出"密码层号"的版本（解码期检测用，见设计 22 §5.3）
-QImage image(const Location &loc, int *passwordLevel);
+// ★ 解码（**唯一实现**：QImageReader + 沿链读字节）。返回值把"读不到"分成三类，
+//   供查看屏决定「缺 / 等密码 / 画占位图」：
+//   · `passwordLevel >= 0`            ⇒ 要密码（层号；0 = 最外层）
+//   · `hasBytes == false`             ⇒ **没有字节可读**（文件不在 / 容器打不开 / 成员不存在）⇒ 缺
+//   · `hasBytes == true && 图是空的`  ⇒ 字节在、解码器给不出图（截断 / 坏编码）
+//     ⇒ 由调用方画占位图（**不算缺**：不许跳屏、不许重试）
+//   ★ 以前只返回 `QImage` ⇒ 上面两种"没图"分不开，只能一律当"坏"记下来并跳屏。
+struct Loaded {
+    QImage image;
+    int    passwordLevel = -1;
+    bool   hasBytes      = false;
+};
+Loaded load(const Location &loc);
 
 // 不解码读像素尺寸（扫描判宽窄用）
 QSize imageSize(const Location &loc);

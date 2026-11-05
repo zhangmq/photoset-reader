@@ -255,10 +255,14 @@ class EntryReader
 {
 public:
     int passwordLevel = -1;          // ★ 读失败的原因是"要密码"时的层号（-1 = 不是）
+    //   ★ 这一条**有没有字节可读**（2026-11-05，见 `Loaded`）：有字节却解不出图
+    //     ≠ 没有这一条。查看屏前者画占位图、后者才当"缺"跳过去。
+    bool hasBytes = false;
 
     explicit EntryReader(const Location &loc)
     {
         if (loc.members.isEmpty()) {
+            hasBytes = QFileInfo(loc.diskPath).size() > 0;
             m_r.setFileName(loc.diskPath);
         } else {
             // ★ v7：沿链取字节 = `readBytesAt`（**内层包单槽物化**：区间内复用、离开即释放）
@@ -266,6 +270,7 @@ public:
                                   loc.members.last(), loc.innerArchiveMaxMb * 1024 * 1024,
                                   loc.passwords, &passwordLevel);
             if (m_bytes.isEmpty()) return;
+            hasBytes = true;                  // 字节拿到了（下面"认不出格式"也算有字节）
             if (!looksLikeImage(m_bytes)) {   // 不是已知图片格式 ⇒ 不交给 Qt（防 libraw 崩）
                 qCDebug(lcDecode).noquote()
                     << QStringLiteral("[decode] unrecognised member bytes, skipped: %1")
@@ -346,18 +351,16 @@ Probe probe(const Location &loc)
     return out;
 }
 
-QImage image(const Location &loc)
+// ★ 三种"读不到"分开报（见 imageread.h 的 `Loaded`）：密码 / 没有字节 / 有字节但解不出。
+Loaded load(const Location &loc)
 {
-    return image(loc, nullptr);
-}
-
-QImage image(const Location &loc, int *passwordLevel)
-{
-    if (passwordLevel) *passwordLevel = -1;
     EntryReader r(loc);
-    const QImage img = r.read();
-    if (img.isNull() && passwordLevel) *passwordLevel = r.passwordLevel;   // 读失败：带出层号
-    return img;
+    Loaded out;
+    out.image = r.read();
+    out.hasBytes = r.hasBytes;
+    //   图拿到了 ⇒ 没有失败原因（层号只对"失败"有意义；密码错时读字节那一步就会失败）
+    out.passwordLevel = out.image.isNull() ? r.passwordLevel : -1;
+    return out;
 }
 
 QSize imageSize(const Location &loc)

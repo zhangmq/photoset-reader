@@ -1,53 +1,57 @@
 #pragma once
 
-// ══ viewer：阅读界面的模型（位置 / 预取 / 上屏）══════════════════════════════
+// ══ viewer：阅读界面的模型（位置 / 预取 / 上屏 / 节拍）══════════════════════
 //
-//   ★ 本类**整个住在主线程**：来源 / 位置 / 槽位表 / 上屏内容只有主线程碰；
+//   ★ 本类**整个住在主线程**：来源 / 位置 / 条目表 / 上屏内容只有主线程碰；
 //     解码在工作线程上做，解完只 post 回主线程。**没有任何两侧都能写的东西。**
 //
 //   ## 术语
-//     · **槽位**：一个"正在等某一条 / 已经备好某一条"的位置。池上限 = `L + 1`。
 //     · **条目**：序列里的一条（`Sequence::Item`）。
 //     · **屏**：序列按**版面**分好的**位置集合**（单幅 1 条 / 双幅 2 条；宽图、末尾剩一张
 //       ⇒ 1 条）。**位置是序列给的**（`groupAt`），本类不算分组、不做 ±屏 的算术。
-//     · **预取**：在当前屏之外，按份额规则提前把条目取好。
-//     · **上屏**：把本屏各位置的图解出来放进 `imageA` / `imageB`（坏的位置留空图）。
+//     · **上屏**（display）：把本屏各位置的图放进 `imageA` / `imageB`（没结论的位置留空）。
+//     · **宣布**（announce）：这一屏**第一次**有结论 ⇒ 记下"已宣布的那一屏"并处理节拍。
+//       ★ 同一屏再被重判（补图 / 预取完成）**不许**第二次宣布 —— 否则节拍会被反复重启。
 //     · **loading（界面浮层）**：还没扫完 **且**（还没有条目 **或** 位置已处在已知末尾）；
 //       还没有序列也算 —— 也就是「序列还没就绪 / 扫描中到达边界」。
 //       ★ **正常等图片缓存（当前这一屏还没就位）不算**（用户 2026-10-17 口径）。
 //     · **位置**：现在要显示的是哪一条（条目下标）；**屏 = 位置所在的那一屏**。
-//     · **坏**：这一条拿不出图（**缺失** = 元数据已标 / **不可读** = 解码出来是空图）。
-//       ★ **坏不占长度**：坏因另存一张小表（条目 → 坏因），**不占** `L + 1` 的槽位额度。
+//     · **缺**：这一条**没有字节可读**（元数据已标 / 文件没了 / 容器打不开 / 成员不在）。
+//       ★ 缺**不占**预取额度、**不重试**（结论表里记一笔就算完）；整屏都缺 ⇒ 跳屏。
+//     · **占位图**：有字节、但解码器给不出图（截断 / 坏编码）⇒ 按序列里的**原图尺寸**
+//       画一张中性占位图。★ 占位图**是结论**（等于"这一条有图"）：不重试、**不跳屏**、占额度。
+//     · **等密码**：读失败的原因是加密容器 ⇒ 停在原地问密码（**不跳屏**）。
+//       ⇒ "坏"只剩两种：**缺**（跳屏）与 **等密码**（等用户）。
+//     · **pinned**：本屏那 1~2 条。**独立槽位**：不占预取额度、必取、永不淘汰。
+//     · **预取**（lookahead）：本屏之外、按份额提前备好的条目。
 //
-//   ## 份额规则（要哪些条目）
-//     · 一次操作 = **位置真的变了**；只是重判不算。
-//     · `f` = 前向条数，起始 6、限 `[1, L−1]`（`L` = 预取长度，构造参数）。
-//       同向再走一屏 ⇒ `f+1`；反向 ⇒ `f−1`；夹在 `[1, L−1]`。
-//     · 最近方向那一侧的条目排在前面。
-//     · 要的条目 = **本屏的位置**（永远最先）+ 本屏之外的那 `L` 条
-//       （从**屏外第一条**起数：前向 `+1..+f`、后向 `−1..−(L−f)`）。
-//       跳转 / **换版面** / 换来源 ⇒ 回到起始（`f = 6`、方向为正）。
+//   ## 两条线（★ 2026-11-05 重构：幻灯片 0ms 卡死的根治）
+//     · **后台线** `reconcile()`：算"现在该有哪些条目"（本屏 + 前后预取），派缺失的、
+//       丢不要的；完成一条只发 `notifyFrontend()`。**不碰屏、不碰节拍。**
+//     · **前端线** `evaluateScreen()`：只看当前屏成员的状态，决定
+//       「显示 / 宣布 / 跳屏 / 问密码」。节拍**只在宣布时挂一次**（`armBeat()` 幂等）。
+//     · 那个 bug 的机制：以前 `judge()` 每被调一次就可能 `screen()` → `armBeat(0)` ——
+//       0ms 单发闹钟被反复重启，`onBeat` 永远轮不到 ⇒ 画面冻结。
 //
-//   ## 上屏
-//     · **重判是唯一决定上屏的地方**：本屏每个位置都**有结论**（备好 / 坏）⇒ 上屏 ——
-//       备好的位置画出来，坏的位置**留空图**（双幅留空位）；
-//       本屏**整屏都坏**（单幅就是那一条坏）⇒ 跳过计数 +1、位置挪到下一屏（同方向）、再派活再判；
-//       还有位置没结论 ⇒ 等下一个结果回来。
-//     · 位置一变**不清掉 `imageA` / `imageB`**（不许先显示空图或上一张）；等图片缓存期间画面上
-//       还是上一屏，`loading` 为假（浮层不显示）。
+//   ## 预取份额（`L` 按**图**计，双幅**不**×2）
+//     `insurance(L) = (L >= 4) ? max(1, L/4) : 0`（反方向保险）；`ahead(L) = L − insurance`。
+//     `L = 0` 合法（只备本屏，没有预取）。方向 `m_dir`：换屏取那一次的方向；
+//     **跳转回前向**；**换版面不改方向**。份额**不随步数漂移**（没有 `f/b` 那套 ±1）：
+//     要哪些条目由 `reconcile()` 每拍重算，`L` 决定数量、`m_dir` 决定谁在前。
 //
 //   ## 版面（单幅 / 双幅）
 //     · **换版面 = 换个开关**：保留**当前位置**，屏由序列重算（`anchorOf`）⇒ 不重新分组。
 //     · `stepPage(±1)` = **换一屏**：前进量交给序列（`advance`），本类收下游标。
-//     · 按键那条判断按**整屏**算：本屏还有位置没结论（既没备好、也不是坏）⇒ 这次按键丢掉。
-//       **坏算"有结论"** ⇒ 那时按键照常放行（否则"坏到末尾"会卡在末尾出不来）。
+//     · 按键那条判断按**整屏**算：本屏还有位置没结论（既没备好、也不是缺）⇒ 这次按键丢掉。
+//       **缺 / 等密码算"有结论"** ⇒ 那时按键照常放行（否则"坏到末尾"会卡在末尾出不来）。
 //
 //   ## 退出查看 / 换来源
 //     · **不 join 工作线程**（join 会把退出拖住几百毫秒）：换个记号就走；
-//       在飞的回来时记号不符就被丢掉，既不写错槽位也不影响下一次进入。
+//       在飞的回来时记号不符就被丢掉，既不写错条目表也不影响下一次进入。
 //     · 析构 = **记号 + 标记失效**（见 .cpp 的 `Poster`）。
 
 #include <QHash>
+#include <QSet>
 #include <atomic>
 #include <QImage>
 #include <QObject>
@@ -85,8 +89,8 @@ class ViewerModel : public QObject
     Q_PROPERTY(QString prevFolderName READ prevFolderName NOTIFY currentChanged)
     Q_PROPERTY(QString nextFolderName READ nextFolderName NOTIFY currentChanged)
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
-    //   ★ 本屏有"等密码"拿不到的图（用户取消输入后界面要显示占位说明）——
-    //     派生值：本屏条目里有 `Bad::NeedsPassword` 就为真，拿到密码/清掉坏因后自然变假。
+    //   派生值：本屏条目里有"等密码"的结论（且用户没取消过）就为真 —— 界面据此显示
+    //   "无密码，无法查看"的占位说明；拿到密码后由 `retryNeedingPassword()` 自然变假。
     Q_PROPERTY(bool screenNeedsPassword READ screenNeedsPassword NOTIFY currentChanged)
     //   当前这一屏的**文件名**（双幅两页时用 " · " 连起来；多页文件是 "file [k/N]"）——
     //   顶栏显示用，派生值，不改任何状态
@@ -246,21 +250,13 @@ Q_SIGNALS:
     void notice(const QString &text);
 
 private:
-    //   槽位 = { 它在等哪一条 / 状态 / 备好时那张图 }。空槽 = `item < 0`。
-    //   ★ 槽位池里**只有两种状态：在飞 / 备好** —— "坏"不在这里（见 `m_bad`）。
-    struct Slot {
-        enum class State { Empty, InFlight, Ready };
-        int    item  = -1;
-        State  state = State::Empty;
+    //   一个条目在**后台线**里的状态：在飞 / 备好（备好的图可能是占位图）。
+    //   ★ "缺"与"等密码"**不在这张表里** —— 它们是结论（各一张小表），不占额度、不再派活。
+    struct Entry {
+        enum class State { InFlight, Ready };
+        State  state  = State::InFlight;
+        bool   pinned = false;              // 属于当前屏 ⇒ 独立槽位（不占 `L`、不淘汰）
         QImage image;                       // 只有"备好"才有
-    };
-
-    //   坏因：这一条拿不出图的原因。**只有两种**，对应两个已知写点（见 .cpp）。
-    enum class Bad {
-        Missing,        // 元数据已标缺失（`Item::missing`）⇒ 不派解码
-        Unreadable,     // 解码回来是空图 ⇒ 不可读
-        NeedsPassword,  // ★ 读失败的原因是"要密码"（设计 22 §5.3）—— 不许记成 Unreadable，
-                        //   否则这条会被**永久跳过**，用户输了密码也回不来
     };
 
     //   ★ **post 交接点没有锁**：工作线程**完全不碰 `ViewerModel`**，也**不读**下面两个字段
@@ -275,30 +271,50 @@ private:
     };
 
     // ── 工作线程 ────────────────────────────────────────────────────────
-    //   只做两件：加载并解码（生产实现 = `imageread::image`）；解完把结果 post 回主线程。
-    //   ★ **不做取消**；解码失败（空图）当成"坏（不可读）"。
-    void preload(const Sequence::Item &imageMeta, int slot);
+    //   只做两件：加载并解码（生产实现 = `imageread::load`）；解完把结果 post 回主线程。
+    //   ★ **不做取消**；解码失败分三种（缺 / 等密码 / 占位图），见 `.cpp` 的 `preload`。
+    void preload(const Sequence::Item &imageMeta, int item);
 
     // ── 结果回主线程 ────────────────────────────────────────────────────
-    //   先比记号，再比"这个槽现在还等不等这一条"；任一条不符 ⇒ 直接丢（白干，不算数）。
-    void onLoaded(quint64 epoch, int slot, const QImage &image, int passwordLevel,
+    //   先比记号，再比"条目表里还要不要这一条"；任一条不符 ⇒ 直接丢（白干，不算数）。
+    //   ★ 用**条目下标**交接（不是槽位号）：条目表是 `item → Entry`，中间没有可复用的槽。
+    void onLoaded(quint64 epoch, int item, const QImage &image, int passwordLevel,
                   bool passwordUsed);
 
-    // ── 每个动作（stepPage / jump / 换版面）：改位置 → 当场判 → 就位就上屏 / 没就位就派活再等
-    //   `stepDir` = 这次是"换一屏"（+1 / −1）；0 = 跳转或换版面（份额回到起始）。
+    // ══ 后台线：预取（**只**生产"某条目有结论"这一事实）══════════════════════
+    //   每拍重算 desired（本屏 pinned → 行进方向 ahead 张 → 反方向 insurance 张）：
+    //   派缺失的、丢不要的。**幂等**：同一状态下重算不产生任何副作用。
+    void reconcile();
+    //   完成一条后的通知（投递到 GUI 线程、**合并去抖**）：前端收到后自己检查当前屏。
+    void notifyFrontend();
+
+    // ══ 前端线：屏 / 节拍 ══════════════════════════════════════════════════
+    //   `stepDir` = 这次是"换一屏"（±1）；0 = 跳转 / 换版面（方向回前向）。
     void act(int target, int stepDir);
-    //   按"本屏位置 → 份额那串偏移"的顺序逐条派活（**本屏永远最先**）。
-    void dispatch();
-    //   唯一决定上屏的地方。
-    void judge();
-    void screen(int start, const QVector<int> &items);
+    //   ★ **唯一**决定「显示 / 宣布 / 跳屏 / 问密码」的地方（以前叫 `judge()`）。
+    void evaluateScreen();
+    //   写 `imageA` / `imageB` / `cursor` / 文件名（**可增量**：同一屏补图只改变化的那几格）。
+    void updateDisplay(int start, const QVector<int> &items);
+    //   宣布这一屏（记"已宣布的屏" + `onScreenUp()`）；同一屏只宣布一次。
+    void announce(int start, const QVector<int> &items);
+    bool isAnnounced(int start, const QVector<int> &items) const;
+    void clearAnnounced();
+    //   本屏每个位置的**前端口径**状态：有图 / 缺 / 还没结论。
+    //   ★ 区间外（文件夹循环跨边界那一格）算"缺"：不显示，也不等它。
+    enum class Cell { Ready, Missing, Pending };
+    Cell cellOf(int item) const;
+    //   本屏每个位置都有结论（有图 / 缺 / 等密码）= **不在等缓存**（节拍能不能挂看它）。
+    bool screenSettled() const;
     //   浮层的**唯一更新入口**：按当前状态当场算「该不该显示」（见类头 loading 那条）。
     void updateLoading();
-    //   本屏每个位置的状态：`settled` = 都有结论（备好 / 坏）；`anyReady` = 至少一个备好。
-    void scanScreen(const QVector<int> &items, bool &settled, bool &anyReady) const;
-    //   份额规则：位置真的变了才算一次操作；`dir` = 换屏的方向（±1）。
-    void observeOperation(int dir);
-    void resetShare();
+
+    // ── 条目表（后台线写、前端只读）────────────────────────────────────────
+    bool entryReady(int item) const;                 // 备好（真图或占位图）
+    QImage imageOf(int item) const;                  // 没结论 / 在飞 / 区间外 ⇒ 空图
+    bool isMissing(int item) const { return m_missing.contains(item); }
+    bool waitsPassword(int item) const { return m_needsPassword.contains(item); }
+    void markMissing(int item);                      // 缺（**不占额度、不重试**）
+    void markNeedsPassword(int item, int level);     // 等密码（拿到密码后由上层清）
 
     // ── 版面 / 屏 ────────────────────────────────────────────────────────
     //   本屏 = 单幅的"这一条" / 双幅的"这一对"（**屏是视图的说法**，由版面选）；
@@ -332,34 +348,31 @@ private:
     //   换一屏：**单幅** = 相邻一条；**双幅** = 问序列的配对表（+本对张数）。到头 ⇒ -1。
     //   ⇒ "±本对张数"的算术在序列的配对表里，本类只做"这次用一条还是用一对"的选择。
     int  nextScreen(int start, int dir) const;
-    bool onScreen(int item) const;
-    bool screenWaitsPassword(const QVector<int> &items) const;             // 这一条在不在当前屏上（淘汰时不离手）
-    int  slotOf(int item) const;      // 管着这一条的槽（-1 = 没有）
-    QImage imageOf(int item) const;   // 这一条备好时的那张图（坏 / 在飞 ⇒ 空图）
-    int  takeSlot(int item);          // 找一个槽给它（池满 ⇒ 淘汰；找不到 ⇒ -1）
-    bool isBad(int item) const;       // 坏因表里记着这一条吗（**不占**槽位额度）
-    void markBad(int item, Bad why, int level = -1);  // 把坏因写进小表（两个写点的唯一入口）
+    //   本屏有没有"要密码"的条目（有就**不跳屏**：停在原地等用户输密码，见设计 22 §5.3）
+    bool screenWaitsPassword(const QVector<int> &items) const;
+    //   这一条的容器**本次会话已经被用户取消过密码** ⇒ 当"缺"处理（否则幻灯片会停在这儿不动）。
+    bool passwordDeclined(int item) const;
     //   ★ 弹框**由"当前这一屏"触发**，不由任意一条解码失败触发：预取到的邻居缺密码不该打断
     //     用户（否则打开一份漫画会连着弹好几个卷）。见设计 22 §5.3。
     void maybeAskPassword(const QVector<int> &items);
 
     static constexpr int kMaxInFlight = 4;   // 并发上限（在飞计数上限；写死）
-    //   ★ 一屏最多的位置数（单幅 1 / 双幅 2）：槽位池容量 = 预取长度 + 它。
-    //     语义就是"**本屏 + L 条预取**"：双幅一屏两条 ⇒ 池子比单幅多一张图（可接受）。
-    //     ⚠️ 少算这一条就会出现"要 L+2 条、池只有 L+1" ⇒ 每次派活都要淘汰一条**备好的**，
-    //     被淘汰的下一轮又回来 ⇒ 解码无休止、`currentChanged` 刷到 ~100 次/秒
-    //     （实测：双幅下 OSD 的 40ms 去抖永远等不到静默期 ⇒ 信息不刷新）。
-    static constexpr int kMaxPerScreen = 2;
-    static constexpr int kStartForward = 6;  // `f` 的起始值
 
-    int m_length;                            // 预取长度 L（构造给初值；设置改了可即时更新）
+    int m_length;                            // 预取长度 L（按**图**计；0 = 只备本屏）
     const Sequence *m_seq = nullptr;         // 来源（非拥有；只有主线程读）
     std::shared_ptr<Poster> m_poster;        // 工作线程 post 回来的落点（见上）
 
-    // ── 状态（全在主线程）────────────────────────────────────────────────
-    QVector<Slot> m_slots;                   // 一张槽位表（池上限 = L + 1）
-    //   坏因小表：条目 → 坏因。**不占** `L + 1` 的额度；**同一次查看内一直保留**
-    //   （这就是"坏不重试"的依据）；换来源（`setSequence`）时清空。
+    // ── 后台线状态（全在主线程）──────────────────────────────────────────
+    //   条目表：在飞 / 备好。**容量只算 lookahead**（`!pinned` 的条数 ≤ `L`）；
+    //   pinned 那 1~2 条独立成组，不占 `L`、不淘汰。换来源 / 换到不要的位置时直接删。
+    QHash<int, Entry> m_entries;
+    //   "缺"的结论：**不占**额度、**不重试**（这就是"缺不重派"的依据）；
+    //   同一次查看内一直保留，换来源时清空。
+    QSet<int> m_missing;
+    //   "等密码"的结论：条目 → 密码层号。拿到密码（`retryNeedingPassword`）后整张清掉重取。
+    QHash<int, int> m_needsPassword;
+    //   前端通知的合并标记（同一轮事件里多次完成只判一次；见 `.cpp` 的 `notifyFrontend`）
+    bool    m_notifyPending = false;
     struct PreviewJob { QString key; imageread::Location loc; QSize target; };
     std::shared_ptr<PreviewStore> m_previewStore;   // 预览位置表（provider 线程读）
     int m_previewBatch = 0;           // 最近一批的批号
@@ -372,24 +385,26 @@ private:
     int      m_previewPendingBatch = 0;         // 对应的批号
     QFutureWatcher<int> *m_previewWatcher = nullptr;
     void startPreviewBatch(const QVector<PreviewJob> &jobs);
-    QHash<int, Bad> m_bad;
-    QHash<int, int> m_badLevel;       // item → 密码层号（只对 Bad::NeedsPassword 有意义）
     int             m_promptedItem = -1;   // 已经为哪一条问过密码（不重复问）
     int     m_inFlight = 0;                  // 在飞计数
-    int     m_skipped  = 0;                  // 跳过计数
+    int     m_skipped  = 0;                  // 跳过（整屏都缺）计数
     quint64 m_epoch    = 0;                  // 换来源记号（单调递增）
 
     int    m_pos    = 0;                     // 位置：用户指到的那一条（屏 = 它所在的那一屏）
-    int    m_cursor = 0;                     // 上屏那一屏的起点（只在 `screen` 里写）
+    int    m_cursor = 0;                     // 上屏那一屏的起点（只在 `updateDisplay` 里写）
     int    m_startIndex = 0;                 // `setSequence` 之后要落在哪一条（一次性）
-    QImage m_imageA, m_imageB;               // 上屏内容（坏的位置 / 没有第二个位置 = 空图）
+    QImage m_imageA, m_imageB;               // 上屏内容（没结论 / 没有第二个位置 = 空图）
     int    m_keyCount = 0;                   // 本屏位置数（1 或 2），无屏 = 0
     app::Layout m_layout = app::Layout::Single;   // ★ 版面 = 一份枚举（默认单幅）
     Loop   m_loop = Loop::None;                   // ★ 循环模式（会话级；进沉浸视图回默认）
     bool   m_loading  = true;                // 界面浮层（只有 `updateLoading()` 会写）
 
-    int m_f   = kStartForward;               // 前向条数
-    int m_dir = +1;                          // 最近方向（+1 / −1）
+    int m_dir = +1;                          // 行进方向（+1 前 / −1 后）：份额按它分前后
+
+    //   ★ **已宣布的那一屏**（屏键 = 起点 + 位置集合）：同一屏只宣布一次，
+    //     补图 / 预取完成再来重判时**不挂节拍**（这就是 0ms 卡死的根治点）。
+    int          m_announcedStart = -1;      // -1 = 还没有宣布过（换位置 / 换版面就清）
+    QVector<int> m_announcedItems;
 
     // ── 幻灯片（13 §九·补·二）────────────────────────────────────────────
     //   两种等待必须分开：**等闹钟**（本屏已就位，能响应）/ **等缓存**（本屏还没上屏，不能响应）。
@@ -398,11 +413,12 @@ private:
     enum class Want { None, Step, Jump, Folder };   // 折叠器里的那条"最终意图"
     bool    waitingForCache() const;          // 现算：本屏还没结论（= 等缓存）
     void    onBeat();                         // 闹钟到点（按**当时**状态计算）
-    void    onScreenUp();                     // 上屏那一刻（在 `screen()` 里调）
+    void    onScreenUp();                     // 上屏那一刻（在 `announce()` 里调）
     void    foldOrRun(Want w, int arg);       // 进度事件的统一入口（播放态）
     void    runWanted(Want w, int arg, bool folded);
     void    requestScreen(int target, int stepDir);   // 换屏 + 记下"请求时刻"
-    void    armBeat();                        // 挂/重挂闹钟（等缓存时不挂）
+    //   挂上闹钟（**只在宣布新屏时**；幂等：同一 deadline 不重复 start；等缓存时不挂）
+    void    armBeat();
     void    cancelBeat();
     void    stopPlaying(const QString &noticeText);   // 停播（到头）
     qint64  nowMs() const { return m_now ? m_now() : 0; }
@@ -427,6 +443,8 @@ private:
     QTimer  *m_beat = nullptr;                // 单发闹钟（只负责"到点叫醒"，不参与节奏）
     NowFn    m_now;                           // 单调时钟（可注入；生产在构造里装）
     qint64   m_reqAt = 0;                     // 上一次"成为当前屏"的动作**被请求**的时刻
+    bool     m_beatArmed = false;             // 闹钟已挂（同一 deadline 不重复 start）
+    qint64   m_beatDeadline = 0;              // 这一枪的到期时刻（= m_reqAt + interval）
     bool     m_pendingAdvance = false;        // 推进等待位（一个 bool；忙碌期只有一个）
     Want     m_want = Want::None;             // 折叠器（一个槽）
     int      m_wantArg = 0;
