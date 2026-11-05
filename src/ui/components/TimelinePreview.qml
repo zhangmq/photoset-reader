@@ -21,6 +21,17 @@ Rectangle {
     height: stripH
     width: parent ? parent.width : 0
     visible: items.length > 0
+    //   ── TODO（2026-11-06，用户留）：预览条的 **slide up / down 值得重做** ──────────────
+    //   当时（`fc198dc`）做了一版又撤销（`dd151fe`），翻车的原因**不是动画本身**：
+    //     ① 框的坐标是 C++ 给的**快照**（`focusX`），而“条隐藏就清空 `previewShown`”把它归零
+    //        ⇒ 重新出现时框从 0 飞过来（快照本身已在 `cebf8c6` 删掉，改成按 index/hoverIndex 现算）；
+    //     ② 条滑上来时矩形会**从指针下面扫过**，命中区一碰指针就被当成“进条了”，
+    //        而条收起时的位置正好盖住「进度条 + 控制条」⇒ hover 反复跳 ⇒ 一次滑出被自己拉起
+    //        （帧左右乱晃 / 条上下蹲起）。当时用 `enabled` 去追动画相位，没成功。
+    //   重做的前提（现在第 ① 条已经满足）：
+    //     · 响应层与动画层**分开**：hover/点击由一个**固定位置**、只在“完全展开”时存在的
+    //       兄弟项承担，条本体一行输入都没有（见 `docs/windows/status.md` §8 的 `previewInput`）；
+    //     · 框的几何继续按 index/hoverIndex 现算，不引入任何快照。
     color: Theme.barFill          // 与顶/底栏同一个面（用户 2026-11-03）
     radius: 0          // 不要圆角（用户 2026-11-03）
     clip: true
