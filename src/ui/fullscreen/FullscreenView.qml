@@ -101,6 +101,15 @@ Item {
     SettingsDialog {
         id: settingsDialog
     }
+
+    // ── 显示时钟（2026-11-06 用户定）：每**呈现一帧**叫一次 viewer ──
+    //   ★ 幻灯片的换屏**只在这里发生**，且每帧最多换一屏 ⇒ 每一屏都至少被画出一帧，
+    //     0 ms 也不会"一帧跳两三页"。节奏 = 刷新率 × 间隔（`ViewerModel::framePresented()`）。
+    //   ★ 只在播放时 running：暂停时不让渲染循环空转（省电）。
+    FrameAnimation {
+        running: ui.viewer !== null && ui.viewer.playing
+        onTriggered: ui.viewer.framePresented()
+    }
     Rectangle {
         anchors.fill: parent
         color: Theme.bgBase                 // 画布底（跟随主题；用 DSH alias 令牌）

@@ -485,18 +485,33 @@ void ViewerModel::onStatTick()
                .arg(ready).arg(screens).arg(started).arg(m_inFlight).arg(pending).arg(m_length);
 }
 
-//   闹钟到点：**不预存目标**，一律按当时状态计算。
+//   闹钟到点 = **间隔满足**，但**不在这里换屏**（2026-11-06 用户定）：
+//   只置 `m_beatElapsed`，真正的换屏在 `framePresented()` 里（等下一帧呈现）。
+//   ⇒ 节奏 = 刷新率与间隔共同决定；慢解码时就地等待，不补播、不跳帧。
 void ViewerModel::onBeat()
 {
     m_beatArmed = false;                // 单发闹钟已经到点（下一次宣布再挂）
     if (!m_playing) return;
-    if (!screenSettled()) {             // 这一次不推进 ⇒ 置推进等待位；不挂闹钟
-        m_pendingAdvance = true;
-        return;
-    }
+    m_beatElapsed = true;
+}
+
+//   ★★ **显示时钟**：每呈现一帧调一次（QML 的 `FrameAnimation`）。幻灯片的换屏唯一入口。
+//   规则：① 当前这一屏必须先被画过一帧（`m_screenPainted`）才允许换掉它；
+//        ② 间隔要满足（`m_beatElapsed`）；③ 下一屏要有结论（`screenSettled`，否则等着）。
+//   ⇒ 每帧最多换一屏 ⇒ 0 ms 时 = 每帧一屏（≈刷新率），任何一屏都不会被跳过。
+void ViewerModel::framePresented()
+{
+    if (!m_playing) return;
+    if (!m_screenPainted) { m_screenPainted = true; return; }   // 这一帧就是把新屏画出来
+    if (!m_beatElapsed) return;                                 // 间隔还没到
+    if (!screenSettled()) return;                               // 下一屏还没就绪：等就绪再换
+    m_beatElapsed = false;
     const int next = nextScreen(screenStart(m_pos), +1);
-    if (next < 0) return stopPlaying(tr("End reached · slideshow stopped"));   // 与手动下一张一致
+    if (next < 0) return stopPlaying(tr("End reached · slideshow stopped"));
+    //   ★ 这一段里 announce 出来的新屏**就是本帧画的那一屏**（`m_inFrame`）⇒ 不必再多等一帧。
+    m_inFrame = true;
     requestScreen(next, +1);
+    m_inFrame = false;
 }
 
 //   宣布新屏那一刻（**唯一调用点 = `announce()`**）：① 折叠器 ② 推进等待位 ③ 挂节拍。
@@ -510,11 +525,7 @@ void ViewerModel::onScreenUp()
         m_wantArg = 0;
         return runWanted(w, arg, /*folded=*/true);
     }
-    if (m_pendingAdvance) {             // ② 幻灯片的推进补做
-        m_pendingAdvance = false;
-        return onBeat();
-    }
-    armBeat();                          // ③ 直接挂闹钟
+    armBeat();                          // ② 挂间隔闹钟（换屏本身等下一帧，见 `framePresented()`）
 }
 
 //   进度事件的统一入口（只在播放态调用）。
@@ -523,7 +534,7 @@ void ViewerModel::foldOrRun(Want w, int arg)
     if (waitingForCache()) {            // 等缓存 ⇒ 折叠器（一个槽，后到覆盖先到）
         m_want = w;
         m_wantArg = arg;
-        m_pendingAdvance = false;       // ★ 用户意图进来 ⇒ 幻灯片这次推进作废
+        m_beatElapsed = false;          // ★ 用户意图进来 ⇒ 幻灯片这次推进作废
         return;
     }
     cancelBeat();                       // 等闹钟 ⇒ 取消旧闹钟 → 执行 → 从这一刻重挂
@@ -571,7 +582,7 @@ void ViewerModel::stopPlaying(const QString &noticeText)
     cancelBeat();
     m_want = Want::None;
     m_wantArg = 0;
-    m_pendingAdvance = false;
+    m_beatElapsed = false;
     emit playingChanged();
     if (!noticeText.isEmpty()) emit notice(noticeText);
 }
@@ -595,7 +606,8 @@ void ViewerModel::setPlaying(bool on)
     m_playing = true;
     m_want = Want::None;
     m_wantArg = 0;
-    m_pendingAdvance = false;
+    m_beatElapsed = false;
+    m_screenPainted = true;             // 开播这一刻屏幕上那一屏已经画过了
     m_reqAt = nowMs();
     emit playingChanged();
     armBeat();
@@ -1330,6 +1342,8 @@ void ViewerModel::announce(int start, const QVector<int> &items)
 {
     m_announcedStart = start;
     m_announcedItems = items;
+    //   在 `framePresented()` 里换的屏：本帧就画出来；由"数据就绪"触发的换屏：等下一帧才算画过。
+    m_screenPainted = m_inFrame;
     ++m_statScreens;                                     // 每秒体检：这一秒上新屏的屏数
     onScreenUp();
 }

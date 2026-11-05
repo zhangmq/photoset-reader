@@ -104,10 +104,18 @@ Row runOne(const Sequence &seq, int L, bool doublePage, int wanted, int interval
     });
 
     vm.setPlaying(true);
+    //   ★ 扮演显示器：按 60 Hz 喂帧 —— 换屏只发生在 `framePresented()` 里（每帧最多一屏），
+    //     不喂帧就会永远停在第一屏（2026-11-06 起幻灯片是帧驱动的）。
+    constexpr int kFrameMs = 16;
+    qint64 nextFrame = 0;
     while (clock.elapsed() < timeoutMs) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
         if (gaps.size() >= wanted) break;
         if (!vm.playing()) break;              // 到头
+        if (clock.elapsed() >= nextFrame) {
+            nextFrame = clock.elapsed() + kFrameMs;
+            vm.framePresented();
+        }
         QThread::msleep(0);
     }
     vm.setPlaying(false);

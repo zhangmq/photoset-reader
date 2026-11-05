@@ -137,6 +137,11 @@ public:
     Q_INVOKABLE void jump(int imageIndex);   // 跳到某一条（时间轴拖 / 浏览里选中）
     Q_INVOKABLE void stepFolder(int delta);  // ★ 给 QML 的同一件事（`delta` = ±1）
     Q_INVOKABLE void togglePlaying();        // ★ 幻灯片：播放 ⇄ 暂停（`Space` / ⏯）
+    //   ★★ **显示时钟**（2026-11-06 用户定）：QML 每**呈现一帧**调一次（`QtQuick.FrameAnimation`）。
+    //     幻灯片的换屏**只在这里发生**，而且**每帧最多换一屏** ⇒ 每一屏都至少被画出一帧，
+    //     0 ms 也不会"一帧跳两三页"。与间隔的关系：间隔到点只置 `m_beatElapsed`，
+    //     真正换屏要等"下一帧"（`framePresented`）——节奏 = **刷新率与间隔共同决定**。
+    Q_INVOKABLE void framePresented();
 
     // ── 幻灯片（规则见设计 13 §九·补·二）────────────────────────────────
     //   ★ 没有幻灯片对象：只有 `playing` 一个状态 + 一个**单发闹钟**（只报时）+
@@ -469,7 +474,9 @@ private:
     qint64   m_reqAt = 0;                     // 上一次"成为当前屏"的动作**被请求**的时刻
     bool     m_beatArmed = false;             // 闹钟已挂（同一 deadline 不重复 start）
     qint64   m_beatDeadline = 0;              // 这一枪的到期时刻（= m_reqAt + interval）
-    bool     m_pendingAdvance = false;        // 推进等待位（一个 bool；忙碌期只有一个）
+    bool     m_beatElapsed = false;           // 间隔已到点（**换屏还要等下一帧**）
+    bool     m_screenPainted = true;          // 当前这一屏是否已经画过至少一帧（每帧最多换一屏）
+    bool     m_inFrame = false;               // 正在 `framePresented()` 里（此刻 announce 的屏本帧就会画出来）
     Want     m_want = Want::None;             // 折叠器（一个槽）
     int      m_wantArg = 0;
 };

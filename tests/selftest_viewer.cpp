@@ -123,7 +123,13 @@ PlayResult play(fetch::ViewerModel &vm, int timeoutMs)
     QElapsedTimer t;
     t.start();
     vm.setPlaying(true);
-    waitUntil([&] { return r.stopped; }, timeoutMs);
+    //   ★ 显示时钟：换屏只发生在 `framePresented()` 里（每帧最多一屏）⇒ 这里扮演显示器，
+    //     每转一轮喂一帧。不喂的话播放永远停在第一屏（这正是"每张都看到"的保证）。
+    while (t.elapsed() < timeoutMs && !r.stopped) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
+        vm.framePresented();
+        QThread::msleep(0);
+    }
     r.ms = t.elapsed();
     r.reached = vm.cursor();
     return r;
@@ -273,9 +279,20 @@ int runViewerSelfTest(const QString &realDir)
                 t.start();
                 vm.setPlaying(true);
                 const int half = 5000;
-                waitUntil([&] { return false; }, half);     // 前一半
+                QElapsedTimer pump;
+                pump.start();
+                while (pump.elapsed() < half) {             // 前一半（每轮喂一帧）
+                    QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
+                    vm.framePresented();
+                    QThread::msleep(0);
+                }
                 const int firstHalf = r.advanced;
-                waitUntil([&] { return false; }, half);     // 后一半
+                pump.restart();
+                while (pump.elapsed() < half) {             // 后一半
+                    QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
+                    vm.framePresented();
+                    QThread::msleep(0);
+                }
                 r.ms = t.elapsed();
                 r.reached = vm.cursor();
                 vm.setPlaying(false);
