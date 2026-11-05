@@ -586,13 +586,18 @@ int UiModel::prefetchWindow() const { return m_settings.prefetchWindow(); }
 
 void UiModel::setPrefetchWindow(int v)
 {
-    v = qBound(3, v, 64);
+    //   ★ **不要在这里再夹一次边界**（2026-11-05 实测踩到）：
+    //     限制的唯一来源是 `AppSettings::setPrefetchWindow` 的 `qBound(0, v, 64)`。
+    //     这里曾经写死 `qBound(3, v, 64)`：设置页放宽到 0 之后，用户选 0 被夹成 3；
+    //     而 3 早就存过了 ⇒ 下面那句"没变就 return"直接命中 ⇒ **既没存 0、也没通知 viewer**
+    //     （用户看到的就是"设置了不保存 / 运行时不生效"两件事）。
     if (m_settings.prefetchWindow() == v) return;
     m_settings.setPrefetchWindow(v);
+    const int stored = m_settings.prefetchWindow();   // 落库之后的规范值（唯一的边界在那边）
     emit prefetchWindowChanged();
     //   ★ 设置值是全局的、由本类持有；viewer 只**用即时值** ⇒ 直接交给它，
     //     不重建（重建 = 重扫来源，既慢又会把密码表带丢，用户 2026-11-03）。
-    if (m_src.vm) m_src.vm->setPrefetchWindow(v);
+    if (m_src.vm) m_src.vm->setPrefetchWindow(stored);
 }
 
 int UiModel::innerArchiveMaxMb() const { return m_settings.innerArchiveMaxMb(); }

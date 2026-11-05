@@ -10,11 +10,13 @@
 #include <QImage>
 #include <QObject>
 #include <QSize>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QThread>
 
 #include <functional>
 
+#include "appsettings.h"
 #include "sequence.h"
 #include "viewermodel.h"   // `src/` 在 include 路径上（testsupport 给的）
 
@@ -277,6 +279,49 @@ int runViewerSelfTest(const QString &realDir)
             qInfo().noquote() << QStringLiteral("[viewerselftest] 跳过⑤：素材太少（%1 条）")
                                      .arg(sq.count());
         }
+    }
+
+    // ══ ⑥ 设置：预取张数（= viewer 的 `L`）的落盘与范围 ══
+    //   ★ 用户 2026-11-05 报的 bug：设置页选 0，重启后是 3、运行时也不生效 ——
+    //     根因是 `UiModel::setPrefetchWindow` 里**自己又夹了一次** `qBound(3, …)`，
+    //     和 `AppSettings` 的 `qBound(0, …)` 不一致（选 0 被夹成 3；3 早就存过 ⇒
+    //     "没变就 return" 直接命中 ⇒ 既没落盘、也没通知 viewer）。
+    //   ⇒ 这里钉住"边界只有一处（AppSettings）、改完立刻落盘、读回来还是那个值"。
+    //   ★ 隔离用 Qt 自己的 test mode（`QStandardPaths::setTestModeEnabled`）：
+    //     产品里没有设置文件 env 后门（用户 2026-11-04 定），而 `XDG_CONFIG_HOME`
+    //     在 Windows 上不生效 ⇒ 绝不能让测试写到用户的真设置里。
+    {
+        QStandardPaths::setTestModeEnabled(true);
+        const QString settingsPath =
+            QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)
+            + QStringLiteral("/settings.json");
+        QFile::remove(settingsPath);
+        qInfo().noquote() << QStringLiteral("[viewerselftest] ⑥ 设置文件（测试隔离）：%1")
+                                 .arg(QDir::toNativeSeparators(settingsPath));
+        {
+            app::AppSettings s;
+            s.load();
+            check(s.prefetchWindow() == 8,
+                  QStringLiteral("⑥ 设置：默认预取 8（实际 %1）").arg(s.prefetchWindow()));
+            s.setPrefetchWindow(0);
+            check(s.prefetchWindow() == 0,
+                  QStringLiteral("⑥ 设置：选 0 **不被夹成 3**（实际 %1）").arg(s.prefetchWindow()));
+            s.setPrefetchWindow(-5);
+            check(s.prefetchWindow() == 0,
+                  QStringLiteral("⑥ 设置：下限 0（实际 %1）").arg(s.prefetchWindow()));
+            s.setPrefetchWindow(999);
+            check(s.prefetchWindow() == 64,
+                  QStringLiteral("⑥ 设置：上限 64（实际 %1）").arg(s.prefetchWindow()));
+            s.setPrefetchWindow(12);          // 留一个"普通值"给下一实例读
+        }
+        {
+            app::AppSettings again;           // 新实例 = 重新读盘
+            again.load();
+            check(again.prefetchWindow() == 12,
+                  QStringLiteral("⑥ 设置：改完**立刻落盘**（新实例读回 %1，期望 12）")
+                      .arg(again.prefetchWindow()));
+        }
+        QFile::remove(settingsPath);
     }
 
     return check.finish();

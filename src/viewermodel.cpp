@@ -38,6 +38,8 @@ ViewerModel::ViewerModel(int prefetchLength, QObject *parent)
     m_poster->target = this;
     m_dir = +1;                      // 起始方向：前向
     m_now = steadyNowMs;
+    //   验收用（`--log-level debug`）：预取深度最终取自设置，值不对时这一行就能看出来
+    qCDebug(lcUi).noquote() << QStringLiteral("[ui] viewer: prefetch window L=%1").arg(m_length);
     //   ★ 单发闹钟：只负责"到点叫醒"。**不是节拍器** —— 节奏由单调时钟算
     //     （`到期 = 请求时刻 + 间隔`），所以默认精度够用（Qt 定时器只会晚到、不会早到）。
     m_beat = new QTimer(this);
@@ -139,6 +141,9 @@ void ViewerModel::setPrefetchWindow(int prefetchLength)
 {
     const int v = qMax(0, prefetchLength);
     if (v == m_length) return;
+    //   验收用（`--log-level debug`）：改设置时能看到它真的传到了 viewer
+    qCDebug(lcUi).noquote()
+        << QStringLiteral("[ui] viewer: prefetch window L=%1 -> %2").arg(m_length).arg(v);
     m_length = v;
     evaluateScreen();
     reconcile();                 // 按新窗口重拍（多要的照派；少要的丢掉）
