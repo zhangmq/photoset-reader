@@ -97,21 +97,15 @@ Item {
         previewBusy = viewer.previewEnsure(i, previewImgH, width, Theme.spaceSm)
     }
 
-    //   ★ 指针扫动时的换页**节流**（throttle，不是 debounce）：持续移动也按间隔换页。
-    //     2026-11-06 从 600 ms 收到 100 ms：600 ms 是"停住之后还挂着旧预览"的直接原因；
-    //     现在有就绪门控兜着，节流只负责"别让拖动把 delegate 重建到卡"。
-    readonly property int previewDelayMs: 100
-    property real   previewLastAt: 0          // 上次真正判定的时刻（节流窗口起点）
+    //   ★ **按停顿来**（debounce，用户 2026-11-06 定）：指针停住 `previewDebounceMs` 之后
+    //     才判定一次，**不跟手**。为什么不做"连续跟手"（100 ms 那种节流）：相邻两次判定的
+    //     key 集合重叠 90% 以上，每动一小步就派一批 ⇒ 大量**无效批次**都在反复解同一片缩略图
+    //     （用户实测）。人用进度条就是"移到位置 → 停一下 → 看预览"。
+    readonly property int previewDebounceMs: 500
 
-    //   节流：到窗口就立刻判定；不到窗口就排一次尾随触发（保证持续移动也有输出）
+    //   每次"位置变了"都**重新计时**（restart）：移动中不触发，停稳了才触发一次
     function requestPreview() {
-        const now = Date.now()
-        if (now - previewLastAt >= previewDelayMs) {
-            previewLastAt = now
-            decidePreview()
-        } else if (!previewThrottleTimer.running) {
-            previewThrottleTimer.start()
-        }
+        previewDebounceTimer.restart()
     }
 
     signal prevRequested()
@@ -130,26 +124,20 @@ Item {
     signal osdToggled()
     signal seeked(int index)
 
-    //   节流的尾随触发：到点就用**最新**那一页判定（持续移动也有输出）
+    //   停顿计时器：指针安静了 `previewDebounceMs` 才跑**一次**判定
+    //   （`restart()` = 重新计时 ⇒ 移动全程都不触发，只有"停下"才触发）
     Timer {
-        id: previewThrottleTimer
-        interval: root.previewDelayMs
-        onTriggered: {
-            root.previewLastAt = Date.now()
-            if (timeline.hovered)
-                root.decidePreview()
-        }
+        id: previewDebounceTimer
+        interval: root.previewDebounceMs
+        onTriggered: root.decidePreview()
     }
     Connections {
         target: timeline
         function onHoveredChanged() {
-            if (timeline.hovered) {
-                previewThrottleTimer.stop()
-                root.previewLastAt = Date.now()
-                root.decidePreview()             // 刚进入进度条：立刻判定一次
-            } else {
-                previewThrottleTimer.stop()
-            }
+            if (timeline.hovered)
+                root.requestPreview()            // 进入进度条也算"一次移动"：停稳了再判
+            else
+                previewDebounceTimer.stop()
         }
         function onHoverIndexChanged() {
             if (timeline.hovered) root.requestPreview()
