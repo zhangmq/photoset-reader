@@ -683,6 +683,12 @@ QByteArray ArchiveSource::dataUnrar(int index) const
                 ++m_readFails;
                 qCDebug(lcScan).noquote() << QStringLiteral("[scan] libunrar extraction failed: %1 (%2)")
                     .arg(m_names.at(index), unrarErrorText(unsigned(pr)));
+                //   ★★ 密码错 / 没密码：**必须**把「需要密码」报上去 —— 否则上层把它当成
+                //      "这张图坏了"，于是一路把整个包（以及后面的所有包）用错的密码试完，
+                //      用户再也等不到重新输入的机会（2026-11-05 真机实测）。
+                //     与 libarchive 通路（`passphrase` 那支）保持同一语义。
+                if (pr == ERAR_BAD_PASSWORD || pr == ERAR_MISSING_PASSWORD)
+                    m_needsPassword = true;
                 delete seq;
                 m_seqUnrar = nullptr;
                 return {};
@@ -703,6 +709,12 @@ QByteArray ArchiveSource::dataUnrar(int index) const
     ++m_readFails;
     qCDebug(lcScan).noquote() << QStringLiteral("[scan] libunrar entry not found: %1 (rc=%2)")
                                    .arg(m_names.at(index)).arg(rc);
+    //   ★ 同上的另一条路：密码错时 `RARReadHeaderEx` 往往先报 BAD_DATA / BAD_PASSWORD
+    //     （解压状态已被错误密钥毁掉，标题也读不下去）。加密包上出现这两种错误，
+    //     一律按"密码不对"处理，交给上层重新询问；明文包仍按"真损坏"记。
+    if (m_encrypted && !m_password.isEmpty()
+        && (rc == ERAR_BAD_PASSWORD || rc == ERAR_MISSING_PASSWORD || rc == ERAR_BAD_DATA))
+        m_needsPassword = true;
     delete seq;
     m_seqUnrar = nullptr;
     return {};
