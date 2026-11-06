@@ -28,6 +28,7 @@
 
 #include "appsettings.h"
 #include "progressfile.h"
+#include "progresslock.h"
 
 #include <QObject>
 #include <QHash>
@@ -80,6 +81,12 @@ public:
     //   扫描**被取消**（`ScanStoped`）⇒ 不完整：顶栏把 spin 换成「扫描」图标（点击 = 重新扫描），
     //   保存进度前要先警告"未扫描发现的文件不会被重新发现"（用户 2026-10-31）
     Q_PROPERTY(bool scanIncomplete READ scanIncomplete NOTIFY scanIncompleteChanged)
+    //   * 2026-11-06: this window opened a .prsave that another process holds (or the place is
+    //     not writable) => view-only: reading is fine, writing is forbidden. The top bar shows it.
+    Q_PROPERTY(bool progressReadOnly READ progressReadOnly NOTIFY progressReadOnlyChanged)
+    //   Why: "in-use" / "readonly-dir" / "lock-error". UI turns this into a sentence.
+    Q_PROPERTY(QString progressReadOnlyReason READ progressReadOnlyReason
+                   NOTIFY progressReadOnlyChanged)
     //   能不能「重新扫描」：有来源、不是正在扫、且来源是文件夹 / 压缩包（单张图没什么可重扫的）
     Q_PROPERTY(bool canRescan READ canRescan NOTIFY scanningChanged)
 
@@ -158,12 +165,16 @@ public:
     //     默认值的唯一来源仍是 `AppSettings` 的成员初值；这里只是按顺序调每个 setter
     //     （写盘 / 发信号 / 语言重装 / 日志级别 / 预取下发给 viewer 都复用它们的副作用）。
     //     **不碰**阅读进度与当前 viewer 的会话态（缩放、平移、位置、循环）。
+    //   * 2026-11-06: settings are written ONLY here (dialog OK) and by "restore defaults".
+    Q_INVOKABLE void saveSettings();
     Q_INVOKABLE void resetSettingsToDefaults();
     bool sourceFavorited() const { return m_sourceFavorited; }
     ProgressListModel *favorites() const { return m_favorites; }
     bool scanning() const;
     int  discoveredCount() const;
     bool scanIncomplete() const { return m_scanIncomplete; }
+    bool progressReadOnly() const { return m_progressReadOnly; }
+    QString progressReadOnlyReason() const { return m_progressReadOnlyReason; }
     bool canRescan() const;
     //   重新扫描当前来源（用户 2026-11-01）：**后台单开一条序列**跑，扫完再替换当前浏览的；
     //   扫描中**取消 / 退出应用 ⇒ 这条序列作废**（当前视图不受影响）。
@@ -261,6 +272,7 @@ Q_SIGNALS:
     void sourceFavoritedChanged();
     void scanningChanged();
     void scanIncompleteChanged();
+    void progressReadOnlyChanged();
     void notificationChanged();        // ★ 瞬时提示（浮层）
     void fitModeChanged();
     void defaultLayoutChanged();
@@ -324,6 +336,7 @@ private:
     void autosaveProgress();            // 到点 / 销毁前：有变化且条件满足才写（静默）
     void startTrackingProgress(const QString &file);   // 关联 + 启动定时器
     void stopTrackingProgress();                       // 解除关联 + 停定时器
+    void setProgressReadOnly(bool on, const QString &reasonKey);
     void markProgressDirty() { m_progressDirty = true; }
     //   记下"文件里现在是什么状态"（**用刚写/刚读的那份 meta**，不读运行态 ——
     //   恢复时 viewer 的位置是异步落定的，读运行态会把 0 记成"已保存"）
@@ -400,6 +413,10 @@ private:
     std::shared_ptr<PreviewStore> m_previewStore = std::make_shared<PreviewStore>();
     QTimer *m_autosave = nullptr;       // 固定间隔的自动保存
     bool    m_progressDirty = false;    // 位置 / 版面 / 行变过（没变就不重写）
+    //   * 独占锁（sidecar）：只在"当前关联了某份 .prsave"期间持有；切来源 / 另存时换锁。
+    progresslock::Guard m_progressLock;
+    bool    m_progressReadOnly = false;         // 只读模式（锁被占 / 目录不可写）
+    QString m_progressReadOnlyReason;           // "in-use" / "readonly-dir" / "lock-error"
     //   文件里当前记着的位置（用来判断"真的变了没有"，避免每 30 s 重写一份一样的）
     QStringList m_savedChain;
     int     m_savedPage = -1;

@@ -620,6 +620,7 @@ function Invoke-Tests {
         @{ exe = 'ib-test-viewer' },
         @{ exe = 'ib-test-decode' },
         @{ exe = 'ib-test-instance' },
+        @{ exe = 'ib-test-progresslock' },
         @{ exe = 'ib-test-ui' },
         @{ exe = 'ib-test-ui'; label = 'ib-test-ui-hidpi'; env = @{ QT_SCALE_FACTOR = '1.35' } }
     )

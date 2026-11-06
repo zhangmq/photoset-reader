@@ -62,6 +62,14 @@ qt_add_executable(ib-test-instance
 )
 target_link_libraries(ib-test-instance PRIVATE testsupport Qt6::Network)
 
+# ── 进度存档的独占锁（sidecar + 崩溃可回收）──
+#   `ib-test-progresslock` 会**把自己再起一个进程**（`--hold-lock`）拿住锁再 kill -9，
+#   用来证明"崩溃不锁死"；`Qt6::Network` 不需要，锁只用 QtCore。
+qt_add_executable(ib-test-progresslock
+    selftest_progresslock.cpp
+)
+target_link_libraries(ib-test-progresslock PRIVATE testsupport)
+
 # ── UI 契约（QML 加载 + `HintBubble` 几何 / 弹出类型）──
 #   为什么需要：解码/渲染有测试，**QML 一行覆盖都没有** ⇒ "某类型不存在"、
 #   "tooltip 在缩放窗口里压住按钮并抢指针"这类事故只能靠人眼发现。
@@ -88,6 +96,8 @@ add_test(NAME ib-test-decode COMMAND ib-test-decode
 #   多实例：套件自己起两个真进程（工作目录随意，靠 applicationDirPath 找产品）
 add_test(NAME ib-test-instance COMMAND ib-test-instance
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME ib-test-progresslock COMMAND ib-test-progresslock
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 #   UI 契约跑两遍：缩放 1.0 与 1.35（后者是这台设备真实的条件，也是旧实现出错的地方）
 add_test(NAME ib-test-ui COMMAND ib-test-ui
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
@@ -106,7 +116,7 @@ add_test(NAME ib-test-ui-hidpi COMMAND ib-test-ui
 #       stderr 上一个字都没有 ⇒ 测试看起来"没有任何输出"，CI 里连 FAIL 都看不见。
 #     两个变量在 Windows 上无害（offscreen 插件照样有、stderr 本来就是控制台）。
 set_tests_properties(ib-test-scan ib-test-progress ib-test-meta ib-test-viewer ib-test-decode
-                     ib-test-ui ib-test-ui-hidpi ib-test-instance
+                     ib-test-ui ib-test-ui-hidpi ib-test-instance ib-test-progresslock
                      PROPERTIES SKIP_RETURN_CODE 77
                      ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_FORCE_STDERR_LOGGING=1")
 #   ★ `ENVIRONMENT` 是**整体替换**、不是追加（2026-11-06 实测：先设 offscreen 再单独

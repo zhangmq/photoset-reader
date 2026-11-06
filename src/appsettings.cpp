@@ -118,7 +118,7 @@ void AppSettings::load()
     m_language      = o.value(QStringLiteral("language")).toString();
 }
 
-void AppSettings::save()
+void AppSettings::saveNow()
 {
     const QString path = filePath();
     QDir().mkpath(QFileInfo(path).absolutePath());
@@ -150,7 +150,9 @@ void AppSettings::save()
     const QByteArray data = QJsonDocument(o).toJson(QJsonDocument::Indented);
     if (f.write(data) != data.size() || !f.commit()) {
         qCWarning(lcApp).noquote() << QStringLiteral("[app] settings write failed: %1").arg(path);
+        return;                        //   stay dirty: the next OK retries the write
     }
+    m_dirty = false;
 }
 
 } // namespace app

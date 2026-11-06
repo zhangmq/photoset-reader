@@ -415,13 +415,28 @@ int runViewerSelfTest(const QString &realDir)
             s.setPrefetchWindow(999);
             check(s.prefetchWindow() == 8,
                   QStringLiteral("⑥ 设置：上限 8（实际 %1）").arg(s.prefetchWindow()));
-            s.setPrefetchWindow(6);           // 留一个"普通值"给下一实例读（0..8 之内）
+            s.setPrefetchWindow(6);           // 留一个"普通值"给下面落盘
+            //   ★ 2026-11-06 语义变更（用户定）：setter **不写盘**，只标脏；
+            //     写盘只有两个入口 —— 设置对话框「确定」(`saveSettings`) 与「恢复默认」。
+            check(s.dirty(), QStringLiteral("⑥ 设置：setter 只标脏"));
         }
         {
             app::AppSettings again;           // 新实例 = 重新读盘
             again.load();
+            check(again.prefetchWindow() == 1,
+                  QStringLiteral("⑥ 设置：setter **没有落盘**（新实例仍是默认 1，实际 %1）")
+                      .arg(again.prefetchWindow()));
+        }
+        {
+            app::AppSettings s2;
+            s2.load();
+            s2.setPrefetchWindow(6);
+            s2.saveNow();
+            check(!s2.dirty(), QStringLiteral("⑥ 设置：saveNow 清脏标记"));
+            app::AppSettings again;
+            again.load();
             check(again.prefetchWindow() == 6,
-                  QStringLiteral("⑥ 设置：改完**立刻落盘**（新实例读回 %1，期望 6）")
+                  QStringLiteral("⑥ 设置：saveNow 之后文件里是 6（实际 %1）")
                       .arg(again.prefetchWindow()));
         }
         {
@@ -431,10 +446,16 @@ int runViewerSelfTest(const QString &realDir)
             ui.setPrefetchWindow(8);
             check(ui.prefetchWindow() == 8,
                   QStringLiteral("⑥ 设置：UiModel 收到 8（实际 %1）").arg(ui.prefetchWindow()));
+            app::AppSettings unwritten;
+            unwritten.load();
+            check(unwritten.prefetchWindow() == 6,
+                  QStringLiteral("⑥ 设置：经 UiModel 改也不自动写盘（文件仍是 6，实际 %1）")
+                      .arg(unwritten.prefetchWindow()));
+            ui.saveSettings();                // = 设置对话框「确定」
             app::AppSettings fresh;
             fresh.load();
             check(fresh.prefetchWindow() == 8,
-                  QStringLiteral("⑥ 设置：经 UiModel 写完后**文件里也是 8**（实际 %1）")
+                  QStringLiteral("⑥ 设置：`saveSettings`（确定）之后文件里是 8（实际 %1）")
                       .arg(fresh.prefetchWindow()));
             //   ★ 「恢复全部默认设置」（2026-11-05 用户要求）：刚才把预取改成了 8，
             //     重置之后必须回到默认值 1，而且**立刻落盘**。

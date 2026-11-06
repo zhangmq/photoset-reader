@@ -372,6 +372,7 @@ Item {
         scanning: ui.scanning
         discoveredCount: ui.discoveredCount
         favorited: ui.sourceFavorited
+    progressReadOnly: ui.progressReadOnly
         onScanCancelRequested: cancelScanDialog.open()
         onFavoriteToggled: root.toggleFavorite()
         // 没有条目时显示 `0 / 0`（不能是 `1 / 0`：空目录也是一种合法状态）

@@ -133,6 +133,9 @@ add_library(ibcore STATIC
     # ── 进度文件（`.prsave`）：收藏 / 打开进度的唯一实现（设计 20）──
     src/progressfile.cpp
     src/progressfile.h
+    # ── 进度存档的独占锁（sidecar，多实例下防止两个窗口写同一份）──
+    src/progresslock.cpp
+    src/progresslock.h
     src/progresslistmodel.cpp
     src/progresslistmodel.h
     # ── 时间轴悬停预览：位置表 + provider（只解码缩略图）──

@@ -52,7 +52,15 @@ struct AppSettings
     //       下一次保存会写出一份新的有效文件（用户 2026-11-03：正式产品要有容错）。
     static constexpr int kSchemaVersion = 1;
     void load();
-    void save();
+    //   * 2026-11-06 (user decision): runtime state lives in MEMORY only; there are exactly
+    //     two write points - the settings dialog's OK and "restore defaults". Setters do NOT
+    //     write, they only mark dirty. Rationale: (1) writes per session drop from one per
+    //     setter to one per dialog session; (2) with multiple instances the semantics are
+    //     clear - whoever presses OK last wins.
+    //     NOTE: Cancel neither writes nor rolls back (the live values stay for this session);
+    //     there is no save-on-exit.
+    void saveNow();                       // write the whole file once (clears dirty)
+    bool dirty() const { return m_dirty; }
 
     // 常规
     //   ★ 2026-10-20 定案：这里是**全局默认**，不是当前阅读态 —— 每次进沉浸视图新建 viewer 时取一次；
@@ -90,20 +98,20 @@ struct AppSettings
     //     代码里不需要任何"语言清单"（`QTranslator` 按代码去 `:/i18n/` 找，找不到就回退源串=英文）。
     QString language() const { return m_language; }
 
-    void setThemeMode(int v) { m_themeMode = v; save(); }
-    void setIntervalMs(int v) { m_intervalMs = qMax(kMinSlideshowIntervalMs, v); save(); }
-    void setDefaultFitMode(int v) { m_fitMode = qBound(0, v, 3); save(); }
-    void setDefaultLayout(int v) { m_layout = qBound(0, v, 1); save(); }
-    void setDefaultLoop(int v) { m_loop = qBound(0, v, 2); save(); }
-    void setScaleAlgorithm(const QString &v) { m_scaleAlgorithm = v; save(); }
-    void setScanHidden(bool v) { m_scanHidden = v; save(); }
-    void setPreviewStrip(bool v) { m_previewStrip = v; save(); }
-    void setLogLevel(const QString &v) { m_logLevel = v; save(); }
-    void setRecurseDepth(int v) { m_recurseDepth = qBound(1, v, 64); save(); }
-    void setPrefetchWindow(int v) { m_prefetchWindow = qBound(0, v, 8); save(); }
-    void setInnerArchiveMaxMb(int v) { m_innerArchiveMaxMb = qBound(64, v, 8192); save(); }
-    void setFavoritesDir(const QString &v) { m_favoritesDir = v; save(); }
-    void setLanguage(const QString &v) { m_language = v; save(); }
+    void setThemeMode(int v) { m_themeMode = v; m_dirty = true; }
+    void setIntervalMs(int v) { m_intervalMs = qMax(kMinSlideshowIntervalMs, v); m_dirty = true; }
+    void setDefaultFitMode(int v) { m_fitMode = qBound(0, v, 3); m_dirty = true; }
+    void setDefaultLayout(int v) { m_layout = qBound(0, v, 1); m_dirty = true; }
+    void setDefaultLoop(int v) { m_loop = qBound(0, v, 2); m_dirty = true; }
+    void setScaleAlgorithm(const QString &v) { m_scaleAlgorithm = v; m_dirty = true; }
+    void setScanHidden(bool v) { m_scanHidden = v; m_dirty = true; }
+    void setPreviewStrip(bool v) { m_previewStrip = v; m_dirty = true; }
+    void setLogLevel(const QString &v) { m_logLevel = v; m_dirty = true; }
+    void setRecurseDepth(int v) { m_recurseDepth = qBound(1, v, 64); m_dirty = true; }
+    void setPrefetchWindow(int v) { m_prefetchWindow = qBound(0, v, 8); m_dirty = true; }
+    void setInnerArchiveMaxMb(int v) { m_innerArchiveMaxMb = qBound(64, v, 8192); m_dirty = true; }
+    void setFavoritesDir(const QString &v) { m_favoritesDir = v; m_dirty = true; }
+    void setLanguage(const QString &v) { m_language = v; m_dirty = true; }
 
     QString filePath() const;
 
@@ -124,6 +132,7 @@ private:
     int  m_innerArchiveMaxMb = 512;     // ★ v7：内层压缩包上限（MB），范围 64–8192
     QString m_favoritesDir;             // 收藏夹路径（空 = 默认 `<配置目录>/favorites`）
     QString m_language;                 // 界面语言代码（空 = 跟随系统）
+    bool m_dirty = false;               // unsaved changes (only saveNow() clears it)
 };
 
 } // namespace app

@@ -30,6 +30,7 @@ Item {
 
     property int    discoveredCount: 0    // 已发现多少张（spin 的 tooltip）
     property bool   favorited: false      // 已收藏（★ 实心）
+    property bool   progressReadOnly: false   // 进度只读（锁被别的窗口占着/目录不可写）
 
     signal scanCancelRequested()          // 点 spin → 上层弹「取消扫描」确认框
     signal favoriteToggled()              // 点 ★ → 上层决定收藏 / 取消收藏
@@ -121,8 +122,44 @@ Item {
             }
         }
 
+        // 右：进度只读（警告色，紧挨 ★；都属于"进度存档"这一层，不占左侧"当前文件"那行）
+        Item {
+            id: readOnlySlot
+            visible: root.progressReadOnly
+            anchors.right: starBtn.left
+            anchors.rightMargin: Theme.spaceSm
+            anchors.verticalCenter: parent.verticalCenter
+            implicitWidth: pill.implicitWidth
+            implicitHeight: pill.implicitHeight
+
+            Rectangle {
+                id: pill
+                anchors.centerIn: parent
+                implicitWidth: readOnlyText.implicitWidth + Theme.spaceXs * 2
+                implicitHeight: readOnlyText.implicitHeight + Theme.spaceXs
+                radius: Theme.radiusSm
+                color: "transparent"
+                border.width: Theme.borderW
+                border.color: Theme.warn
+                Text {
+                    id: readOnlyText
+                    anchors.centerIn: parent
+                    text: qsTr("Progress read-only")
+                    color: Theme.warn
+                    font.pointSize: Theme.fontSm
+                }
+            }
+            HintBubble {
+                anchors.fill: parent
+                text: qsTr("The progress archive or favorite you opened is in use by another window; progress will not be saved to the file")
+                hovered: readOnlyHover.hovered
+            }
+            HoverHandler { id: readOnlyHover }
+        }
+
         // 右：★ 收藏状态（实心 = 已收藏；点击 = 收藏 / 取消收藏）
         NavBtn {
+            id: starBtn
             anchors.right: parent.right
             anchors.rightMargin: Theme.spaceLg
             anchors.verticalCenter: parent.verticalCenter

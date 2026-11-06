@@ -617,6 +617,16 @@ void UiModel::setInnerArchiveMaxMb(int v)
 //     · 逐项调**现有 setter**：写盘、发信号、各自的副作用（语言重装 / 日志级别 / 预取下发给
 //       viewer）全都不用重复实现；setter 发现"已经是这个值"会自己 return，不会多写盘；
 //     · 阅读进度 / 当前 viewer 的会话态（缩放、平移、位置、循环）**不动** —— 只重置设置。
+//   * 2026-11-06 (user): settings live in memory; this is the ONLY write point
+//   (plus "restore defaults"). Cancel writes nothing and does not roll back.
+void UiModel::saveSettings()
+{
+    if (!m_settings.dirty())
+        return;
+    m_settings.saveNow();
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] settings saved to disk");
+}
+
 void UiModel::resetSettingsToDefaults()
 {
     const AppSettings def;                        // 默认值（成员初值里的那一份）
@@ -634,7 +644,10 @@ void UiModel::resetSettingsToDefaults()
     setFavoritesDir(def.favoritesDir());
     setLogLevel(def.logLevel());
     setLanguage(def.language());                  // 语言最后：会重装翻译并重算界面
-    qCInfo(lcUi).noquote() << QStringLiteral("[ui] settings reset to defaults");
+    //   * 2026-11-06: "reset to defaults" is destructive, so it writes immediately (the
+    //     setters no longer write). One whole-file write, not fourteen.
+    m_settings.saveNow();
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] settings reset to defaults (written)");
 }
 
 // ── 图像（缩放）：唯一选项 = 算法 ──────────────────────────────────────────
@@ -1134,6 +1147,11 @@ void UiModel::refreshFavorited()
 //   —— 位置（label 链 + 页号）、第 N 条 / 共 M 条、版面（单/双）；不用任何缓存值。
 bool UiModel::writeProgress(const QString &filePath, bool quiet, bool savePasswords)
 {
+    //   * 只读模式只锁"当前关联的那一份"；另存 / 收藏写的是别的路径，照常（各自过锁）。
+    if (m_progressReadOnly && filePath == m_progressFile) {
+        if (!quiet) notify(tr("Opened read-only: another window is using this progress file"));
+        return false;
+    }
     if (!m_src.seq || !m_src.vm) {
         if (!quiet) notify(tr("No source is open"));
         return false;
@@ -1221,11 +1239,19 @@ bool UiModel::saveProgressToFavorites(bool savePasswords)
                                 : tr("Only folders and archives can save progress"));
         return false;
     }
-    if (!writeProgress(file, false, savePasswords))
+    //   * 收藏写的是**收藏目录里的另一份** .prsave，与"当前打开的那份"不是同一个文件，
+    //     但同样要独占：先把它接管为当前关联（顺带加锁），抢不到就失败、不写。
+    startTrackingProgress(file);
+    if (m_progressReadOnly) {
+        notify(tr("Opened read-only: another window is using this progress file"));
         return false;
+    }
+    if (!writeProgress(file, false, savePasswords)) {
+        stopTrackingProgress();
+        return false;
+    }
     refreshFavorited();
     if (m_favorites) m_favorites->reload();      // 列表里能立刻看到
-    startTrackingProgress(file);                 // 之后按间隔 / 切来源自动保存
     notify(tr("Added to favorites"));
     return true;
 }
@@ -1248,10 +1274,17 @@ bool UiModel::saveProgressToFile(bool savePasswords)
     QString file = picked;
     if (!file.endsWith(QLatin1String(".prsave"), Qt::CaseInsensitive))
         file += QLatin1String(".prsave");
-    if (!writeProgress(file, false, savePasswords))
-        return false;
-    m_lastProgressDir = QFileInfo(file).absolutePath();
+    //   * 同上：先把目标路径接管成"当前关联"（= 加锁），抢不到就不写。
     startTrackingProgress(file);
+    if (m_progressReadOnly) {
+        notify(tr("Opened read-only: another window is using this progress file"));
+        return false;
+    }
+    if (!writeProgress(file, false, savePasswords)) {
+        stopTrackingProgress();
+        return false;
+    }
+    m_lastProgressDir = QFileInfo(file).absolutePath();
     notify(tr("Progress saved"));
     return true;
 }
@@ -1343,6 +1376,17 @@ bool UiModel::removeFavorite()
     const QString file = currentFavoritesFile();
     if (file.isEmpty() || !QFileInfo::exists(file))
         return false;
+    //   * 删也是写：先拿锁。若这份文件正被**别的窗口**用着，绝不删（数据在别人的进程里）。
+    //     如果它恰好就是当前关联的那份，先解除关联（= 释放自己手里的锁）再取一次。
+    progresslock::Guard guard;
+    QString holder;
+    QString reason;
+    if (file == m_progressFile)
+        stopTrackingProgress();
+    if (!guard.acquire(file, &holder, &reason)) {
+        notify(tr("Opened read-only: another window is using this progress file"));
+        return false;
+    }
     if (!QFile::remove(file)) {
         notify(tr("Cannot delete: %1").arg(file));
         return false;
@@ -1357,6 +1401,8 @@ bool UiModel::removeFavorite()
 // ══ 自动保存（用户 2026-11-01）═══════════════════════════════════════════════
 void UiModel::autosaveProgress()
 {
+    if (m_progressReadOnly)               // * 只读模式：一个字都不写
+        return;
     if (m_progressFile.isEmpty() || !m_progressDirty)
         return;
     if (!m_src.seq || !m_src.vm)
@@ -1404,7 +1450,22 @@ void UiModel::startTrackingProgress(const QString &file)
 {
     m_progressFile = file;
     m_progressDirty = false;              // 刚写过 / 刚读过 ⇒ 不算有变化
-    if (m_autosave && !file.isEmpty())
+
+    //   * 2026-11-06: take the exclusive lock on this .prsave. Two windows on the same
+    //     progress file would otherwise overwrite each other every 30 s. This function is
+    //     the ONLY place that sets m_progressFile, so open / save-as / favorites all pass
+    //     through here and get the lock for free.
+    QString holder;
+    QString reason;
+    const bool locked = file.isEmpty() ? true : m_progressLock.acquire(file, &holder, &reason);
+    setProgressReadOnly(!locked, locked ? QString() : reason);
+    if (!locked) {
+        qCWarning(lcUi).noquote()
+            << QStringLiteral("[ui] progress file is %1 (%2), opening READ-ONLY: %3")
+                   .arg(reason, holder, file);
+    }
+
+    if (m_autosave && !file.isEmpty() && locked)
         m_autosave->start();
     else if (m_autosave)
         m_autosave->stop();
@@ -1414,7 +1475,18 @@ void UiModel::stopTrackingProgress()
 {
     m_progressFile.clear();
     m_progressDirty = false;
+    m_progressLock.release();
+    setProgressReadOnly(false, QString());
     if (m_autosave) m_autosave->stop();
+}
+
+void UiModel::setProgressReadOnly(bool on, const QString &reasonKey)
+{
+    if (m_progressReadOnly == on && m_progressReadOnlyReason == reasonKey)
+        return;
+    m_progressReadOnly = on;
+    m_progressReadOnlyReason = reasonKey;
+    emit progressReadOnlyChanged();
 }
 
 void UiModel::cancelScan()

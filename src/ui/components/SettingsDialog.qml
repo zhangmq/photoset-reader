@@ -195,6 +195,30 @@ Popup {
                 label: qsTr("Reset all settings")
                 onClicked: resetConfirm.open()
             }
+            //   * 2026-11-06 (user): settings live in memory and are written to disk ONLY
+            //     here (OK) and on "reset to defaults". Cancel writes nothing - and does not
+            //     roll back either: the live values simply stay for this session.
+            //     Closing with X is treated as Cancel (same reason: no write).
+            Row {
+                anchors.left: parent.left
+                anchors.leftMargin: Theme.spaceLg
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Theme.spaceSm
+
+                Button {
+                    variant: "outline"
+                    label: qsTr("Cancel")
+                    onClicked: root.close()
+                }
+                Button {
+                    variant: "elevated"
+                    label: qsTr("OK")
+                    onClicked: {
+                        ui.saveSettings()
+                        root.close()
+                    }
+                }
+            }
         }
     }
 
