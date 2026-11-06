@@ -95,3 +95,22 @@ jobs:
           path: /tmp/cap.log
           if-no-files-found: ignore
           retention-days: 7
+
+      #   ── 构建产物（用户 2026-11-07：本地测试直接用 CI 版本）────────────────────
+      #   只装成"安装布局"再打一个 tar.gz：`bin/photoset-reader` + `.desktop` + 图标 + 许可。
+      #   ★ 不带依赖库：动态链接，目标机需要自己装 qt6 / libarchive / libexif / libunrar
+      #     （`scripts/install-deps.sh` 覆盖 Arch / Debian / Fedora / openSUSE）。
+      #     容器是 Arch，glibc 版本比 Debian 系新 —— 这份包按"Arch 系"用。
+      - name: Package
+        run: |
+          cmake --install build --prefix dist
+          tar -czf photoset-reader-linux-x64.tar.gz -C dist .
+          ls -l photoset-reader-linux-x64.tar.gz
+          ./dist/bin/photoset-reader --version
+
+      - name: Upload build
+        uses: actions/upload-artifact@v7
+        with:
+          name: photoset-reader-linux-x64
+          path: photoset-reader-linux-x64.tar.gz
+          retention-days: 14
