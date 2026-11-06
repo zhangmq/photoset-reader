@@ -41,6 +41,15 @@ qt_add_executable(ib-test-viewer
 )
 target_link_libraries(ib-test-viewer PRIVATE testsupport)
 
+# ── 解码链（`decode::Capabilities` / `imageread` / `placeholder`）──
+#   钉住三条**产品契约**：能力表自洽（列了就解得出、PDF 被策略排除）、
+#   **上屏路径必须是 32-bit**（16-bit 输入黑屏的回归）、占位图几何（只缩不放 / 未知 ⇒ 方图）。
+#   全部现造夹具，不依赖 `.testdata`。
+qt_add_executable(ib-test-decode
+    selftest_decode.cpp
+)
+target_link_libraries(ib-test-decode PRIVATE testsupport)
+
 # ── ctest：相对 `.testdata` 的套件在**源码根**跑 ──────────────────────────
 add_test(NAME ib-test-scan COMMAND ib-test-scan
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
@@ -49,6 +58,8 @@ add_test(NAME ib-test-progress COMMAND ib-test-progress
 add_test(NAME ib-test-meta COMMAND ib-test-meta
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME ib-test-viewer COMMAND ib-test-viewer
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME ib-test-decode COMMAND ib-test-decode
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 # ── 可能**整条套件跳过**（夹具 / 环境不具备 ⇒ rc 77）：ctest 显示 *Skipped* ─────
@@ -62,6 +73,6 @@ add_test(NAME ib-test-viewer COMMAND ib-test-viewer
 #     · `QT_FORCE_STDERR_LOGGING=1`：Qt 6 在检测到 journald 时把日志**发给 journald**，
 #       stderr 上一个字都没有 ⇒ 测试看起来"没有任何输出"，CI 里连 FAIL 都看不见。
 #     两个变量在 Windows 上无害（offscreen 插件照样有、stderr 本来就是控制台）。
-set_tests_properties(ib-test-scan ib-test-progress ib-test-meta ib-test-viewer
+set_tests_properties(ib-test-scan ib-test-progress ib-test-meta ib-test-viewer ib-test-decode
                      PROPERTIES SKIP_RETURN_CODE 77
                      ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_FORCE_STDERR_LOGGING=1")

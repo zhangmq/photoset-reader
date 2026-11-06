@@ -250,7 +250,7 @@ jobs:
           $failed = @()
           #   ★ 四个套件都要跑：`ib-test-viewer` 是最大的那套（悬停预览 / 幻灯片 / 设置，
           #     41 项），以前漏在这里 ⇒ CI 绿了但那段逻辑没验过（2026-11-06 补上）。
-          foreach ($t in "ib-test-scan", "ib-test-progress", "ib-test-meta", "ib-test-viewer") {
+          foreach ($t in "ib-test-scan", "ib-test-progress", "ib-test-meta", "ib-test-viewer", "ib-test-decode") {
             Write-Host "== $t =="
             $p = Start-Process -FilePath ".\build\$t.exe" -PassThru -NoNewWindow `
                  -RedirectStandardOutput "$t.out" -RedirectStandardError "$t.err"

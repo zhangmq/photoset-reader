@@ -609,7 +609,7 @@ function Invoke-Tests {
 
     $failed = @()
     #   ★ 与 `tests/CMakeLists.txt` 里的套件列表一一对应（新增套件时两边都要加）。
-    foreach ($t in @('ib-test-scan', 'ib-test-progress', 'ib-test-meta', 'ib-test-viewer')) {
+    foreach ($t in @('ib-test-scan', 'ib-test-progress', 'ib-test-meta', 'ib-test-viewer', 'ib-test-decode')) {
         Write-Host "  == $t =="
         $exe = Join-Path $BuildDir ("$t.exe")
         if (-not (Test-Path $exe)) { $failed += "$t(missing)"; continue }
