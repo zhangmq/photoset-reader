@@ -14,8 +14,14 @@
 #  include <objbase.h>
 #  include <wincodec.h>
 
+#  include <QCoreApplication>
 #  include <QStringList>
+#  include <QThread>
 #  include <QVarLengthArray>
+
+#  include <thread>
+
+#  include "../logging.h"
 
 namespace decode {
 namespace {
@@ -40,6 +46,12 @@ struct ComThread
     {
         const HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
         m_ownRef = (hr == S_OK || hr == S_FALSE);
+        //   ★ debug 级：万一有调用点落在不该落的线程上（GUI 线程必须是 STA），
+        //     这一行能直接把"谁把套间改了"钉出来。
+        qCDebug(lcDecode).noquote()
+            << QStringLiteral("[cap] wic: CoInitializeEx(MTA) on thread '%1' hr=0x%2")
+                   .arg(QThread::currentThread()->objectName())
+                   .arg(quint32(hr), 8, 16, QLatin1Char('0'));
         if (SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE) {
             CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
                              IID_PPV_ARGS(&factory));
@@ -57,8 +69,16 @@ private:
     bool m_ownRef = false;
 };
 
-//   ★ thread_local：线程退出时自动释放（COM 的引用计数在该线程上平衡）
-thread_local ComThread g_com;
+//   ★★ **必须惰性构造**（2026-11-06 事故的根因）：
+//     `thread_local ComThread g_com;` 这种**命名空间作用域**的 thread_local，MSVC 会在线程
+//     启动时（主线程就是 `main` 之前）**急切**执行构造函数 ⇒ `CoInitializeEx(MTA)` 在 CRT
+//     初始化阶段就把 **GUI 线程钉成 MTA**，于是 Windows 原生文件/文件夹对话框（要求 STA）
+//     直接卡死。改成**函数内 static thread_local** ⇒ 只在真正用到 COM 的那个线程上构造。
+ComThread &comForThisThread()
+{
+    static thread_local ComThread t;
+    return t;
+}
 
 QString hrText(HRESULT hr)
 {
@@ -93,55 +113,78 @@ public:
     QString name() const override { return QStringLiteral("wic"); }
     int     rank() const override { return 20; }
 
-    //   ★ 唯一的信息来源：系统已注册的解码器枚举。
-    //     枚举不到任何东西（例如 Server 版没装任何图像扩展）⇒ 这一路就不出现。
+    //   ★★ 枚举**不能在本线程（GUI 线程）上初始化 COM**（2026-11-06 事故）：
+    //     我们在 `main.cpp` 里启动时调 `probe()`，那时 GUI 线程未必被 Qt 初始化成 STA；
+    //     若这里把它 `CoInitializeEx(MTA)` 了，后面 **Windows 原生文件对话框（要求 STA）
+    //     就会卡死** —— 症状是"打开文件/文件夹全都卡住"，而命令行传路径却一切正常。
+    //     所以：**枚举放到一个短命线程**（它自己 MTA，用完就退），GUI 线程的套间原样不动。
     void probe() override
     {
         m_suffixes.clear();
-        IWICImagingFactory *f = g_com.factory;
-        if (!f) return;
+        m_available = false;
 
-        IEnumUnknown *en = nullptr;
-        if (FAILED(f->CreateComponentEnumerator(WICDecoder, WICComponentEnumerateDefault, &en)) || !en)
-            return;
+        //   只读诊断（**不会初始化 COM**）：GUI 线程此刻是什么套间？
+        APTTYPE at = APTTYPE_CURRENT;
+        APTTYPEQUALIFIER q = APTTYPEQUALIFIER_NONE;
+        const HRESULT ap = CoGetApartmentType(&at, &q);
+        qCDebug(lcDecode).noquote()
+            << QStringLiteral("[cap] wic: gui-thread apartment = %1 (hr=0x%2)")
+                   .arg(ap == CO_E_NOTINITIALIZED ? QStringLiteral("none(not initialized)")
+                        : ap == S_OK && at == APTTYPE_MTA ? QStringLiteral("MTA")
+                        : ap == S_OK && at == APTTYPE_STA ? QStringLiteral("STA")
+                                                          : QStringLiteral("other"))
+                   .arg(quint32(ap), 8, 16, QLatin1Char('0'));
 
-        IUnknown *unk = nullptr;
-        ULONG got = 0;
-        while (en->Next(1, &unk, &got) == S_OK && got == 1 && unk) {
-            IWICComponentInfo *info = nullptr;
-            if (SUCCEEDED(unk->QueryInterface(IID_PPV_ARGS(&info))) && info) {
-                WICComponentType type = WICAllComponents;
-                if (SUCCEEDED(info->GetComponentType(&type)) && type == WICDecoder) {
-                    //   ★ 扩展名在 `IWICBitmapDecoderInfo` 上（`IWICComponentInfo` 只有类型/名称）。
-                    //     这一步也是"这个编解码器愿意认哪些后缀"的**唯一**来源。
-                    IWICBitmapDecoderInfo *dinfo = nullptr;
-                    if (SUCCEEDED(info->QueryInterface(IID_PPV_ARGS(&dinfo))) && dinfo) {
-                        UINT len = 0;
-                        if (SUCCEEDED(dinfo->GetFileExtensions(0, nullptr, &len)) && len > 1) {
-                            QVarLengthArray<WCHAR, 256> buf(int(len) + 1);
-                            if (SUCCEEDED(dinfo->GetFileExtensions(len, buf.data(), &len)))
-                                collectSuffixes(QString::fromWCharArray(buf.constData()), &m_suffixes);
-                        }
-                        dinfo->Release();
-                    }
-                }
-                info->Release();
-            }
-            unk->Release();
-            unk = nullptr;
-        }
-        en->Release();
-
-        m_suffixes.removeDuplicates();
-        m_suffixes.sort();
+        std::thread worker([this] { enumerateOnThisThread(); });
+        worker.join();
     }
 
-    bool        available() const override { return g_com.factory != nullptr; }
+    bool        available() const override { return m_available; }
     QStringList advertisedSuffixes() const override { return m_suffixes; }
 
+    //   ★★ **GUI 线程上绝不用 COM**（2026-11-06）：Qt 的 Windows 文件/文件夹对话框要求
+    //     GUI 线程是 STA；只要我们在那个线程上跑过 `CoInitializeEx(MTA)`，对话框就会卡死
+    //     （症状："打开文件/文件夹全都卡住"，命令行传路径却没事）。
+    //     预览条那种"可能从 GUI 线程来"的解码，就走一个**临时线程**（自带 MTA），完事就退。
     QImage decode(const Source &src, int page, QString *why) override
     {
-        IWICImagingFactory *f = g_com.factory;
+        if (isGuiThread()) {
+            QImage out;
+            QString w;
+            std::thread t([&] { out = decodeImpl(src, page, &w); });
+            t.join();
+            if (why) *why = w;
+            return out;
+        }
+        return decodeImpl(src, page, why);
+    }
+
+    QSize querySize(const Source &src, int page, QString *fmt, int *frames) override
+    {
+        if (isGuiThread()) {
+            QSize out;
+            QString f;
+            int n = 1;
+            std::thread t([&] { out = querySizeImpl(src, page, &f, &n); });
+            t.join();
+            if (fmt) *fmt = f;
+            if (frames) *frames = n;
+            return out;
+        }
+        return querySizeImpl(src, page, fmt, frames);
+    }
+
+private:
+    //   当前线程是不是**主（GUI）线程** —— 是的话一律绕开（见上面 `decode` 的注释）
+    static bool isGuiThread()
+    {
+        QCoreApplication *app = QCoreApplication::instance();
+        return app && QThread::currentThread() == app->thread();
+    }
+
+    QImage decodeImpl(const Source &src, int page, QString *why)
+    {
+        IWICImagingFactory *f = comForThisThread().factory;
         if (!f) {
             if (why) *why = QStringLiteral("wic: no factory");
             return {};
@@ -199,9 +242,9 @@ public:
         return out;
     }
 
-    QSize querySize(const Source &src, int page, QString *fmt, int *frames) override
+    QSize querySizeImpl(const Source &src, int page, QString *fmt, int *frames)
     {
-        IWICImagingFactory *f = g_com.factory;
+        IWICImagingFactory *f = comForThisThread().factory;
         if (!f) return {};
 
         IWICStream *stream = nullptr;
@@ -241,14 +284,58 @@ public:
     }
 
 private:
+    //   在**当前线程**上初始化 COM 并枚举（只由 `probe()` 在短命线程里调）。
+    //   ★ GUI 线程永远不走这里 ⇒ 它的套间（Qt 的 STA）不会被我们改掉。
+    void enumerateOnThisThread()
+    {
+        IWICImagingFactory *f = comForThisThread().factory;      // thread_local：本线程自己的工厂
+        if (!f) return;
+        m_available = true;
+
+        IEnumUnknown *en = nullptr;
+        if (FAILED(f->CreateComponentEnumerator(WICDecoder, WICComponentEnumerateDefault, &en)) || !en)
+            return;
+
+        IUnknown *unk = nullptr;
+        ULONG got = 0;
+        while (en->Next(1, &unk, &got) == S_OK && got == 1 && unk) {
+            IWICComponentInfo *info = nullptr;
+            if (SUCCEEDED(unk->QueryInterface(IID_PPV_ARGS(&info))) && info) {
+                WICComponentType type = WICAllComponents;
+                if (SUCCEEDED(info->GetComponentType(&type)) && type == WICDecoder) {
+                    //   ★ 扩展名在 `IWICBitmapDecoderInfo` 上（`IWICComponentInfo` 只有类型/名称）。
+                    //     这一步也是"这个编解码器愿意认哪些后缀"的**唯一**来源。
+                    IWICBitmapDecoderInfo *dinfo = nullptr;
+                    if (SUCCEEDED(info->QueryInterface(IID_PPV_ARGS(&dinfo))) && dinfo) {
+                        UINT len = 0;
+                        if (SUCCEEDED(dinfo->GetFileExtensions(0, nullptr, &len)) && len > 1) {
+                            QVarLengthArray<WCHAR, 256> buf(int(len) + 1);
+                            if (SUCCEEDED(dinfo->GetFileExtensions(len, buf.data(), &len)))
+                                collectSuffixes(QString::fromWCharArray(buf.constData()), &m_suffixes);
+                        }
+                        dinfo->Release();
+                    }
+                }
+                info->Release();
+            }
+            unk->Release();
+            unk = nullptr;
+        }
+        en->Release();
+
+        m_suffixes.removeDuplicates();
+        m_suffixes.sort();
+    }
+
     QStringList m_suffixes;
+    bool        m_available = false;
 };
 
 }  // namespace
 
 Provider *makeWicProvider()
 {
-    if (!g_com.factory) return nullptr;      // 没有 WIC ⇒ 这一路不存在
+    //   ★ 这里**不碰 COM**：`available()` 由 `probe()` 在它自己的线程上确定。
     return new WicProvider;
 }
 

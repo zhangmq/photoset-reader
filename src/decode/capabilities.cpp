@@ -14,7 +14,7 @@ namespace decode {
 namespace {
 
 //   ★★ **产品策略性排除**（不是能力声明，**只做减法**）：用户 2026-11-06 定 ——
-//     **PDF 不做**："首先我们目标是看图，PDF 以什么形式接进来都别扭"。
+//     **PDF 不做**："首先我们目标是看图，PDF 以什么形式接进来都别扭 / 有更合适的工具"。
 //     有些发行版的 Qt 插件（`libqpdf.so`）能解 PDF，能力探测会把 `pdf` 广告进来；
 //     但一个"没有页语义、只有第一页"的东西混在图集里比不支持更糟 ⇒ 在这里减掉。
 //     ⚠️ 减掉的只是**收录与显示**：用户显式打开一个 PDF 仍会进解码链（那是他的选择）。
@@ -30,21 +30,12 @@ QList<Provider *> makeProviders()
 {
     QList<Provider *> out;
     out << makeQtProvider();          // rank 10：Qt 插件（含 Linux 发行版的 kimageformats）
-    //   rank 20：Windows 的**系统编解码器**。非 Windows 返回 nullptr ⇒ 这一路不存在。
-    //   ★ 它把"用户装了 Raw / HEIF / AV1 扩展"变成"我们能解 arw / heic / avif"，
-    //     而我们**不加一行格式代码**（枚举与解码全在参数化调用里）。
-    if (Provider *wic = makeWicProvider()) out << wic;
-    //   rank 20：Linux 的 gdk-pixbuf（GNOME 栈）。非 Linux 返回 nullptr。
-    //   ★ KDE 机器上它和 kimageformats 高度重叠（去重后没影响）；GNOME 机器上往往
-    //     是 AVIF / JXL / HEIF 唯一能用的那一路。
-    if (Provider *gdk = makeGdkProvider()) out << gdk;
-    //   rank 90：外部程序（`magick` / `vips` …）。**永远最后**：能自己解就不起子进程。
-    //   默认 profile 的 suffixes 为空 ⇒ 它只兜底、不往文件列表里塞东西。
+    //   rank 20：系统编解码器。非对应平台返回 nullptr（或 available()==false）。
+    if (Provider *wic = makeWicProvider()) out << wic;   // Windows
+    if (Provider *gdk = makeGdkProvider()) out << gdk;   // Linux（gdk-pixbuf）
+    //   rank 90：外部程序，**永远最后**（能自己解就不起子进程）。
+    //   默认 profile 的 suffixes 为空 ⇒ 只兜底、不往文件列表里塞东西。
     out << makeCliProvider();
-#ifdef Q_OS_LINUX
-    //   阶段 B：gdk-pixbuf（dlopen，GNOME 栈的 loader）
-#endif
-    //   阶段 C：外部程序（数据驱动 profile）
     return out;
 }
 
@@ -62,25 +53,50 @@ Capabilities::~Capabilities()
     m_providers.clear();
 }
 
-//   惰性探测：**第一次用到才探**，之后进程内不再探
-//   （用户 2026-11-06 确定要在启动时检查 ⇒ `main.cpp` 会显式调一次，这里只是兜底）
-void Capabilities::ensureProbed() const
+//   没探过就被用 ⇒ 空表 + 一条 warning。**不替调用方探测**：
+//   探测会建 COM / 起子进程 / dlopen，必须发生在**启动时那个确定的线程**上
+//   （WIC 那次把 GUI 线程钉成 MTA、导致"打开文件夹卡死"，就是从这条捷径来的）。
+void Capabilities::warnIfNotProbed() const
 {
     if (m_probed) return;
-    m_probed = true;
+    static bool warned = false;
+    if (warned) return;
+    warned = true;
+    qCWarning(lcDecode).noquote()
+        << QStringLiteral("[cap] 能力表还没探测就被用了（能力表按空处理）—— 调用方漏了 "
+                          "`Capabilities::instance().probe()`；它只该在启动时调一次");
+}
+
+void Capabilities::probe()
+{
+    if (m_probed) return;              // 幂等
 
     m_providers = makeProviders();
     for (Provider *p : m_providers) p->probe();
 
-    //   `[cap]` 报告：**这台机器到底能解什么**，一条 provider 一行。
-    //   ★ info 级：只在启动时几行，不许刷屏。
-    int total = 0;
+    //   ── 把结果冻成快照（之后全部是纯读）──────────────────────────────
     QSet<QString> unionOf;
+    QSet<QString> denied;
+    for (const Provider *p : m_providers) {
+        if (!p->available()) continue;
+        for (const QString &s : p->advertisedSuffixes()) {
+            if (excludedSuffix(s)) {
+                denied.insert(s);
+                continue;
+            }
+            unionOf.insert(s);
+            m_owners[s] << p->name();
+        }
+    }
+    m_suffixes = QStringList(unionOf.cbegin(), unionOf.cend());
+    m_suffixes.sort();
+    m_denied = QStringList(denied.cbegin(), denied.cend());
+    m_denied.sort();
+
+    //   `[cap]` 报告：**这台机器到底能解什么**，一条 provider 一行 + 一行总计。
+    //   ★ info 级：只在启动时几行，不许刷屏。
     for (const Provider *p : m_providers) {
         const QStringList sfx = p->advertisedSuffixes();
-        //   统计口径与 `suffixes()` 一致：**排除掉的策略性后缀不算进总数**
-        for (const QString &s : sfx)
-            if (!excludedSuffix(s)) unionOf.insert(s);
         qCInfo(lcDecode).noquote()
             << QStringLiteral("[cap] %1%2: %3 suffixes%4")
                    .arg(p->name(), -5)
@@ -88,64 +104,36 @@ void Capabilities::ensureProbed() const
                    .arg(sfx.size())
                    .arg(sfx.isEmpty() ? QString()
                                       : QStringLiteral(" (%1)").arg(sfx.join(QLatin1Char(' '))));
-        if (p->available()) total += sfx.size();
     }
     //   ★ 把"被策略排除的"写出来：否则看日志的人会以为"这台机器解不了 pdf"，
-    //     而不是"我们不做 pdf"（用户 2026-11-06：有更合适的工具，不凑这个热闹）。
-    QStringList denied;
-    for (const Provider *p : m_providers)
-        for (const QString &s : p->advertisedSuffixes())
-            if (excludedSuffix(s) && !denied.contains(s)) denied << s;
-    denied.sort();
+    //     而不是"我们不做 pdf"。
     qCInfo(lcDecode).noquote()
         << QStringLiteral("[cap] total : %1 suffixes from %2 providers%3")
-               .arg(unionOf.size()).arg(m_providers.size())
-               .arg(denied.isEmpty() ? QString()
-                                     : QStringLiteral(" (excluded by policy: %1)")
-                                           .arg(denied.join(QLatin1Char(' '))));
-}
+               .arg(m_suffixes.size()).arg(m_providers.size())
+               .arg(m_denied.isEmpty() ? QString()
+                                       : QStringLiteral(" (excluded by policy: %1)")
+                                             .arg(m_denied.join(QLatin1Char(' '))));
 
-void Capabilities::probe()
-{
-    ensureProbed();
+    m_probed = true;                   // **最后**才置位
 }
 
 QStringList Capabilities::suffixes() const
 {
-    ensureProbed();
-    QStringList out;
-    for (const Provider *p : m_providers) {
-        if (!p->available()) continue;
-        for (const QString &s : p->advertisedSuffixes())
-            if (!excludedSuffix(s)) out << s;
-    }
-    out.removeDuplicates();
-    out.sort();
-    return out;
+    warnIfNotProbed();
+    return m_suffixes;
 }
 
 bool Capabilities::canDecodeSuffix(const QString &suffix) const
 {
-    ensureProbed();
-    const QString s = suffix.trimmed().toLower();
-    if (s.isEmpty() || excludedSuffix(s)) return false;
-    for (const Provider *p : m_providers) {
-        if (!p->available()) continue;
-        if (p->advertisedSuffixes().contains(s)) return true;
-    }
-    return false;
+    warnIfNotProbed();
+    if (suffix.isEmpty()) return false;
+    return m_suffixes.contains(suffix.trimmed().toLower());
 }
 
 QHash<QString, QStringList> Capabilities::owners() const
 {
-    ensureProbed();
-    QHash<QString, QStringList> out;
-    for (const Provider *p : m_providers) {
-        if (!p->available()) continue;
-        for (const QString &s : p->advertisedSuffixes())
-            if (!excludedSuffix(s)) out[s] << p->name();
-    }
-    return out;
+    warnIfNotProbed();
+    return m_owners;
 }
 
 //   ★ 链式回退：provider 之间按 rank 升序，**首个解出非空图即停**。
@@ -153,7 +141,7 @@ QHash<QString, QStringList> Capabilities::owners() const
 //     而且"声明支持某后缀"≠"真能解出图"，所以只能逐个试、不能选一个用到底。
 Result Capabilities::decode(const Source &src, int page) const
 {
-    ensureProbed();
+    warnIfNotProbed();
 
     Result out;
     QStringList why;
@@ -185,12 +173,11 @@ Result Capabilities::decode(const Source &src, int page) const
 //   ★ 扫描期要对每个文件调一次，所以这里必须便宜：provider 的实现只读头，不解像素。
 QSize Capabilities::querySize(const Source &src, int page) const
 {
-    ensureProbed();
+    warnIfNotProbed();
     for (Provider *p : m_providers) {
         if (!p->available()) continue;
         const QSize s = p->querySize(src, page);
         if (s.isValid() && !s.isEmpty()) {
-            //   debug 级：排查"扫描尺寸与解码尺寸不一致 / 占位形状怪"时唯一的一手信息
             qCDebug(lcDecode).noquote()
                 << QStringLiteral("[decode] size %1x%2 by %3 <- %4")
                        .arg(s.width()).arg(s.height()).arg(p->name(),
@@ -209,7 +196,7 @@ QSize Capabilities::querySize(const Source &src, int page) const
 //   调用方的事）；provider 只是被允许少花点力气（默认实现就是 decode() + 我们的缩放）。
 QImage Capabilities::thumbnail(const Source &src, const QSize &target, int page) const
 {
-    ensureProbed();
+    warnIfNotProbed();
     if (!target.isValid()) return {};
     for (Provider *p : m_providers) {
         if (!p->available()) continue;
@@ -221,13 +208,14 @@ QImage Capabilities::thumbnail(const Source &src, const QSize &target, int page)
 
 QList<Report> Capabilities::report() const
 {
-    ensureProbed();
+    warnIfNotProbed();
     QList<Report> out;
     for (const Provider *p : m_providers) {
         Report r;
         r.name = p->name();
         r.available = p->available();
-        r.suffixes = p->advertisedSuffixes();
+        for (const QString &s : p->advertisedSuffixes())
+            if (!excludedSuffix(s)) r.suffixes << s;
         r.detail = QStringLiteral("%1 suffixes").arg(r.suffixes.size());
         out << r;
     }

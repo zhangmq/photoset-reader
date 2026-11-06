@@ -1,5 +1,7 @@
 #include "testsupport.h"
 
+#include "decode/capabilities.h"
+
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -17,6 +19,9 @@ int suiteMain(int argc, char *argv[], const std::function<int()> &suite)
     QApplication app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("photoset-reader"));
     QCoreApplication::setApplicationVersion(QStringLiteral("0.1-dev"));
+    //   ★ 能力探测 = **套件的"启动时"**：产品里由 `main.cpp` 做，套件没有那条路径，
+    //     所以在这里显式做一次（生产代码里**不再有惰性探测**，见 capabilities.h 的注释）。
+    decode::Capabilities::instance().probe();
     return suite();
 }
 

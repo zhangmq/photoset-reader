@@ -8,12 +8,16 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMap>
+#include <QMutex>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QSet>
 #include <QStandardPaths>
 #include <QStringList>
 #include <QTemporaryDir>
 #include <QThread>
+
+#include "../logging.h"
 
 namespace decode {
 namespace {
@@ -133,16 +137,11 @@ public:
         for (const CliProfile &p : byName) {
             const QString exe = QStandardPaths::findExecutable(p.program);
             if (exe.isEmpty()) continue;
-            QProcess probe;
-            probe.setProgram(exe);
-            probe.setArguments({QStringLiteral("--version")});
-            probe.start();
-            if (!probe.waitForFinished(3000)) {
-                probe.kill();
-                probe.waitForFinished(500);
-                continue;                       // 卡住 ⇒ 当作不可用
-            }
-            if (probe.exitStatus() != QProcess::NormalExit) continue;
+            //   ★★ **启动期不起子进程**（2026-11-06，用户定 1+2）：
+            //     探测只需要知道"这个程序在不在"，`findExecutable` 就够了。
+            //     以前这里会真的跑一次 `<tool> --version` 来探活 —— 那是**启动阻塞**的
+            //     唯一来源（工具存在却卡住时最坏 3 个 × 3 秒），而它换来的信息几乎没有：
+            //     工具真坏了，解码时自然会失败，留一条 warning 就够（见 `warnToolFailed()`）。
             CliTool t;
             t.profile = p;
             t.exe = exe;
@@ -198,10 +197,12 @@ public:
                 proc.kill();
                 proc.waitForFinished(1000);
                 errors << QStringLiteral("%1: timeout").arg(t.profile.name);
+                warnToolFailed(t.profile.name, QStringLiteral("timeout"));
                 continue;
             }
             if (proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0) {
                 errors << QStringLiteral("%1: rc=%2").arg(t.profile.name).arg(proc.exitCode());
+                warnToolFailed(t.profile.name, QStringLiteral("rc=%1").arg(proc.exitCode()));
                 continue;
             }
 
@@ -267,6 +268,22 @@ private:
     };
     QList<CliTool> m_tools;
     QStringList    m_suffixes;            // 只有用户 profile 显式声明才有内容
+
+    //   ★ 工具**第一次**解码失败时告警一次（用户定 1+2：启动期不再真跑工具验证）。
+    //     启动时只查"存在性"，所以"PATH 里有、但根本用不了"的情况要在这里留痕；
+    //     而且不许刷屏（一个工具只报一条）。
+    static void warnToolFailed(const QString &tool, const QString &why)
+    {
+        static QMutex mutex;
+        static QSet<QString> warned;
+        QMutexLocker lock(&mutex);
+        if (warned.contains(tool)) return;
+        warned.insert(tool);
+        qCWarning(lcDecode).noquote()
+            << QStringLiteral("[decode] cli tool '%1' failed (%2) — 它在 PATH 里，但这个文件解不了；"
+                              "启动时只检查了存在性，请确认该工具真能跑")
+                   .arg(tool, why);
+    }
 };
 
 }  // namespace

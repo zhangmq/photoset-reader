@@ -35,6 +35,7 @@
 
 #include "sequence.h"
 #include "viewermodel.h"
+#include "decode/capabilities.h"
 
 namespace {
 
@@ -144,6 +145,8 @@ int main(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("ib-bench-feed"));
+    //   ★ 工具也是"应用启动时"：能力探测必须显式做一次（生产代码里没有惰性探测）
+    decode::Capabilities::instance().probe();
 
     QCommandLineParser cli;
     cli.setApplicationDescription(QStringLiteral("Can prefetch feed a 60 fps consumer?"));
