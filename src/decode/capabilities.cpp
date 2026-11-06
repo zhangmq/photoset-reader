@@ -1,5 +1,6 @@
 #include "capabilities.h"
 
+#include "provider_gdk.h"
 #include "provider_qt.h"
 #include "provider_wic.h"
 
@@ -21,6 +22,10 @@ QList<Provider *> makeProviders()
     //   ★ 它把"用户装了 Raw / HEIF / AV1 扩展"变成"我们能解 arw / heic / avif"，
     //     而我们**不加一行格式代码**（枚举与解码全在参数化调用里）。
     if (Provider *wic = makeWicProvider()) out << wic;
+    //   rank 20：Linux 的 gdk-pixbuf（GNOME 栈）。非 Linux 返回 nullptr。
+    //   ★ KDE 机器上它和 kimageformats 高度重叠（去重后没影响）；GNOME 机器上往往
+    //     是 AVIF / JXL / HEIF 唯一能用的那一路。
+    if (Provider *gdk = makeGdkProvider()) out << gdk;
 #ifdef Q_OS_LINUX
     //   阶段 B：gdk-pixbuf（dlopen，GNOME 栈的 loader）
 #endif

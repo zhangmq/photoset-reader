@@ -108,6 +108,9 @@ add_library(ibcore STATIC
     #   Windows 系统编解码器（WIC）：非 Windows 编译成空桩，调用方拿到 nullptr
     src/decode/provider_wic.cpp
     src/decode/provider_wic.h
+    #   Linux gdk-pixbuf：**全部 dlopen**，不加编译期依赖；非 Linux 编译成空桩
+    src/decode/provider_gdk.cpp
+    src/decode/provider_gdk.h
     # ── 占位图（有字节但解不出；主显示与缩略图共用同一份几何）──
     src/placeholder.cpp
     src/placeholder.h
@@ -163,7 +166,9 @@ target_link_libraries(ibcore PUBLIC
     ${UNRAR_LIBRARY}
     #   WIC（Windows 系统编解码器）：windowscodecs = WIC 实现，ole32 = COM
     $<$<BOOL:${WIN32}>:windowscodecs>
-    $<$<BOOL:${WIN32}>:ole32>)
+    $<$<BOOL:${WIN32}>:ole32>
+    #   gdk-pixbuf 的符号全部 dlopen（见 provider_gdk.cpp）⇒ 只需要 dl
+    $<$<BOOL:${UNIX}>:${CMAKE_DL_LIBS}>)
 target_include_directories(ibcore PUBLIC ${LIBARCHIVE_INCLUDE_DIRS} ${LIBEXIF_INCLUDE_DIRS}
                                         ${LIBHEIF_INCLUDE_DIRS} ${UNRAR_INCLUDE_DIR})
 #   `IB_HAVE_DBUS`：`uimodel.cpp` 的屏幕抑制只在有 QtDBus 的平台编译（Windows 没有）
