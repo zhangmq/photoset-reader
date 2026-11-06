@@ -31,6 +31,7 @@
 #include "gpuscaleritem.h"
 #include "archivesource.h"
 
+#include "decode/capabilities.h"
 #include "natural.h"
 #include "uimodel.h"
 #include "previewprovider.h"
@@ -277,10 +278,13 @@ int main(int argc, char *argv[])
         }
         if (isProgress) {
             //   进度文件由 `UiModel::openProgress()` 负责（提前返回，不走来源校验）
-        } else if (!fi.isDir() && !ArchiveSource::isArchive(dir) && !isImageSuffix(fi.suffix())) {
-            qCWarning(lcApp).noquote() << QStringLiteral("[app] source is neither folder, archive nor image: %1").arg(dir);
-            return 2;
         }
+        //   ★ **用户显式打开的单文件不做任何格式过滤**（用户 2026-11-06）：
+        //     "有义务尝试解码" —— 扩展名什么都不是、甚至没有扩展名，也要进解码链试一次。
+        //     原来这里有一道 `!isDir && !isArchive && !isImageSuffix ⇒ return 2` 的闸门，
+        //     它让一个 `foo.xyz`（其实是张好图）连打开的机会都没有。
+        //     收录（目录扫描 / 压缩包条目）仍然按能力表过滤，那是另一回事 —— 见
+        //     `Sequence` 的目录分支与 `ArchiveSource` 的条目过滤。
     }
 
     // ── 单实例（用户 2026-11-02 选 A）：已有实例 ⇒ 把路径转发过去，自己退出 ──
@@ -295,6 +299,13 @@ int main(int argc, char *argv[])
     //   Qt 默认 256 MB **会把合法的 102 MP 照片当炸弹拒掉**，所以必须调高。
     //   设 1 GB：容得下 102 MP（306 MB）与跨页扫图，仍能拦住 2.5 GB 级的炸弹。
     QImageReader::setAllocationLimit(1024);
+
+    // ── 解码能力探测：**这台机器现在能解什么**（用户 2026-11-06 定）──────────────
+    //   唯一信息源是 provider 自己（Qt 插件列表 / 系统编解码器枚举 / 外部程序探测），
+    //   代码里没有任何格式字面量。结果进 `[cap]` 日志；白名单与文件对话框都从它取。
+    //   ★ 放在这里：日志级别已经生效（`--log-level` 解析过、`iblog::setLevel` 调过），
+    //     且早于任何扫描 —— 于是"用户装了编解码器却没生效"一眼就能看出来。
+    decode::Capabilities::instance().probe();
 
     QQmlApplicationEngine engine;
 

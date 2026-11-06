@@ -1,5 +1,7 @@
 #include "previewprovider.h"
 
+#include "placeholder.h"
+
 PreviewProvider::PreviewProvider(std::shared_ptr<PreviewStore> store)
     : QQuickImageProvider(QQuickImageProvider::Image), m_store(std::move(store))
 {
@@ -35,14 +37,21 @@ QImage PreviewProvider::requestImage(const QString &id, QSize *size, const QSize
         }
     }
 
-    const QImage img = imageread::imageScaled(entry.loc, entry.target);
-    if (img.isNull()) return {};
+    //   ★ 坏图（有字节、解不出）**不能空**（用户 2026-11-06）：按目标尺寸直接画占位。
+    //     `entry.target` 是 GUI 线程按条目宽高比算好的缩略图尺寸 —— 直接按它画，
+    //     绝不"画 1080 再缩到 90px"（40 张就是 187 MB 的瞬时浪费）。
+    bool hasBytes = false;
+    const QImage img = imageread::imageScaled(entry.loc, entry.target, &hasBytes);
+    const QImage out = img.isNull()
+        ? (hasBytes ? placeholder::draw(entry.target) : QImage())
+        : img;
+    if (out.isNull()) return {};
 
     {
         QMutexLocker lk(&m_store->mutex);
-        m_store->images.insert(id, img);                    // 回填，下次直接命中
+        m_store->images.insert(id, out);                    // 回填，下次直接命中
         if (m_store->images.size() > 512) m_store->images.clear();
     }
-    if (size) *size = img.size();
-    return img;
+    if (size) *size = out.size();
+    return out;
 }

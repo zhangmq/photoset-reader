@@ -3,6 +3,7 @@
 
 #include "exifmeta.h"
 #include "gpuscale.h"
+#include "placeholder.h"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -67,38 +68,10 @@ ViewerModel::~ViewerModel()
 }
 
 // ══ 占位图（2026-11-05）══════════════════════════════════════════════════════
-//   有字节、但解码器给不出图（**截断 / 坏编码**）⇒ 按序列里的**原图尺寸**画一张中性占位图。
-//   ★ 为什么必须有：这种页在长图集里很常见，若当成"没有图"就会**整屏被跳过去** ——
-//     用户永远看不到那一页，而且"跳屏"会把页码和阅读位置带偏。
-//   ★ 尺寸取序列里的显示尺寸（扫描时一定读到过），缩到长边 ≤ 1600 省内存（显示侧本来要缩）。
-//   ★ 只画几何（底色 + 边框 + 破损字形），**不烘文字**（避免 i18n 与字体依赖）。
-//   ★ 只读入参、不碰 `this` ⇒ 可以在**工作线程**里调（GUI 线程不做像素活）。
-static QImage placeholderImage(const QSize &size)
-{
-    QSize s = (!size.isValid() || size.isEmpty()) ? QSize(600, 800) : size;
-    if (s.width() > 1600 || s.height() > 1600) s.scale(1600, 1600, Qt::KeepAspectRatio);
-
-    QImage img(s, QImage::Format_ARGB32_Premultiplied);
-    img.fill(QColor(0x2a, 0x2a, 0x2e));
-
-    QPainter p(&img);
-    p.setRenderHint(QPainter::Antialiasing, true);
-    // 细边框：宽度跟着尺寸走（缩略看也看得见、大图不显粗）
-    const qreal line = qMax(2.0, qMin(s.width(), s.height()) / 200.0);
-    p.setPen(QPen(QColor(0x4a, 0x4a, 0x52), line));
-    p.setBrush(Qt::NoBrush);
-    p.drawRect(QRectF(line, line, s.width() - 2 * line, s.height() - 2 * line));
-    // 中央"破损图片"字形：一个方框 + 一条斜杠
-    const qreal side = qMin(s.width(), s.height()) * 0.22;
-    const QRectF box((s.width() - side) / 2.0, (s.height() - side) / 2.0, side, side);
-    p.setPen(QPen(QColor(0x66, 0x66, 0x72), qMax(2.0, side / 24.0)));
-    p.drawRoundedRect(box, side * 0.08, side * 0.08);
-    const qreal pad = side * 0.18;
-    p.drawLine(QPointF(box.left() + pad, box.top() + pad),
-               QPointF(box.right() - pad, box.bottom() - pad));
-    p.end();
-    return img;
-}
+//   有字节、但解码器给不出图 ⇒ 画占位图。**实现搬到了 `placeholder.h`**（2026-11-06）：
+//   预览条也要给坏图画占位（按 90px 直接画，绝不"画 1080 再缩"），两处必须同一份几何。
+//   尺寸规则也变了（用户定）：有原图尺寸 ⇒ 等比装进 1920×1080；没有 ⇒ 1080×1080 方图。
+//   ★ 只读入参、不碰 `this` ⇒ 仍在**工作线程**里调（GUI 线程不做像素活）。
 
 // ══ 工作线程：加载并解码 → post 回主线程 ════════════════════════════════════
 //   只做三件：`imageread::load`（唯一解码实现）；**解码失败但字节在 ⇒ 画占位图**；
@@ -126,7 +99,7 @@ void ViewerModel::preload(const Sequence::Item &imageMeta, int item)
         passwordLevel = r.passwordLevel;
         //   ★ 有字节、解不出图、也不是密码问题 ⇒ **占位图**（结论 = "这一条有图"）。
         //     只在这里做（工作线程）：GUI 线程不该为一张占位图刷几百万像素。
-        if (image.isNull() && passwordLevel < 0 && r.hasBytes) image = placeholderImage(meta.size);
+        if (image.isNull() && passwordLevel < 0 && r.hasBytes) image = placeholder::forScreen(meta.size);
         //   ★ 工作线程到此为止：只投递、不看任何共享标志。丢掉与否在主线程判。
         QMetaObject::invokeMethod(sink, [poster, epoch, item, image, passwordLevel, passwordUsed] {
             //   ★★ **第一步**：这份结果所属的那个 `ViewerModel` 还在不在？

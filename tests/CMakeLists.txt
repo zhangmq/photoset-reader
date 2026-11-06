@@ -55,5 +55,13 @@ add_test(NAME ib-test-viewer COMMAND ib-test-viewer
 #   ⚠️ 必须显式 `SKIP_RETURN_CODE 77`：不设的话 ctest 把 77 当**失败**。
 #      全新克隆里没有 `.testdata/`（gitignore），`ib-test-meta` 会整条跳过 ——
 #      没这条时 `scripts/install.sh`（新用户路径）会在 ctest 这步直接失败（实测）。
+#
+#   ★ 两个环境变量是 **Linux 无头环境**必须的（2026-11-06 实测，CachyOS / Plasma）：
+#     · `QT_QPA_PLATFORM=offscreen`：套件会建 `QGuiApplication`，SSH 会话里没有
+#       display ⇒ 四条套件全部 **Subprocess aborted**（不是断言失败，是启动就崩）；
+#     · `QT_FORCE_STDERR_LOGGING=1`：Qt 6 在检测到 journald 时把日志**发给 journald**，
+#       stderr 上一个字都没有 ⇒ 测试看起来"没有任何输出"，CI 里连 FAIL 都看不见。
+#     两个变量在 Windows 上无害（offscreen 插件照样有、stderr 本来就是控制台）。
 set_tests_properties(ib-test-scan ib-test-progress ib-test-meta ib-test-viewer
-                     PROPERTIES SKIP_RETURN_CODE 77)
+                     PROPERTIES SKIP_RETURN_CODE 77
+                     ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_FORCE_STDERR_LOGGING=1")

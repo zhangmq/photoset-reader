@@ -803,7 +803,13 @@ void Sequence::applyRows(const QVector<Row> &rows)
                            m_scanOptions.innerArchiveMaxMb);
         fillLocationPasswords(m_passwords, m_passwordDefault, it.loc);   // ★ 加密压缩包
         it.size = QSize(r.width, r.height);
-        it.missing = m_markMissingBySize && !it.size.isValid();
+        //   ★ **尺寸读不到 ≠ 缺图**（用户 2026-11-06 定）：只要后缀在能力表里，扫描就必须
+        //     列出它 —— 显示侧按"占位"处理（有尺寸 ⇒ 等比装进 1920×1080；无尺寸 ⇒ 1080×1080
+        //     方图，方图天然不与邻图配对）。原来这里是
+        //     `m_markMissingBySize && !size.isValid()`：头坏掉的图被当成"缺图"**永久跳过**，
+        //     连占位都不给 —— 与三态（缺图 / 占位 / 残图）冲突。
+        //     `missing` 从此只由 `markMissing()`（磁盘上真的没了）写出。
+        it.missing = false;
         const int pn = m_nodeIndexByOrd.value(r.parentOrd, m_nodeIndexByOrd.value(-1, -1));
         it.parentNode = pn;
         if (pn >= 0 && pn < m_tree.size()) {
@@ -879,7 +885,9 @@ void Sequence::startScan(const QString &path, int maxDepth, bool hidden, const S
 
     resetRows();
     m_scanOptions = opt;                      // ★ 扫描参数**调用方传**（序列不读设置）
-    m_markMissingBySize = true;               // 扫描路径：尺寸读不到 ⇒ 标 missing
+    m_markMissingBySize = false;              // ★ 2026-11-06 退役：尺寸读不到不再当缺图
+                                              //   （判据见上面 `it.missing = false` 那段注释；
+                                              //    这个成员现在恒为 false，下一步连同赋值一起删）
     m_root = absClean(path);
     m_recursive = true;
     m_archivePages = false;

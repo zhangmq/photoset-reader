@@ -1,6 +1,6 @@
 #include "natural.h"
 
-#include <QSet>
+#include "decode/capabilities.h"
 
 int naturalCompare(const QString &a, const QString &b)
 {
@@ -30,28 +30,25 @@ int naturalCompare(const QString &a, const QString &b)
     return 0;
 }
 
+// ══ 白名单 = **运行时能力**（用户 2026-11-06 定：零编译期格式知识）══════════
+//   这里原来是**写死的一张格式表**，它有两个方向都错的后果（2026-11-06 实测）：
+//     · 列了却解不出：avif / jxl / heic / heif / qoi（Windows 上根本没有对应解码器）
+//       ⇒ 文件能进列表、解码必然失败、永远只画占位；
+//     · 能解却够不着：jfif / svgz / xbm / xpm / cur（Qt 明明支持，我们没写进去）
+//       ⇒ 用户有这些文件就是看不见（`.jfif` 是个正经的 JPEG 扩展名）。
+//   现在改为问 `decode::Capabilities`：装了 kimageformats 就自动多出 raw/psd/xcf…，
+//   接了系统编解码器就自动多出 heic/jxr…，**一个字符都不用改代码**。
+//
+//   ★ 这两条保留**函数形态**（不删）：调用点有 6 处（`dirwalker` / `archive` / `sequence`
+//     / `main` / `uimodel`），它们表达的是"这条路径要不要按图片收"，不是"我们内建支持什么"。
 QStringList imageSuffixes()
 {
-    static const QStringList list = {
-        QStringLiteral("jpg"),  QStringLiteral("jpeg"), QStringLiteral("png"),
-        QStringLiteral("gif"),  QStringLiteral("bmp"),  QStringLiteral("webp"),
-        QStringLiteral("tif"),  QStringLiteral("tiff"), QStringLiteral("ico"),
-        QStringLiteral("tga"),  QStringLiteral("svg"),  QStringLiteral("avif"),
-        QStringLiteral("jxl"),  QStringLiteral("heic"), QStringLiteral("heif"),
-        QStringLiteral("qoi"),  QStringLiteral("pnm"),  QStringLiteral("pgm"),
-        QStringLiteral("ppm"),  QStringLiteral("pbm"),
-    };
-    return list;
+    return decode::Capabilities::instance().suffixes();
 }
 
 bool isImageSuffix(const QString &suffix)
 {
-    static const QSet<QString> exts = [] {
-        QSet<QString> s;
-        for (const QString &e : imageSuffixes()) s.insert(e);
-        return s;
-    }();
-    return exts.contains(suffix.toLower());
+    return decode::Capabilities::instance().canDecodeSuffix(suffix);
 }
 
 QString nameSortKey(const QString &name, bool isDir)

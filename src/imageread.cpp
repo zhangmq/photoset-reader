@@ -216,6 +216,28 @@ QImage toSrgb(const QImage &in)
     return out.isNull() ? in : out;      // 转换失败（Qt 不支持的 profile）⇒ 保持原样
 }
 
+//   统一成 **8-bit 显示格式**（2026-11-06 实测，必须有）：我们的渲染 / 缩放链路
+//   （GPU shader、cpuscaler、预览条）只认 8-bit，而 **RAW 类解码器给 16-bit**：
+//   Linux 上 `kimg_raw`（kimageformats → libraw）解 ARW 得到 `Format_RGBX64`
+//   （5496×3672，depth=64，161 MB/张）⇒ 直接上屏是**全黑**，而且把 GUI 线程拖住
+//   （实测：窗口出来了、每秒体检日志停在第一行、截图全黑）。
+//   ★ 这是"解码"而不是"处理"：不改变任何像素取值，只把精度降到链路能承载的宽度。
+//     色彩转换仍在前面（`toSrgb`）用 16-bit 精度做完，再降位深，质量最好。
+QImage toDisplayable(const QImage &in)
+{
+    if (in.isNull()) return in;
+    switch (in.format()) {
+    case QImage::Format_RGB32:
+    case QImage::Format_ARGB32:
+    case QImage::Format_ARGB32_Premultiplied:
+        return in;                              // 已经是链路认的格式，零拷贝
+    default:
+        break;
+    }
+    QImage out = in.convertToFormat(QImage::Format_ARGB32);
+    return out.isNull() ? in : out;
+}
+
 //   ★ 交给 Qt 之前先**认魔数**（2026-11-04，防段错误）：
 //     从压缩包里读出的字节若非已知图片格式（并发读 / 损坏导致的垃圾），
 //     `QImageReader` 会逐个插件试，Qt 的 RAW 插件（libraw）在非法输入上**段错误**
@@ -288,13 +310,13 @@ public:
 
     bool ok() const { return m_ok; }
     QSize size() { return m_ok ? m_r.size() : QSize(); }
-    QImage read() { return m_ok ? toSrgb(m_r.read()) : QImage(); }
+    QImage read() { return m_ok ? toDisplayable(toSrgb(m_r.read())) : QImage(); }
     //   缩略图：**按目标尺寸解码**（下采样预处理，不是最终缩放）
     QImage readScaled(const QSize &target)
     {
         if (!m_ok || !target.isValid()) return {};
         m_r.setScaledSize(target);
-        return toSrgb(m_r.read());
+        return toDisplayable(toSrgb(m_r.read()));
     }
 
 private:
@@ -372,6 +394,14 @@ QImage imageScaled(const Location &loc, const QSize &target)
 {
     EntryReader r(loc);
     return r.readScaled(target);
+}
+
+QImage imageScaled(const Location &loc, const QSize &target, bool *hasBytes)
+{
+    EntryReader r(loc);
+    const QImage img = r.readScaled(target);
+    if (hasBytes) *hasBytes = r.hasBytes;
+    return img;
 }
 
 QSize imageSize(const Location &loc, int *passwordLevel)

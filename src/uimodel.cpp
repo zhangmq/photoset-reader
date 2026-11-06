@@ -407,18 +407,12 @@ void UiModel::chooseOpenArchive()
 
 void UiModel::chooseOpenImage()
 {
-    //   过滤器 = **我们认得的扩展名**（`natural::imageSuffixes()`，唯一来源）∩ **系统真能解码的**
-    //   （`QImageReader`）。别直接用 QImageReader 的全量列表 —— 本机它会给出 **101 项**，
-    //   连 pdf / dds / psd / raw 这些我们根本不支持的也在里面（2026-11-01 实测）。
-    //   HEIC/HEIF 按定案（2026-11-01「不考虑支持」）不列进过滤器。
-    QSet<QByteArray> decodable;
-    for (const QByteArray &f : QImageReader::supportedImageFormats()) decodable.insert(f);
+    //   过滤器 = **本机能解的全部后缀**（`decode::Capabilities`，运行时探测）。
+    //   ★ 以前这里是"我们的静态表 ∩ `QImageReader` 的能力"：静态表列了 avif/jxl/heic/
+    //     heif/qoi 却在本机解不出（永远只画占位），而 jfif/svgz/xbm/xpm 明明能解却
+    //     一个都没列 —— 两个方向都错（2026-11-06 实测）。现在只有一个来源。
     QStringList pats;
-    for (const QString &s : imageSuffixes()) {
-        if (s == QLatin1String("heic") || s == QLatin1String("heif")) continue;
-        if (!decodable.contains(s.toLatin1())) continue;
-        pats << QStringLiteral("*.") + s;
-    }
+    for (const QString &s : imageSuffixes()) pats << QStringLiteral("*.") + s;
     const QString filter = tr("Images (%1);;All files (*)").arg(pats.join(QLatin1Char(' ')));
     const qint64 t0 = QDateTime::currentMSecsSinceEpoch();
     const QString start = dialogStartDir();

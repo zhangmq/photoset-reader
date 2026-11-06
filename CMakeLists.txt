@@ -97,6 +97,17 @@ add_library(ibcore STATIC
     src/dirwalker.h
     src/natural.cpp
     src/natural.h
+    # ── 解码能力：**运行时探测**（Qt 插件 / 系统编解码器 / 外部程序）。
+    #    ★ 本组文件里不出现任何格式名（用户 2026-11-06 定：零编译期格式知识）
+    src/decode/imagedecoder.cpp
+    src/decode/imagedecoder.h
+    src/decode/capabilities.cpp
+    src/decode/capabilities.h
+    src/decode/provider_qt.cpp
+    src/decode/provider_qt.h
+    # ── 占位图（有字节但解不出；主显示与缩略图共用同一份几何）──
+    src/placeholder.cpp
+    src/placeholder.h
     src/sequence.cpp
     src/sequence.h
     # ── 条目读取（位置 + 读图）：`Sequence` 只调用，不碰 QImageReader / QImage ──

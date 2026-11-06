@@ -75,6 +75,9 @@ QSize imageSize(const Location &loc, int *passwordLevel);
 //     只给时间轴悬停预览这种"小图"用；主显示路径仍解码全图再走我们的缩放层（格式纪律）。
 //     返回空 = 读不到（容器打不开 / 成员不存在 / 密码不对）。
 QImage imageScaled(const Location &loc, const QSize &target);
+//   ★ 带出"**有没有字节可读**"的版本（2026-11-06）：缩略图那条线要给**坏图**画占位、
+//     而给**缺图**留空 —— 原先两者都是空图，分不开（三态：缺图 / 占位 / 残图）。
+QImage imageScaled(const Location &loc, const QSize &target, bool *hasBytes);
 
 // 一张源图有几页（多页 TIFF 等）；1 = 普通单页图
 int pageCount(const QString &path);

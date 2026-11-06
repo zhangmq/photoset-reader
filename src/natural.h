@@ -15,8 +15,10 @@ int naturalCompare(const QString &a, const QString &b);
 //   若按纯名字比，`A` 是 `A.jpg` 的前缀 ⇒ 目录会排在封面之前（封面落到那一支的最后）。
 QString nameSortKey(const QString &name, bool isDir);
 
-// 是否是我们认得的图片扩展名（唯一实现，供目录与压缩包共用）
+// ★ 这两条**不再持有格式表**，只是 `decode::Capabilities` 的转发（2026-11-06）：
+//   "能解哪些格式"由 provider 在启动时运行时探测（Qt 插件 / 系统编解码器 / 外部程序），
+//   这里只负责"这条路径要不要按图片收"的判断入口，避免 6 个调用点各写一份。
 bool isImageSuffix(const QString &suffix);
 
-// 认得的图片扩展名**列表**（扫描与文件对话框过滤器共用同一份，别在别处再抄一遍）
+// 本机能解的图片扩展名列表（扫描与文件对话框过滤器共用同一份，别在别处再抄一遍）
 QStringList imageSuffixes();

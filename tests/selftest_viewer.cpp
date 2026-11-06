@@ -1,5 +1,9 @@
 #include "testsupport.h"
 
+//   ★ 占位图的目标尺寸规则是**产品口径**（等比装进 1920×1080 / 1080×1080 方图），
+//     测试直接引用实现，避免在测试里再抄一份常量。
+#include "placeholder.h"
+
 #include <QByteArray>
 #include <QColor>
 #include <QCoreApplication>
@@ -222,9 +226,17 @@ int runViewerSelfTest(const QString &realDir)
                 check(gotImage, QStringLiteral("③ 截断图：显示出一张图（残图或占位图）"));
                 check(vm.cursor() == 6,
                       QStringLiteral("③ 截断图：**没有跳屏**（cursor=%1，期望 6）").arg(vm.cursor()));
-                check(vm.imageA().size() == sqB.at(6).size,
-                      QStringLiteral("③ 截断图：图尺寸 = 序列里的原图尺寸（%1×%2）")
-                          .arg(vm.imageA().width()).arg(vm.imageA().height()));
+                //   ★ 占位图尺寸规则（用户 2026-11-06 定）：**有原图尺寸 ⇒ 等比装进
+                //     1920×1080**（"1080P 级别"），所以这里**不再等于原图尺寸**。
+                const QSize expectPh = placeholder::screenSize(sqB.at(6).size);
+                check(vm.imageA().size() == expectPh,
+                      QStringLiteral("③ 截断图：占位图尺寸 = 等比装进 1920×1080（%1×%2，期望 %3×%4）")
+                          .arg(vm.imageA().width()).arg(vm.imageA().height())
+                          .arg(expectPh.width()).arg(expectPh.height()));
+                //   尺寸未知 ⇒ 1080×1080 方图（方图靠 `narrowSize(invalid)==false`
+                //   天然独占一屏，不会跟邻图配对显示）
+                check(placeholder::screenSize(QSize()) == QSize(1080, 1080),
+                      QStringLiteral("③ 占位图：拿不到尺寸 ⇒ 1080×1080 方图"));
             }
         }
 
