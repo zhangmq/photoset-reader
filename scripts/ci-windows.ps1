@@ -609,20 +609,46 @@ function Invoke-Tests {
 
     $failed = @()
     #   ★ 与 `tests/CMakeLists.txt` 里的套件列表一一对应（新增套件时两边都要加）。
-    foreach ($t in @('ib-test-scan', 'ib-test-progress', 'ib-test-meta', 'ib-test-viewer', 'ib-test-decode')) {
-        Write-Host "  == $t =="
+    #   `ib-test-ui-hidpi` **不是一个二进制**：ctest 里它是同一个 `ib-test-ui` 加
+    #   `QT_SCALE_FACTOR=1.35` 再跑一遍（1.35 是这台设备的真实条件，也是旧实现算错
+    #   气泡位置的地方）⇒ 这里用 `exe` + `env` 两个字段表达同一件事。
+    $suites = @(
+        @{ exe = 'ib-test-scan' },
+        @{ exe = 'ib-test-progress' },
+        @{ exe = 'ib-test-meta' },
+        @{ exe = 'ib-test-viewer' },
+        @{ exe = 'ib-test-decode' },
+        @{ exe = 'ib-test-ui' },
+        @{ exe = 'ib-test-ui'; label = 'ib-test-ui-hidpi'; env = @{ QT_SCALE_FACTOR = '1.35' } }
+    )
+    foreach ($s in $suites) {
+        $t = $s.exe
+        #   ⚠️ 本脚本开着 `Set-StrictMode`：哈希表**缺键时直接取属性会抛** ⇒ 先 ContainsKey
+        $label = if ($s.ContainsKey('label')) { $s.label } else { $t }
+        Write-Host "  == $label =="
         $exe = Join-Path $BuildDir ("$t.exe")
-        if (-not (Test-Path $exe)) { $failed += "$t(missing)"; continue }
-        $out = Join-Path $BuildDir "$t.out"
-        $err = Join-Path $BuildDir "$t.err"
+        if (-not (Test-Path $exe)) { $failed += "$label(missing)"; continue }
+        #   套件专属环境变量：跑完就恢复（下一个套件不能带着上一个的缩放）
+        $restore = @{}
+        if ($s.ContainsKey('env')) {
+            foreach ($k in $s.env.Keys) {
+                $restore[$k] = [Environment]::GetEnvironmentVariable($k)
+                [Environment]::SetEnvironmentVariable($k, $s.env[$k])
+            }
+        }
+        $out = Join-Path $BuildDir "$label.out"
+        $err = Join-Path $BuildDir "$label.err"
         #   工作目录与 ctest 的 WORKING_DIRECTORY 一致（源码根）
         $r = Invoke-Captured $exe @() 120000 $out $err $RepoRoot
+        foreach ($k in $restore.Keys) {
+            [Environment]::SetEnvironmentVariable($k, $restore[$k])
+        }
         if (-not $r.Exited) {
             Write-Host '  TIMEOUT after 120s' -ForegroundColor Yellow
-            $failed += $t
+            $failed += $label
         } elseif ($r.ExitCode -ne 0 -and $r.ExitCode -ne 77) {
             Write-Host "  exit code $($r.ExitCode)" -ForegroundColor Yellow
-            $failed += $t
+            $failed += $label
         } else {
             Write-Host "  exit code $($r.ExitCode) (0=pass, 77=skip)" -ForegroundColor Green
         }

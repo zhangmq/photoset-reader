@@ -26,9 +26,8 @@
 #  include <unistd.h>
 #endif
 
-#include "cpuscaleritem.h"
 #include "logging.h"
-#include "gpuscaleritem.h"
+#include "qmlregister.h"
 #include "archivesource.h"
 
 #include "decode/capabilities.h"
@@ -330,13 +329,12 @@ int main(int argc, char *argv[])
     //   也不需要把它暴露给 QML（AGENTS：QML 禁止引用 `provider.*`）。
     Q_UNUSED(dir);   // 只有 `-d` 用得到它（打开来源）；QML 不再读 startDir
 
-    // GPU 缩放渲染组件（QML 可用）：显式注册。
-    //   （不用 QML_ELEMENT：那会让生成的注册文件按 `<gpuscaleritem.h>` 找头文件，
-    //     而 src/ 一旦进包含路径，libarchive 的 <archive.h> 就会被我们的 src/archive.h 顶掉）
+    // GPU / CPU 缩放渲染组件（QML 可用）：显式注册。
+    //   ★ 实现移到 `src/qmlregister.cpp`（2026-11-06）：**测试进程**同样要加载
+    //     `qrc:/qt/qml/AppUi/src/ui/Main.qml`，以前这两句只写在 `main.cpp` 里 ⇒
+    //     套件里 QML 报 "CpuScalerItem is not a type"。产品与套件现在共用同一份。
     //   ★ 必须放在**任何 QML 加载之前**（定稿视图 FullscreenView 的 `GpuScalerItem` 要用它）
-    qmlRegisterType<GpuScalerItem>("AppUi", 1, 0, "GpuScalerItem");
-    //   CPU 缩放项：**Smooth (Qt) 这一项**与**软件后端降级**都用它（设计 16 §五）
-    qmlRegisterType<CpuScalerItem>("AppUi", 1, 0, "CpuScalerItem");
+    app::registerQmlTypes();
 
     // ── 全局 VM 装配（放在所有"跑完即退"的路径之后）──────────
     //   ★ **全局只有一个 VM** = `app::UiModel`（QML 里的 `ui`）——viewer（`ui.viewer.*`）由它持有；

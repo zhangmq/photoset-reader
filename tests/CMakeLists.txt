@@ -50,6 +50,18 @@ qt_add_executable(ib-test-decode
 )
 target_link_libraries(ib-test-decode PRIVATE testsupport)
 
+# ── UI 契约（QML 加载 + `HintBubble` 几何 / 弹出类型）──
+#   为什么需要：解码/渲染有测试，**QML 一行覆盖都没有** ⇒ "某类型不存在"、
+#   "tooltip 在缩放窗口里压住按钮并抢指针"这类事故只能靠人眼发现。
+#   `ib_add_qml_resources()` 把整套 AppUi 模块挂到这个目标上（与 `ib-photoset-reader`
+#   同一份 QML）⇒ 断言的是**真实 QML**，不是复制品。
+#   ★ `QT_SCALE_FACTOR` 由两条 ctest 分别注入 1.0 / 1.35，同一二进制覆盖两种缩放。
+qt_add_executable(ib-test-ui
+    selftest_ui.cpp
+)
+target_link_libraries(ib-test-ui PRIVATE testsupport ibcore Qt6::Quick Qt6::Qml)
+ib_add_qml_resources(ib-test-ui)
+
 # ── ctest：相对 `.testdata` 的套件在**源码根**跑 ──────────────────────────
 add_test(NAME ib-test-scan COMMAND ib-test-scan
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
@@ -60,6 +72,11 @@ add_test(NAME ib-test-meta COMMAND ib-test-meta
 add_test(NAME ib-test-viewer COMMAND ib-test-viewer
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME ib-test-decode COMMAND ib-test-decode
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+#   UI 契约跑两遍：缩放 1.0 与 1.35（后者是这台设备真实的条件，也是旧实现出错的地方）
+add_test(NAME ib-test-ui COMMAND ib-test-ui
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME ib-test-ui-hidpi COMMAND ib-test-ui
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 # ── 可能**整条套件跳过**（夹具 / 环境不具备 ⇒ rc 77）：ctest 显示 *Skipped* ─────
@@ -74,5 +91,11 @@ add_test(NAME ib-test-decode COMMAND ib-test-decode
 #       stderr 上一个字都没有 ⇒ 测试看起来"没有任何输出"，CI 里连 FAIL 都看不见。
 #     两个变量在 Windows 上无害（offscreen 插件照样有、stderr 本来就是控制台）。
 set_tests_properties(ib-test-scan ib-test-progress ib-test-meta ib-test-viewer ib-test-decode
+                     ib-test-ui ib-test-ui-hidpi
                      PROPERTIES SKIP_RETURN_CODE 77
                      ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_FORCE_STDERR_LOGGING=1")
+#   ★ `ENVIRONMENT` 是**整体替换**、不是追加（2026-11-06 实测：先设 offscreen 再单独
+#     设 `QT_SCALE_FACTOR` ⇒ offscreen 被抹掉 ⇒ Linux 无头机上 `Subprocess aborted`）。
+#     缩放那一遍必须把三个变量写全。
+set_tests_properties(ib-test-ui-hidpi PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_FORCE_STDERR_LOGGING=1;QT_SCALE_FACTOR=1.35")

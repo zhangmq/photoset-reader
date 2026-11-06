@@ -87,6 +87,9 @@ add_library(ibcore STATIC
     # CPU 缩放项：Smooth (Qt) 这一项 + 软件后端降级都走它（设计 16 §五）
     src/cpuscaleritem.cpp
     src/cpuscaleritem.h
+    # ── QML 类型的手工注册（产品与测试**共用一份**：都基于 `Main.qml` 的套件要用）──
+    src/qmlregister.cpp
+    src/qmlregister.h
     src/archive.cpp
     src/archivesource.h
     src/dirwalker.cpp
@@ -253,10 +256,8 @@ install(FILES LICENSES/GPL-3.0-only.txt LICENSES/LGPL-3.0-only.txt
         DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 
 # ══ 应用图标：编进资源（窗口图标 / X11 任务栏用；桌面入口与 hicolor 由安装规则铺）══
-qt_add_resources(photoset-reader "appicon"
-    PREFIX "/icons"
-    BASE "${CMAKE_SOURCE_DIR}/assets/icons"
-    FILES "${CMAKE_SOURCE_DIR}/assets/icons/photoset-reader-256.png")
+#   ★ 资源本身在 `ib_add_qml_resources()` 里挂（2026-11-06：`AboutDialog` 与套件都要它）；
+#     这里只剩**使用侧**：`main.cpp` 的 `app.setWindowIcon(":/icons/photoset-reader-256.png")`。
 
 # ══ i18n：`.ts` → lrelease → `.qm` **编进资源**（`:/i18n/photoset-reader_<代码>.qm`）══
 #   · 源串一律**英文**（`qsTr()`/`tr()` 里写英文），其它语言靠译文——与 vsr-player 同一路线；
@@ -316,6 +317,15 @@ function(ib_add_qml_resources target)
         BASE "${CMAKE_SOURCE_DIR}/src"
         FILES
             "${CMAKE_SOURCE_DIR}/src/assets/fonts/materialdesignicons-webfont.ttf"
+    )
+    #   ★ 应用图标也进**每个**加载 `AppUi` 的目标（2026-11-06）：`AboutDialog` 里
+    #     `Image { source: "qrc:/icons/photoset-reader-256.png" }` —— 以前只挂在应用目标上，
+    #     套件加载 `Main.qml` 就报 "Cannot open: qrc:/icons/..."（`ib-test-ui` 的"零警告"
+    #     检查把它抓出来了）。放在这里 ⇒ 一份别名、谁加载界面谁带着。
+    qt_add_resources(${target} "${qmlres_name}_appicon"
+        PREFIX "/icons"
+        BASE "${CMAKE_SOURCE_DIR}/assets/icons"
+        FILES "${CMAKE_SOURCE_DIR}/assets/icons/photoset-reader-256.png"
     )
 
     # ── 新 UI（正规 QML 模块 + 单例令牌）─────────────────────────
