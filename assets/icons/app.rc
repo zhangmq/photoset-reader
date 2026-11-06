@@ -1,0 +1,12 @@
+// Windows 可执行文件的图标资源。
+//
+//   为什么需要它（用户 2026-11-07）：`app.setWindowIcon()` 只管窗口/任务栏，
+//   **资源管理器里看到的 exe 图标来自 PE 资源**，必须编进可执行文件。
+//   （Linux 那边靠 `.desktop` 的 `Icon=`，不需要这个。）
+//
+//   图标源：`assets/icons/photoset-reader.ico`（由 16/24/32/48/64/128/256 的 PNG 合成，
+//   见提交说明；`scripts/render-icons.sh` 负责 PNG 本体）。
+//
+//   ⚠️ 本文件只被 MSVC 的 rc.exe 编译；CMake 里用 `if(WIN32)` 挂上，别的平台不参与。
+
+IDI_ICON1 ICON "photoset-reader.ico"

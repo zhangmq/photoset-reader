@@ -137,10 +137,13 @@ Item {
         //     可以指到任意目录（含外部盘）。改路径**不迁移**旧文件。
         SettingsRow {
             label: qsTr("Favorites folder")
-            description: ui.settingsDraft.favoritesDir
+            //   * 2026-11-07（用户）：这里要显示**当前生效的收藏路径**。
+            //     设置值为空 = 用默认目录 ⇒ 显示 UiModel 算出来的实际路径（不是空串）。
+            description: ui.effectiveFavoritesDir
             Button {
                 label: qsTr("Change…")
-                onClicked: ui.chooseFavoritesDir()
+                //   走**草稿**：对话框里改的东西要等「确定」才生效（原来的直改生效设置是漏网的）
+                onClicked: ui.chooseFavoritesDirForDraft()
             }
         }
     }

@@ -266,6 +266,8 @@ QtObject {
     readonly property int numberW:      120      // 数字输入框宽
     readonly property int settingsW:    800      // 设置框宽 ← DSH settings-general `.panel{width:800px}`
     readonly property int settingsH:    800      // 设置框高上限 ← 同处 `height:min(800px, 100vh - 48px)`
+    //   * 2026-11-07（用户）：高度自适应但要有下限 —— 再矮就裁，不许挤成错乱的布局
+    readonly property int settingsMinH: 520
     readonly property int settingsNavW: 188      // 设置框左导航列宽 ← DSH `.nav{width:188px}`
     readonly property int osdKeyW:      64      // OSD 面板键列宽（最长键 = 4 字：色彩空间/修改时间）
     readonly property int osdPathMaxW: 480      // 顶栏相对路径最大宽（超出中间省略）

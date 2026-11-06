@@ -160,8 +160,16 @@ public:
 
     // ── 收藏夹 / 进度文件（设计 20）──
     QString favoritesDir() const;
+    //   * 2026-11-07：设置页显示**生效**路径（空值 = 默认目录），以及"只改草稿"的选择器
+    Q_PROPERTY(QString effectiveFavoritesDir READ effectiveFavoritesDir NOTIFY favoritesDirChanged)
+    QString effectiveFavoritesDir() const;
+    Q_INVOKABLE void chooseFavoritesDirForDraft();
     void setFavoritesDir(const QString &dir);
     Q_INVOKABLE void chooseFavoritesDir();
+    //   * 2026-11-07（用户）：设置里的「解码支持」页 —— 本次启动探到的能力表。
+    //     每行 = { suffix, provider, detail, builtin }；provider 是稳定 id（qt/wic/gdk/cli），
+    //     显示名与"要不要说具体组件"由 QML 决定。
+    Q_INVOKABLE QVariantList decodeSupport() const;
     //   ★ **恢复所有设置为默认值**（2026-11-05 用户要求）：设置对话框底部的按钮调它。
     //     默认值的唯一来源仍是 `AppSettings` 的成员初值；这里只是按顺序调每个 setter
     //     （写盘 / 发信号 / 语言重装 / 日志级别 / 预取下发给 viewer 都复用它们的副作用）。

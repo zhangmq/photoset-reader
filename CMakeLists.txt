@@ -218,6 +218,12 @@ qt_add_executable(photoset-reader
 #   时 GUI 进程同样继承句柄，只是不分配控制台。
 if(WIN32)
     set_target_properties(photoset-reader PROPERTIES WIN32_EXECUTABLE TRUE)
+    #   * 2026-11-07 (user): the exe icon is a PE resource (Explorer / taskbar / Alt-Tab),
+    #     app.setWindowIcon() only covers the window. rc.exe resolves the .ico relative to
+    #     the directory listed in INCLUDE_DIRECTORIES below.
+    target_sources(photoset-reader PRIVATE assets/icons/app.rc)
+    set_source_files_properties(assets/icons/app.rc PROPERTIES
+        INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/assets/icons")
 endif()
 # ★ 套件全部搬去 `tests/`（T0 第四批）后，应用**不再链 `testsupport`**（设计 14 §11）：
 #   `main.cpp` 里 0 个 `run*SelfTest` / 0 个套件 dispatch；dev CLI 与截图机制自带工具函数。
@@ -370,6 +376,7 @@ function(ib_add_qml_resources target)
         src/ui/components/SettingsImagePage.qml
         src/ui/components/SettingsSystemPage.qml
         src/ui/components/SettingsShortcutsPage.qml
+        src/ui/components/SettingsDecodePage.qml
         src/ui/fullscreen/FullscreenView.qml
         src/ui/fullscreen/FullscreenTopBar.qml
         src/ui/fullscreen/FullscreenBottomBar.qml

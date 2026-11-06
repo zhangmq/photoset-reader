@@ -1,4 +1,6 @@
 #include "uimodel.h"
+
+#include "decode/capabilities.h"
 #include "logging.h"
 
 #include "appsettings.h"
@@ -936,6 +938,55 @@ void UiModel::setFavoritesDir(const QString &dir)
     emit favoritesDirChanged();
     if (m_favorites) m_favorites->setDirectory(favoritesDir());
     refreshFavorited();                 // 换了目录 ⇒ "已收藏"的判断跟着变
+}
+
+//   本次启动探到的能力表（设置 → 解码支持）：
+//   一个后缀可能被多个 provider 认领（链条），这里**每个后缀一行**，provider 取 rank 最靠前的那个
+//   （= 真正会用它解码的那个），其余只进 detail 的日志，不再刷屏。
+QVariantList UiModel::decodeSupport() const
+{
+    const decode::Capabilities &caps = decode::Capabilities::instance();
+    const QList<decode::Report> reports = caps.report();
+    QHash<QString, QString> detailOf;          // provider id -> detail
+    QHash<QString, bool> availableOf;
+    for (const decode::Report &r : reports) {
+        detailOf.insert(r.name, r.detail);
+        availableOf.insert(r.name, r.available);
+    }
+
+    QVariantList rows;
+    const QHash<QString, QStringList> owners = caps.owners();
+    QStringList suffixes = caps.suffixes();
+    suffixes.sort();
+    for (const QString &sfx : suffixes) {
+        const QStringList who = owners.value(sfx);
+        const QString provider = who.isEmpty() ? QString() : who.first();
+        QVariantMap row;
+        row.insert(QStringLiteral("suffix"), sfx);
+        row.insert(QStringLiteral("provider"), provider);
+        row.insert(QStringLiteral("detail"), detailOf.value(provider));
+        row.insert(QStringLiteral("builtin"), provider == QLatin1String("qt"));
+        rows.append(row);
+    }
+    return rows;
+}
+
+//   生效的收藏路径（设置里存空 = 用默认目录；界面要显示**实际**路径，不能是空串）
+QString UiModel::effectiveFavoritesDir() const
+{
+    return favoritesDir();
+}
+
+//   设置对话框里的「更改…」：**只改草稿**，等「确定」才生效（与草稿模型一致）
+void UiModel::chooseFavoritesDirForDraft()
+{
+    const QString start = m_draft->favoritesDir().isEmpty() ? favoritesDir()
+                                                            : m_draft->favoritesDir();
+    const QString dir = QFileDialog::getExistingDirectory(
+        nullptr, tr("Choose favorites folder"), start);
+    if (dir.isEmpty())
+        return;                       //   用户取消 ⇒ 草稿不动
+    m_draft->setFavoritesDir(QDir::cleanPath(dir));
 }
 
 void UiModel::chooseFavoritesDir()

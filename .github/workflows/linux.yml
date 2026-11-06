@@ -118,3 +118,47 @@ jobs:
           name: photoset-reader-linux-x64
           path: photoset-reader-linux-x64.tar.gz
           retention-days: 14
+
+      #   ── AppImage（用户 2026-11-07：以前只有本地脚本能打，搬到工作流里）─────────
+      #   ★ 与 `scripts/package-appimage.sh` 的区别：那条走的是**静态 Qt** 构建
+      #     （`scripts/build-static-qt.sh`，要自己编 Qt，太慢不适合 CI）；这里用
+      #     `linuxdeploy` + `linuxdeploy-plugin-qt` 把**动态**构建连同 Qt 插件一起收进
+      #     AppDir —— 标准路线，CI 里几分钟能出包。
+      #   ★ 容器里没有 FUSE ⇒ 两个 AppImage 工具都要 `APPIMAGE_EXTRACT_AND_RUN=1`。
+      - name: AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p .ci/tools .ci/AppDir dist
+          curl -fL -o .ci/tools/linuxdeploy \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -fL -o .ci/tools/linuxdeploy-plugin-qt \
+            https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x .ci/tools/linuxdeploy .ci/tools/linuxdeploy-plugin-qt
+          export PATH="$PWD/.ci/tools:$PATH"
+          #   qt 插件靠 qmake 找 Qt 的安装位置
+          export QMAKE="$(command -v qmake6 || command -v qmake)"
+          linuxdeploy --appdir .ci/AppDir \
+            --executable build/photoset-reader \
+            --desktop-file assets/photoset-reader.desktop \
+            --icon-file assets/icons/photoset-reader-256.png \
+            --plugin qt
+          #   图标在 AppDir 里必须叫 <Icon= 的值>.png（desktop 写的是 photoset-reader）
+          cp assets/icons/photoset-reader-256.png .ci/AppDir/usr/share/icons/hicolor/256x256/apps/photoset-reader.png || true
+          cp assets/icons/photoset-reader-256.png .ci/AppDir/photoset-reader.png || true
+          curl -fL -o .ci/tools/appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x .ci/tools/appimagetool
+          VERSION="$(sed -n 's/^project(photoset-reader VERSION \([0-9][0-9.]*\).*/\1/p' CMakeLists.txt)$(sed -n 's/^set(PHOTOSET_VERSION_SUFFIX "\([^"]*\)".*/\1/p' CMakeLists.txt)"
+          export VERSION
+          .ci/tools/appimagetool .ci/AppDir "dist/photoset-reader-${VERSION}-x86_64.AppImage"
+          ls -l dist/
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v7
+        with:
+          name: photoset-reader-linux-appimage
+          path: dist/*.AppImage
+          retention-days: 14
+          if-no-files-found: warn

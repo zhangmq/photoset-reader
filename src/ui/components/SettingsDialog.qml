@@ -28,8 +28,15 @@ Popup {
     focus: true
     closePolicy: Popup.CloseOnEscape
     padding: 0
-    width: Math.min(Theme.settingsW, parent ? parent.width - Theme.spaceXl * 2 : Theme.settingsW)
-    height: Math.min(Theme.settingsH, parent ? parent.height - Theme.spaceXl * 2 : Theme.settingsH)
+    //   * 2026-11-07（用户）：**宽度固定**、**高度自适应但保底**；两者都随窗口重新对齐。
+    //     窗口太窄/太矮时按说的"裁掉设置窗"（不做缩放，布局不会被挤变形）。
+    width: Theme.settingsW
+    height: Math.max(Theme.settingsMinH,
+                     Math.min(Theme.settingsH,
+                              parent ? parent.height - Theme.spaceXl * 2 : Theme.settingsH))
+    //   相对窗口居中（Popup 的坐标是相对 parent = 窗口 overlay）
+    x: parent ? Math.round((parent.width - width) / 2) : 0
+    y: parent ? Math.round((parent.height - height) / 2) : 0
 
     // ★ 不掉暗背景（用户 2026-10-20："不要加 mask，方便对照设置调整效果"）：
     //   后面的画面保持原样，改设置时能直接看到效果。
@@ -57,14 +64,10 @@ Popup {
     property int tab: 0
 
     onOpened: {
-        var win = parent ? parent.Window.window : null
-        if (win && parent) {
-            var p = win.contentItem.mapToItem(parent, (win.width - width) / 2,
-                                              (win.height - height) / 2)
-            x = p.x
-            y = p.y
-        }
-        ui.beginSettingsEdit()          // 打开即拷一份：编辑只改草稿，取消什么都不用做
+        //   * 2026-11-07（用户）：打开设置就**暂停幻灯片**，关掉也不自动续播。
+        if (ui.viewer)
+            ui.viewer.playing = false
+        ui.beginSettingsEdit()          // 打开即拷一份：编辑只改草稿，「放弃修改」什么都不用做
         navCol.forceActiveFocus()
     }
 
@@ -110,7 +113,8 @@ Popup {
                 activeFocusOnTab: true
 
                 Repeater {
-                    model: [ qsTr("General"), qsTr("Image"), qsTr("System"), qsTr("Shortcuts") ]
+                    model: [ qsTr("General"), qsTr("Image"), qsTr("System"),
+                             qsTr("Shortcuts"), qsTr("Decode support") ]
                     delegate: Rectangle {
                         id: navItem
                         required property int index
@@ -172,6 +176,7 @@ Popup {
                     SettingsImagePage     { width: parent.width; visible: root.tab === 1 }
                     SettingsSystemPage    { width: parent.width; visible: root.tab === 2 }
                     SettingsShortcutsPage { width: parent.width; visible: root.tab === 3 }
+                    SettingsDecodePage    { width: parent.width; visible: root.tab === 4 }
                 }
             }
         }

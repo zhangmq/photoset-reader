@@ -127,6 +127,54 @@ Popup {
                 }
             }
 
+            //   * 2026-11-07（用户）：许可证与第三方声明放进「关于」。
+            //     链接指向仓库里的文件（随包安装的那两份是文档，不重复编进资源）。
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: Theme.spaceXs
+                spacing: Theme.space2xs
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.spaceSm
+                    Text { text: qsTr("License"); color: Theme.textCaption }
+                    Text {
+                        Layout.fillWidth: true
+                        text: "MIT · " + qsTr("view source")
+                        color: licMa.containsMouse ? Theme.brand : Theme.textSecondary
+                        font.underline: licMa.containsMouse
+                        elide: Text.ElideRight
+                        MouseArea {
+                            id: licMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: Qt.openUrlExternally(root.repoUrl + "/blob/main/LICENSE")
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.spaceSm
+                    Text { text: qsTr("Third-party"); color: Theme.textCaption }
+                    Text {
+                        Layout.fillWidth: true
+                        text: qsTr("components and licenses")
+                        color: tpMa.containsMouse ? Theme.brand : Theme.textSecondary
+                        font.underline: tpMa.containsMouse
+                        elide: Text.ElideRight
+                        MouseArea {
+                            id: tpMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: Qt.openUrlExternally(root.repoUrl + "/blob/main/THIRD-PARTY.md")
+                        }
+                    }
+                }
+            }
+
             Button {
                 Layout.alignment: Qt.AlignRight
                 Layout.topMargin: Theme.spaceSm
