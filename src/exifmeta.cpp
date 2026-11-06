@@ -1,4 +1,5 @@
 #include "exifmeta.h"
+#include "heifmeta.h"
 
 #include <QColorSpace>
 #include <QCoreApplication>
@@ -6,7 +7,6 @@
 #include <QMap>
 
 #include <libexif/exif-data.h>
-#include <libheif/heif.h>
 
 #include <zlib.h>
 
@@ -357,44 +357,20 @@ QString colorSpaceText(const QByteArray &icc, bool hasIcc)
     return desc + QCoreApplication::translate("ExifMeta", " → converted to sRGB");
 }
 
-// ── HEIF/AVIF：Exif 块与 ICC 都在 BMFF 的 box 表里，交给 libheif ──────────────
-//   ★ 磁盘文件按**路径**打开（libheif 自己 seek，不读全文）；包内成员给整份字节
-//   ★ Exif 载荷的前 4 字节是"TIFF 头在本块内的偏移"（HEIF 规范）；跳过它才是 `Exif\0\0…`
+// ── HEIF/AVIF：Exif 块与 ICC 都在 BMFF 的 box 表里，交给 `heifmeta` ────────────
+//   ★ 磁盘文件按**路径**交给它（libheif 自己 seek，不读全文）；包内成员给整份字节。
+//   ★★ libheif 现在是**运行期加载**（`heifmeta.cpp` 里 dlopen/LoadLibrary），
+//      不再是编译期依赖：没装 ⇒ 这两行拿不到（OSD 少 ICC/EXIF），**看图完全不受影响**。
+//      代价是 Windows 包里可以彻底去掉 `heif.dll`（1.4 MB）。
 void readHeif(const Source &src, JpegParts *out)
 {
-    heif_context *ctx = heif_context_alloc();
-    if (!ctx) return;
-    const QByteArray path = src.path.toUtf8();
-    const heif_error err = !src.path.isEmpty()
-        ? heif_context_read_from_file(ctx, path.constData(), nullptr)
-        : heif_context_read_from_memory_without_copy(
-              ctx, src.bytes.constData(), size_t(src.bytes.size()), nullptr);
-    if (err.code == heif_error_Ok) {
-        heif_image_handle *handle = nullptr;
-        if (heif_context_get_primary_image_handle(ctx, &handle).code == heif_error_Ok && handle) {
-            heif_item_id id = 0;
-            if (heif_image_handle_get_list_of_metadata_block_IDs(handle, "Exif", &id, 1) > 0) {
-                const size_t size = heif_image_handle_get_metadata_size(handle, id);
-                if (size > 4) {
-                    QByteArray blob;
-                    blob.resize(int(size));
-                    if (heif_image_handle_get_metadata(handle, id, blob.data()).code == heif_error_Ok)
-                        out->exif = blob.mid(4);
-                }
-            }
-            const size_t iccSize = heif_image_handle_get_raw_color_profile_size(handle);
-            if (iccSize > 0) {
-                QByteArray icc;
-                icc.resize(int(iccSize));
-                if (heif_image_handle_get_raw_color_profile(handle, icc.data()).code == heif_error_Ok) {
-                    out->icc = icc;
-                    out->hasIcc = true;
-                }
-            }
-            heif_image_handle_release(handle);
-        }
+    QByteArray exif, icc;
+    if (!heifmeta::read(src.path, src.bytes, &exif, &icc)) return;
+    if (!exif.isEmpty()) out->exif = exif;
+    if (!icc.isEmpty()) {
+        out->icc = icc;
+        out->hasIcc = true;
     }
-    heif_context_free(ctx);
 }
 
 }  // namespace

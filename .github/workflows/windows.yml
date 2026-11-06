@@ -6,7 +6,7 @@ name: windows
 #
 #   依赖来源：
 #     · Qt 6.12 —— aqtinstall（公开镜像，不需要 Qt 账号）
-#     · libarchive / libexif / libheif / liblzma / zlib —— vcpkg（runner 预装）
+#     · libarchive / libexif / liblzma / zlib —— vcpkg（runner 预装）
 #     · libunrar —— 上游源码 + 自带 UnRARDll.vcxproj（vcpkg 没有这个 port）
 
 on:
@@ -115,7 +115,6 @@ jobs:
           $vcpkg = Join-Path $env:VCPKG_INSTALLATION_ROOT "vcpkg.exe"
           & $vcpkg install `
             "libarchive[core,bzip2,lz4,lzma,zstd]" `
-            "libheif[core,dav1d]" `
             libexif liblzma zlib `
             --triplet x64-windows --recurse
           #   ★ 万一树里还留着 HEVC（旧缓存 / 别的包带进来的），装完直接卸掉

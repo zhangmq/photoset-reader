@@ -46,22 +46,18 @@ if(WIN32)
     find_library(LIBARCHIVE_LIBRARY NAMES archive libarchive REQUIRED)
     find_path(LIBEXIF_INCLUDE_DIR NAMES libexif/exif-data.h REQUIRED)
     find_library(LIBEXIF_LIBRARY NAMES libexif exif REQUIRED)
-    find_path(LIBHEIF_INCLUDE_DIR NAMES libheif/heif.h REQUIRED)
-    find_library(LIBHEIF_LIBRARY NAMES heif libheif REQUIRED)
     set(LIBARCHIVE_LIBRARIES ${LIBARCHIVE_LIBRARY})
     set(LIBEXIF_LIBRARIES     ${LIBEXIF_LIBRARY})
-    set(LIBHEIF_LIBRARIES     ${LIBHEIF_LIBRARY})
     set(LIBARCHIVE_INCLUDE_DIRS ${LIBARCHIVE_INCLUDE_DIR})
     set(LIBEXIF_INCLUDE_DIRS    ${LIBEXIF_INCLUDE_DIR})
-    set(LIBHEIF_INCLUDE_DIRS    ${LIBHEIF_INCLUDE_DIR})
 else()
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(LIBARCHIVE REQUIRED libarchive)
     # EXIF 解析：libexif（LGPL-2.1，动态链接）—— Qt 不向外暴露任何 EXIF 标签（见设计 17 §二）
     pkg_check_modules(LIBEXIF REQUIRED libexif)
-    # HEIC/AVIF 的 Exif/ICC 在 BMFF box 表里：用 libheif（LGPL-3.0）按需取，不自己解容器
-    #   ★ 不用 Exiv2（GPL-2.0+）—— 项目要能按宽松许可分发（用户 2026-10-21 定案）
-    pkg_check_modules(LIBHEIF REQUIRED libheif)
+    # ★ libheif **不再是编译期依赖**（2026-11-06）：HEIC/AVIF 的 Exif/ICC 改由
+    #   `src/heifmeta.cpp` 在**运行期 dlopen/LoadLibrary** 取。装了就有那两行元数据，
+    #   没装也照常编、照常看图 —— 顺带 Windows 包里可以彻底去掉 heif.dll（1.4 MB）。
 endif()
 find_package(ZLIB REQUIRED)
 
@@ -125,6 +121,9 @@ add_library(ibcore STATIC
     # ── 元数据（EXIF / 色彩空间）：纯函数，把"头字节"变成 OSD 的行 ──
     src/exifmeta.cpp
     src/exifmeta.h
+    # ── HEIF/AVIF 的元数据（Exif / ICC）：**运行期加载 libheif**，不是编译期依赖 ──
+    src/heifmeta.cpp
+    src/heifmeta.h
     src/appsettings.cpp
     src/appsettings.h
     # ── 进度文件（`.prsave`）：收藏 / 打开进度的唯一实现（设计 20）──
@@ -163,7 +162,6 @@ target_link_libraries(ibcore PUBLIC
     Qt6::GuiPrivate
     ${LIBARCHIVE_LIBRARIES}
     ${LIBEXIF_LIBRARIES}
-    ${LIBHEIF_LIBRARIES}
     ZLIB::ZLIB
     LibLZMA::LibLZMA
     ${UNRAR_LIBRARY}
@@ -173,7 +171,7 @@ target_link_libraries(ibcore PUBLIC
     #   gdk-pixbuf 的符号全部 dlopen（见 provider_gdk.cpp）⇒ 只需要 dl
     $<$<BOOL:${UNIX}>:${CMAKE_DL_LIBS}>)
 target_include_directories(ibcore PUBLIC ${LIBARCHIVE_INCLUDE_DIRS} ${LIBEXIF_INCLUDE_DIRS}
-                                        ${LIBHEIF_INCLUDE_DIRS} ${UNRAR_INCLUDE_DIR})
+                                        ${UNRAR_INCLUDE_DIR})
 #   `IB_HAVE_DBUS`：`uimodel.cpp` 的屏幕抑制只在有 QtDBus 的平台编译（Windows 没有）
 target_compile_definitions(ibcore PUBLIC $<$<BOOL:${UNIX}>:IB_HAVE_DBUS>)
 

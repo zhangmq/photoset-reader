@@ -381,7 +381,7 @@ function Install-Vcpkg {
     #     vcvars 环境（$script:VsInstallPath）不一致。
     if ($script:VsInstallPath) { $env:VCPKG_VISUAL_STUDIO_PATH = $script:VsInstallPath }
     Write-Note 'vcpkg install dependencies'
-    & $vcpkgExe install 'libarchive[core,bzip2,lz4,lzma,zstd]' 'libheif[core,dav1d]' libexif liblzma zlib --triplet x64-windows --recurse
+    & $vcpkgExe install 'libarchive[core,bzip2,lz4,lzma,zstd]' libexif liblzma zlib --triplet x64-windows --recurse
     if ($LASTEXITCODE -ne 0) { throw 'vcpkg install failed' }
 
     #   万一树里还留着 HEVC（旧缓存 / 别的包带进来），装完直接卸掉。
