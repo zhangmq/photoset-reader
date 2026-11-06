@@ -130,6 +130,11 @@ jobs:
   #     · 打包走仓库里已有的 `scripts/package-appimage.sh`（AppRun 是 shell 脚本，
   #       不需要 qt.conf / 手抄 QML 模块 —— 静态 Qt 把 QML 插件也链进去了）。
   appimage:
+    #   ★ 静态 Qt 的 release 资产由独立仓库产出，**没发布时这个 job 直接跳过**
+    #     （用户 2026-11-07）：把仓库变量 `STATIC_QT_TAG` 设成 `qt-6.12.0` 才会真正跑，
+    #     免得每次提交都因为资产还 404 而把整条工作流染红。
+    #       gh variable set STATIC_QT_TAG --body qt-6.12.0 -R zhangmq/photoset-reader
+    if: ${{ vars.STATIC_QT_TAG != '' }}
     runs-on: ubuntu-latest
     container: archlinux:latest
     timeout-minutes: 60
@@ -153,9 +158,10 @@ jobs:
           set -euo pipefail
           #   ★ 版本与资产名是**契约**：改 Qt 版本时两处一起改
           #     （这里 + https://github.com/zhangmq/photoset-reader-qt 的 release 标签）
-          QT_VERSION="6.12.0"
-          NAME="qt-${QT_VERSION}-static-linux-x86_64"
-          BASE="https://github.com/zhangmq/photoset-reader-qt/releases/download/qt-${QT_VERSION}"
+          #   ★ 用仓库变量当"契约"：它既是开关，也是 release 标签
+          TAG="${{ vars.STATIC_QT_TAG }}"
+          NAME="${TAG}-static-linux-x86_64"
+          BASE="https://github.com/zhangmq/photoset-reader-qt/releases/download/${TAG}"
           mkdir -p .tmp
           curl -fL --retry 3 -o "/tmp/${NAME}.tar.xz"      "${BASE}/${NAME}.tar.xz"
           curl -fL --retry 3 -o "/tmp/${NAME}.sha256"      "${BASE}/${NAME}.sha256"
