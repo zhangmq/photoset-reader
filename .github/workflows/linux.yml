@@ -133,7 +133,10 @@ jobs:
           NO_STRIP: "1"
         run: |
           set -euo pipefail
-          mkdir -p .ci/tools .ci/AppDir dist
+          mkdir -p .ci/tools .ci/AppDir .ci/icon dist
+          #   ★ linuxdeploy 按**文件名**给图标取名（desktop 里是 `Icon=photoset-reader`）
+          #     ⇒ 传进去的 png 必须就叫这个名字，否则报 "Could not find suitable icon"。
+          cp assets/icons/photoset-reader-256.png .ci/icon/photoset-reader.png
           curl -fL -o .ci/tools/linuxdeploy \
             https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           curl -fL -o .ci/tools/linuxdeploy-plugin-qt \
@@ -145,7 +148,7 @@ jobs:
           linuxdeploy --appdir .ci/AppDir \
             --executable build/photoset-reader \
             --desktop-file assets/photoset-reader.desktop \
-            --icon-file assets/icons/photoset-reader-256.png \
+            --icon-file .ci/icon/photoset-reader.png \
             --plugin qt
           #   图标在 AppDir 里必须叫 <Icon= 的值>.png（desktop 写的是 photoset-reader）
           cp assets/icons/photoset-reader-256.png .ci/AppDir/usr/share/icons/hicolor/256x256/apps/photoset-reader.png || true
