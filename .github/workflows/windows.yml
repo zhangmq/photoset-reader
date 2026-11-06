@@ -30,6 +30,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      #   ⚠️ 脚本编码自检（2026-11-06）：`.ps1` 里一旦出现非 ASCII 字节，就看运气 ——
+      #      带 BOM 时 PowerShell 按 UTF-8 读，BOM 被编辑工具吃掉就按系统 ANSI（中文机
+      #      CP936）读 ⇒ 整个脚本解析失败、报一堆乱码错误。所以规定 `scripts/*.ps1`
+      #      **纯 ASCII**，这条自检放在最前面（它自己也是 ASCII）。
+      - name: Check PowerShell scripts are ASCII-only
+        shell: pwsh
+        run: ./scripts/check-scripts-ascii.ps1
+
       #   MSVC 只在 Windows runner 上有：这一步把 cl / link / msbuild 放进 PATH。
       #   ★ 不锁 VS 版本（runner 镜像会换，锁了反而找不到）；unrar 那一步也**不用 msbuild**，
       #     所以工具集编号不需要猜。

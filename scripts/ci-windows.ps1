@@ -1,38 +1,38 @@
-﻿<#
+<#
 .SYNOPSIS
-    在 Windows 上本地复跑 `.github/workflows/windows.yml` 的构建流程。
+    Re-run the .github/workflows/windows.yml build pipeline locally on Windows.
 
 .DESCRIPTION
-    CI 那边依赖来自 aqt/手动 Qt 仓库 + runner 预装的 vcpkg + 自己编的 libunrar；
-    本地版把这四件事都做在**工作区**里（默认 `.local/`），不动系统目录：
+    In CI the deps come from the aqt / manual Qt repo + the runner-provided vcpkg + a self-built libunrar;
+    locally all of it happens inside the workspace (default .local/), nothing touches system dirs:
 
         .local/
-          dl/           下载缓存（Qt 的 .7z、unrar 源码、vcpkg zip）
-          tools/7zr.exe 解 Qt 的 .7z
+          dl/           download cache (Qt .7z, unrar source, vcpkg zip)
+          tools/7zr.exe unpacks the Qt .7z
           qt/6.12.0/msvc2022_64/
           vcpkg/        vcpkg + installed/x64-windows
           unrar/        lib/unrar.lib + include/unrar/dll.hpp
 
-    与 CI 的**唯一实质差异**：
-      · 没有 actions/cache —— 依赖装过一次就留在 `.local/`，脚本按「已存在则跳过」增量处理；
-      · 没有 upload-artifact —— 产物是 `dist/photoset-reader-windows-x64.zip`，与 CI 同名同结构。
-    其它步骤（MSVC 环境、configure 参数、HLSL 编译检查、测试逐个跑、windeployqt + PE 依赖闭包、
-    ICU / VC 运行时的补齐、打包后冒烟）都照 workflow 逐条对应，方便本地验证工作流本身。
+    The only real differences from CI:
+      * no actions/cache - once installed the deps stay in .local/, so the script skips what already exists;
+      * no upload-artifact - the artifact is dist/photoset-reader-windows-x64.zip, same name and shape as CI.
+    Everything else (MSVC env, configure args, HLSL compile check, running every suite, windeployqt + PE dep closure,
+    ICU / VC runtime top-up, post-package smoke) mirrors the workflow step by step, so the workflow itself can be verified locally.
 
 .PARAMETER Step
-    all（默认）/ deps / configure / build / hlsl / test / package
+    all (default) / deps / configure / build / hlsl / test / package
 
 .PARAMETER DepsRoot
-    依赖安装根目录，默认 `<仓库>/.local`。
+    Dependency root, defaults to <repo>/.local.
 
 .PARAMETER BuildDir
-    构建目录，默认 `<仓库>/build`。
+    Build directory, defaults to <repo>/build.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File scripts\ci-windows.ps1
 
 .EXAMPLE
-    # 只重编、跑测试，不重新装依赖、不打包
+    # rebuild + run tests only: no dependency install, no packaging
     powershell -ExecutionPolicy Bypass -File scripts\ci-windows.ps1 -Step all -SkipPackage
 #>
 [CmdletBinding()]
@@ -44,8 +44,8 @@ param(
     [string]$BuildDir = '',
     [string]$Config = 'Release',
 
-    #   `-Step run` 传给程序的一整条参数（例如 '"H:\Dragon Ball" --log-level debug'；
-    #   ⚠️ 用字符串而不是数组：`powershell -File` 传数组时会被逗号拼成一个参数）
+    #   the whole argument line passed by -Step run (e.g. '"H:\Dragon Ball" --log-level debug';
+    #   NOTE: a string, not an array - powershell -File joins an array with commas into a single arg)
     [string]$RunArgs = '',
 
     [string]$QtVersion = '6.12.0',
@@ -73,7 +73,7 @@ $VcpkgInstalled = Join-Path $VcpkgRoot 'installed\x64-windows'
 $UnrarPrefix = Join-Path $DepsRoot 'unrar'
 $DlDir    = Join-Path $DepsRoot 'dl'
 
-# ── 输出：与 CI 一样分步骤、可读；失败即抛 ───────────────────────────────────
+# -- output: step-wise and readable like CI; any failure throws --------------------
 function Write-Head([string]$text) {
     Write-Host ''
     Write-Host ("=" * 78) -ForegroundColor DarkCyan
@@ -82,7 +82,7 @@ function Write-Head([string]$text) {
 }
 function Write-Note([string]$text) { Write-Host "  - $text" -ForegroundColor DarkGray }
 
-# ── 版本信息：与 windows.yml 的 env 段一一对应 ──────────────────────────────
+# -- versions: mirrors the env block of windows.yml 1:1 ---------------------------
 Write-Head "photoset-reader / local Windows CI"
 Write-Note "repo      = $RepoRoot"
 Write-Note "deps      = $DepsRoot"
@@ -92,7 +92,7 @@ Write-Note "unrar     = $UnrarVersion"
 Write-Note "config    = $Config"
 Write-Note "step      = $Step"
 
-# ══ 工具函数 ═══════════════════════════════════════════════════════════════
+# == helpers ======================================================================
 
 function Get-NodePath {
     $n = Get-Command node -ErrorAction SilentlyContinue
@@ -100,8 +100,8 @@ function Get-NodePath {
     return $null
 }
 
-#   本机 PowerShell/.NET 的 Schannel 在受限环境里拿不到凭据（SEC_E_NO_CREDENTIALS），
-#   而 Node 自带 OpenSSL，所以下载优先走 node，其次才退回 Invoke-WebRequest。
+#   In restricted environments Schannel (PowerShell/.NET) cannot get credentials (SEC_E_NO_CREDENTIALS),
+#   while Node ships OpenSSL, so downloads go through node first and only then fall back to Invoke-WebRequest.
 function Get-RemoteFile([string]$Url, [string]$OutFile) {
     if (Test-Path $OutFile) {
         Write-Note "skip (exists): $([IO.Path]::GetFileName($OutFile))"
@@ -125,8 +125,8 @@ function Get-RemoteFile([string]$Url, [string]$OutFile) {
 
 function Invoke-Native([string]$Exe, [string[]]$ArgList, [string]$What = '') {
     if ($What) { Write-Note $What }
-    #   ★ PS 5.1 把 native 的 stderr 当 ErrorRecord；`$ErrorActionPreference = 'Stop'` 下
-    #     编译器/工具的一条 warning 就会打断整步（实测 vcpkg remove）。这里只看退出码。
+    #   !! PS 5.1 turns native stderr into an ErrorRecord; with $ErrorActionPreference = 'Stop'
+    #      a single compiler/tool warning aborts the whole step (observed with vcpkg remove). Only exit codes matter here.
     $eap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
@@ -138,15 +138,15 @@ function Invoke-Native([string]$Exe, [string[]]$ArgList, [string]$What = '') {
     if ($code -ne 0) { throw "command failed ($code): $Exe $($ArgList -join ' ')" }
 }
 
-# ── MSVC 环境：等价于 CI 里的 `ilammy/msvc-dev-cmd@v1` ─────────────────────
+# -- MSVC environment: equivalent to ilammy/msvc-dev-cmd@v1 in CI -------------------
 function Import-MsvcEnvironment {
     if ($env:VSCMD_VER) { Write-Note "MSVC env already present (VSCMD_VER=$env:VSCMD_VER)"; return }
 
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (-not (Test-Path $vswhere)) { throw "vswhere not found: $vswhere" }
 
-    #   ★ 不能只用 `-latest`：本机同时装了 BuildTools（新，但没有 VS 的 CMake 组件）
-    #     与 Community（带 CMake）⇒ 取「有 vcvars 且带 CMake」的那一套。
+    #   !! -latest is not enough: this machine has both BuildTools (newer, but without the VS CMake component)
+    #      and Community (with CMake) => pick the one that has vcvars AND CMake.
     $candidates = @(& $vswhere -all -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
     if (-not $candidates) { throw 'MSVC toolset not found (VS 2022 with C++ workload is required)' }
     $vsPath = $null
@@ -166,7 +166,7 @@ function Import-MsvcEnvironment {
     $vcvars = Join-Path $vsPath 'VC\Auxiliary\Build\vcvars64.bat'
     if (-not (Test-Path $vcvars)) { throw "vcvars64.bat not found: $vcvars" }
 
-    #   把 vcvars 设出来的环境变量搬进当前进程（cmd /c "call ... && set"）
+    #   copy the env vars produced by vcvars into this process (cmd /c "call ... && set")
     $lines = & cmd.exe /c "`"$vcvars`" >nul && set"
     if ($LASTEXITCODE -ne 0) { throw 'vcvars64.bat failed' }
     foreach ($line in $lines) {
@@ -176,16 +176,16 @@ function Import-MsvcEnvironment {
     }
     Write-Note "MSVC = $env:VCToolsVersion"
 
-    #   VS 自带的 cmake / ninja 不在 PATH 上（CI 的 runner 有独立安装，本地用 VS 的）
+    #   VS ships cmake / ninja but they are not on PATH (CI has its own installs; locally use the VS ones)
     $vsCmakeDir = Join-Path $vsPath 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin'
     if (Test-Path (Join-Path $vsCmakeDir 'cmake.exe')) {
         $env:PATH = $vsCmakeDir + ';' + (Join-Path $vsPath 'Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja') + ';' + $env:PATH
     }
     if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
-        throw 'cmake not found（该 VS 实例没装 CMake 组件；装它或把 cmake 放进 PATH）'
+        throw 'cmake not found (this VS instance lacks the CMake component; install it or put cmake on PATH)'
     }
     if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) {
-        throw 'ninja not found（随 VS 的 CMake 组件一起安装）'
+        throw 'ninja not found (installed together with the CMake component of VS)'
     }
 }
 
@@ -193,13 +193,13 @@ function Add-EnvPath([string]$Path) {
     if ($Path -and (Test-Path $Path)) { $env:PATH = $Path + ';' + $env:PATH }
 }
 
-# ══ 运行期依赖检查（避免 Windows 弹「找不到 xxx.dll」的模态框）════════════════
-#   Windows 在**加载期**找不到 DLL 会弹系统错误框、进程挂住。开发态的
-#   `photoset-reader.exe` 不会把 Qt / vcpkg / unrar 的 DLL 拷到自己旁边，
-#   所以直接双击它就会弹框。这里在脚本里先查一遍：缺什么就打在终端里并报错，
-#   而不是留给用户去点那个框。
+# == runtime dependency check (avoids the Windows "cannot find xxx.dll" modal box) ===
+#   When a DLL is missing at load time Windows shows a system error box and the process hangs. A dev-tree
+#   photoset-reader.exe does not have the Qt / vcpkg / unrar DLLs next to it,
+#   so double-clicking it pops that box. This script checks first: it prints what is missing and fails,
+#   instead of leaving the user to click it away.
 function Get-PeDependents([string]$File) {
-    if (-not (Get-Command dumpbin -ErrorAction SilentlyContinue)) { throw 'dumpbin 不在 PATH 上（先导入 MSVC 环境）' }
+    if (-not (Get-Command dumpbin -ErrorAction SilentlyContinue)) { throw 'dumpbin is not on PATH (import the MSVC environment first)' }
     $deps = (& dumpbin /nologo /dependents $File 2>$null) |
             Select-String '^\s+(\S+\.dll)\s*$' |
             ForEach-Object { $_.Matches[0].Groups[1].Value }
@@ -226,7 +226,7 @@ function Get-MissingRuntimeDeps([string]$Exe, [string[]]$SearchDirs) {
             if ($src) {
                 if (-not $seen.ContainsKey($src)) { $queue.Enqueue($src) }
             } elseif (-not (Test-Path (Join-Path $system32 $d))) {
-                $missing.Add(("{0}（被 {1} 引用）" -f $d, [IO.Path]::GetFileName($file)))
+                $missing.Add(("{0} (referenced by {1})" -f $d, [IO.Path]::GetFileName($file)))
             }
         }
     }
@@ -245,48 +245,48 @@ function Get-RuntimeSearchDirs([string]$ExtraDir) {
 function Invoke-Check {
     Write-Head 'Runtime dependency check'
     $exe = Join-Path $BuildDir 'photoset-reader.exe'
-    if (-not (Test-Path $exe)) { throw "找不到 $exe（先 -Step build）" }
+    if (-not (Test-Path $exe)) { throw "not found: $exe (run -Step build first)" }
     $missing = @(Get-MissingRuntimeDeps $exe (Get-RuntimeSearchDirs $BuildDir))
     if ($missing.Count -gt 0) {
-        foreach ($m in $missing) { Write-Host "  缺: $m" -ForegroundColor Yellow }
-        throw ("运行期依赖不全（{0} 个）。开发态 exe 需要 Qt/vcpkg/unrar 的 DLL —— " -f $missing.Count) +
-              '请用 -Step run 启动，或 -Step package 生成自包含目录（stage）后双击它。'
+        foreach ($m in $missing) { Write-Host "  missing: $m" -ForegroundColor Yellow }
+        throw ("runtime dependencies incomplete ({0}). The dev exe needs the Qt/vcpkg/unrar DLLs - " -f $missing.Count) +
+              'use -Step run, or -Step package to produce a self-contained stage and double-click that.'
     }
-    Write-Host '  依赖齐全：Qt / vcpkg / libunrar 全部能解析' -ForegroundColor Green
+    Write-Host '  deps OK: Qt / vcpkg / libunrar all resolve' -ForegroundColor Green
 }
 
 function Invoke-Run {
     Write-Head 'Run'
     $exe = Join-Path $BuildDir 'photoset-reader.exe'
-    if (-not (Test-Path $exe)) { throw "找不到 $exe（先 -Step build）" }
+    if (-not (Test-Path $exe)) { throw "not found: $exe (run -Step build first)" }
     $dirs = Get-RuntimeSearchDirs $BuildDir
     $missing = @(Get-MissingRuntimeDeps $exe $dirs)
     if ($missing.Count -gt 0) {
-        foreach ($m in $missing) { Write-Host "  缺: $m" -ForegroundColor Yellow }
-        throw '运行期依赖不全 —— 拒绝启动（否则 Windows 会弹「找不到 xxx.dll」的框）'
+        foreach ($m in $missing) { Write-Host "  missing: $m" -ForegroundColor Yellow }
+        throw 'deps incomplete - refusing to start (otherwise Windows pops the "cannot find xxx.dll" box)'
     }
     foreach ($d in $dirs) { Add-EnvPath $d }
     $argLine = $RunArgs.Trim()
-    #   没给 --log-file 就补一个（GUI 子系统没有控制台，出问题只能看文件）
+    #   add --log-file when absent (a GUI subsystem has no console; the log file is all you get)
     if ($argLine -notmatch '--log-file') {
         $argLine = ($argLine + ' --log-file "' + (Join-Path $BuildDir 'run.log') + '"').Trim()
     }
-    Write-Note ("启动: {0} {1}" -f $exe, $argLine)
-    #   ★ **多实例应用**（2026-11-06 起；以前是单实例转发）：新起的 exe 会**自己开窗口**，
-    #     不会再把手里的路径转给旧进程。但"旧进程还在跑"这件事本身仍值得提醒 ——
-    #     你盯着的那个窗口可能是旧的（旧代码），"改了没生效"有一半是这个。
+    Write-Note ("launch: {0} {1}" -f $exe, $argLine)
+    #   !! MULTI-INSTANCE app (since 2026-11-06; it used to forward to a running instance): a new exe opens its own window,
+    #      it no longer hands its path to an older process. Still worth warning that an old one is running -
+    #      the window you are looking at may be old code; "my change did nothing" is often exactly this.
     $running = @(Get-Process photoset-reader -ErrorAction SilentlyContinue)
     if ($running.Count -gt 0) {
         foreach ($p in $running) {
             $path = ''
             $started = ''
             try { $path = $p.Path; $started = $p.StartTime.ToString('HH:mm:ss') } catch { }
-            Write-Warning ("已有实例在跑：pid={0} 启动于 {1} 路径={2}" -f $p.Id, $started, $path)
+            Write-Warning ("instance already running: pid={0} started {1} path={2}" -f $p.Id, $started, $path)
         }
-        Write-Warning '这次启动会另开一个窗口（多实例）；要看新构建就认准新窗口，或先关掉旧的'
+        Write-Warning 'this launch opens another window (multi-instance); look at the new one, or close the old one first'
     }
-    #   ★ `--version` / `--help`：GUI 子系统没有控制台，Qt 会把它们弹成**消息框**
-    #     （用户 2026-11-05 看到「应用名 + 版本」的框）。这里改成重定向输出直接打印。
+    #   !! --version / --help: a GUI subsystem has no console, so Qt turns them into a MESSAGE BOX
+    #      (the user saw an "app name + version" box on 2026-11-05). Here the output is redirected and printed.
     if ($argLine -match '(^|\s)(--version|-v|--help|-h)(\s|$)') {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = $exe
@@ -309,7 +309,7 @@ function Invoke-Run {
     Start-Process -FilePath $exe -ArgumentList $argLine -WorkingDirectory $BuildDir
 }
 
-# ══ deps：Qt / vcpkg / libunrar（对应 workflow 的 Restore Qt → vcpkg → libunrar）══
+# == deps: Qt / vcpkg / libunrar (mirrors Restore Qt -> vcpkg -> libunrar) ===========
 
 function Install-SevenZip {
     $sevenZip = Join-Path $DepsRoot 'tools\7zr.exe'
@@ -330,7 +330,7 @@ function Install-Qt {
     Get-RemoteFile "$repo/Updates.xml" $updates
     [xml]$xml = Get-Content $updates
 
-    #   与 workflow 相同的三个包；qtdoc / qttranslations 不要（体积大、用不上）
+    #   the same three packages as the workflow; no qtdoc / qttranslations (big, unused)
     $want = @(
         "qt.qt6.6120.win64_$QtArch"
         "qt.qt6.6120.addons.qtshadertools.win64_$QtArch"
@@ -343,7 +343,7 @@ function Install-Qt {
             ForEach-Object { $_.Trim() } |
             Where-Object { $_ -and $_ -notmatch 'qtdoc|qttranslations' }
         foreach ($a in $archives) {
-            #   文件名 = <包内 Version> + <DownloadableArchives>（与 workflow 一致）
+            #   file name = <Version in package> + <DownloadableArchives> (same as the workflow)
             $url = "$repo/$($p.Name)/$($p.Version)$a"
             $file = Join-Path $DlDir ('qt\' + ($a -replace '/', '_'))
             Get-RemoteFile $url $file
@@ -375,20 +375,20 @@ function Install-Vcpkg {
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path $vcpkgExe)) { throw 'vcpkg bootstrap failed' }
     }
 
-    #   与 workflow 相同的包与 feature：
-    #     · libheif 关 hevc（AVIF 走 dav1d，不随包分发 HEVC 解码器 —— 设计 21 §8）
-    #     · libarchive 关 crypto / xar（用不上，只会加 DLL）
-    #   ★ 钉住 VS 实例：本机有两套 VS，vcpkg 默认取最新的一套，可能与已导入的
-    #     vcvars 环境（$script:VsInstallPath）不一致。
+    #   same packages and features as the workflow:
+    #     * libheif with hevc off (AVIF goes through dav1d; we never ship an HEVC decoder - design 21 s8)
+    #     * libarchive with crypto / xar off (unused, only adds DLLs)
+    #   !! pin the VS instance: this machine has two, vcpkg picks the newest by default, which may not match
+    #      the imported vcvars environment ($script:VsInstallPath).
     if ($script:VsInstallPath) { $env:VCPKG_VISUAL_STUDIO_PATH = $script:VsInstallPath }
     Write-Note 'vcpkg install dependencies'
     & $vcpkgExe install 'libarchive[core,bzip2,lz4,lzma,zstd]' libexif liblzma zlib --triplet x64-windows --recurse
     if ($LASTEXITCODE -ne 0) { throw 'vcpkg install failed' }
 
-    #   万一树里还留着 HEVC（旧缓存 / 别的包带进来），装完直接卸掉。
-    #   ★ PowerShell 5.1：native 命令往 stderr 写东西时，`2>$null` 会变成 ErrorRecord，
-    #     配上 `$ErrorActionPreference = 'Stop'` 直接终止脚本（实测：这行把整步 deps 打断）。
-    #     ⇒ 这里临时放宽，只看退出码。
+    #   if an HEVC provider is still in the tree (old cache / pulled in by another package), remove it right after install.
+    #   !! PowerShell 5.1: when a native command writes to stderr, 2>$null becomes an ErrorRecord
+    #      and with $ErrorActionPreference = 'Stop' it kills the script (observed: this line aborted the deps step).
+    #      => relax temporarily here; only look at the exit code.
     $eap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     & $vcpkgExe remove libde265 libx265 2>&1 | Out-Null
@@ -419,25 +419,25 @@ function Install-Unrar {
     $srcDir = Get-ChildItem $srcRoot -Directory | Select-Object -First 1
     if (-not $srcDir) { throw "unrar source not found in $srcRoot" }
 
-    #   ★★ 关掉 unrar 的 SMP（线程池）：7.1.6 在 DLL 模式 + 本工程"逐条读、随时关包"的用法下，
-    #      `RARCloseArchive` 会死等线程池里的工作线程（2026-11-05 真机：打开加密 solid 包、
-    #      解到第 ~43 条时整个窗口卡死；线程栈停在 RARCloseArchive → WaitForSingleObject）。
-    #      单线程解压只是慢一点，但不会卡死。详见 docs/windows/pitfalls.md 坑-15。
+    #   !! disable unrar SMP (thread pool): with 7.1.6 in DLL mode and our "read one item, close any time" usage
+    #      RARCloseArchive waits forever for a pool worker (real machine 2026-11-05: an encrypted solid archive,
+    #      around item 43 the whole window froze; the thread stack sat in RARCloseArchive -> WaitForSingleObject).
+    #      Single-threaded unpacking is only slower, it never hangs. See docs/windows/pitfalls.md pit-15.
     $osHpp = Join-Path $srcDir.FullName 'os.hpp'
     $osText = [IO.File]::ReadAllText($osHpp)
     $patched = $osText -replace '#if !defined\(ZIPSFX\)\s*\r?\n#define RAR_SMP\s*\r?\n#endif',
         "// [photoset] RAR_SMP disabled (dll-mode deadlock); see docs/windows/pitfalls.md`r`n#if 0`r`n#define RAR_SMP`r`n#endif"
     if ($patched -eq $osText) {
-        Write-Warning 'unrar: RAR_SMP 补丁没匹配上（源码版本变了？）—— 可能仍会卡死'
+        Write-Warning 'unrar: the RAR_SMP patch did not apply (source version changed?) - it may still hang'
     } else {
         [IO.File]::WriteAllText($osHpp, $patched, (New-Object System.Text.UTF8Encoding($false)))
         Write-Note 'patched: RAR_SMP disabled'
     }
 
-    #   ★ 与 workflow 相同：不用 msbuild（vcxproj 钉死旧工具集 / Windows SDK 8.1），
-    #     源文件清单从 vcxproj 里取，宏照它的 5 个设置。
+    #   !! same as the workflow: no msbuild (the vcxproj pins an old toolset / Windows SDK 8.1),
+    #      the source list is read from the vcxproj and its five macros are honoured.
     [xml]$proj = Get-Content (Join-Path $srcDir.FullName 'UnRARDll.vcxproj')
-    #   ★ 用 GetAttribute：有些 `<ClCompile>` 子节点没有 Include（StrictMode 下访问属性会直接抛）
+    #   !! use GetAttribute: some <ClCompile> children have no Include (property access throws under StrictMode)
     $srcs = @($proj.SelectNodes("//*[local-name()='ClCompile']") |
               ForEach-Object { $_.GetAttribute('Include') } |
               Where-Object { $_ })
@@ -445,12 +445,12 @@ function Install-Unrar {
 
     Push-Location $srcDir.FullName
     try {
-        #   同 Invoke-Native：native 的 stderr 在 5.1 下会变成 ErrorRecord，别让它打断构建
+        #   same as Invoke-Native: native stderr becomes an ErrorRecord on 5.1; do not let it abort the build
         $eap = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
-        #   ★ 必须带 `/utf-8`：unrar 源码里有非 ASCII 注释，中文 locale（CP936）下
-        #     按 GBK 解码会把注释后面的代码吞掉（实测 cmddata.cpp 报 `Flags` 未声明，
-        #     并伴 C4819）。CI 的英文 runner 不会暴露这个坑。
+        #   !! /utf-8 is mandatory: unrar sources contain non-ASCII comments; under a Chinese locale (CP936)
+        #      GBK decoding swallows the code after those comments (observed: cmddata.cpp reported Flags undeclared
+        #      plus C4819). An English CI runner never shows this.
         & cl /nologo /utf-8 /MP /O2 /EHsc /MT /DRARDLL /DUNRAR /DSILENT $srcs /link /DLL /DEF:dll.def /OUT:unrar.dll /IMPLIB:unrar.lib kernel32.lib user32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib
         $code = $LASTEXITCODE
         $ErrorActionPreference = $eap
@@ -460,7 +460,7 @@ function Install-Unrar {
         Copy-Item 'unrar.lib' (Join-Path $UnrarPrefix 'lib\unrar.lib') -Force
         Copy-Item 'unrar.dll' (Join-Path $UnrarPrefix 'lib\unrar.dll') -Force
         Copy-Item 'dll.hpp'  (Join-Path $UnrarPrefix 'include\unrar\dll.hpp') -Force
-        #   标记：这份 unrar 是关掉 SMP 编出来的（见上面 RAR_SMP 补丁），下次可跳过重建
+        #   marker: this unrar was built with SMP off (see the RAR_SMP patch above); skip the rebuild next time
         New-Item -ItemType File -Force -Path $marker | Out-Null
     } finally {
         Pop-Location
@@ -473,7 +473,7 @@ function Invoke-Deps {
     Install-Unrar
 }
 
-# ══ configure / build ══════════════════════════════════════════════════════
+# == configure / build =============================================================
 
 function Invoke-Configure {
     Write-Head 'Configure'
@@ -495,27 +495,27 @@ function Invoke-Configure {
 
 function Invoke-Build {
     Write-Head 'Build'
-    #   ★★ 坑-18 守护（2026-11-06 **第二次**踩到）：本机 ninja 的依赖记录偶尔漏掉"头文件 → 某些 TU"
-    #     —— 改了带成员的类头之后只做增量编译，会留下按**旧类布局**编出来的 .obj。
-    #     症状极隐蔽：程序能起、但一"新建 ViewerModel"（= 带路径启动）就堆损坏 0xC0000374 闪退。
-    #     这里对比"src 下最新头文件时间 vs 上次构建成功时的时间戳"，脏了就**大声警告**。
+    #   !! pit-18 guard (hit a SECOND time on 2026-11-06): local ninja occasionally misses "header -> some TU"
+    #      deps - after editing a class header with members, an incremental build leaves .obj files built against the OLD layout.
+    #      The symptom is nasty: the app starts, but "new ViewerModel" (= launch with a path) dies with heap corruption 0xC0000374.
+    #      Here the newest header mtime under src/ is compared with the last successful build and we warn LOUDLY when stale.
     $stamp = Join-Path $BuildDir '.headers.stamp'
     $hdrNewest = Get-ChildItem (Join-Path $RepoRoot 'src') -Recurse -Include *.h -ErrorAction SilentlyContinue |
                  Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($hdrNewest -and (Test-Path $stamp)) {
         $stampTime = (Get-Item $stamp).LastWriteTime
         if ($hdrNewest.LastWriteTime -gt $stampTime) {
-            Write-Warning ("头文件比上次构建新：{0}（{1:HH:mm:ss} > {2:HH:mm:ss}）" -f `
+            Write-Warning ("header newer than last build: {0} ({1:HH:mm:ss} > {2:HH:mm:ss})" -f `
                 $hdrNewest.Name, $hdrNewest.LastWriteTime, $stampTime)
-            Write-Warning '本机 ninja 偶尔不重编依赖它的 .obj（坑-18）⇒ 建议用 -Step build -Clean，否则可能运行期堆损坏'
+            Write-Warning 'local ninja sometimes fails to rebuild the dependent .obj (pit-18) => use -Step build -Clean, or risk runtime heap corruption'
         }
     }
     Invoke-Native 'cmake' @('--build', $BuildDir, '--parallel')
-    #   构建成功 ⇒ 记时间戳：此刻的产物已经包含上述全部头文件改动
+    #   build succeeded => record the timestamp: the artifacts now include every header change above
     Set-Content -Path $stamp -Value (Get-Date -Format o) -Encoding ASCII
 }
 
-# ══ hlsl：qsb --hlsl 50 → fxc ps_5_0（对应 workflow 的 HLSL compile check）══
+# == hlsl: qsb --hlsl 50 -> fxc ps_5_0 (mirrors HLSL compile check) ==================
 
 function Invoke-HlslCheck {
     Write-Head 'HLSL compile check'
@@ -539,7 +539,7 @@ function Invoke-HlslCheck {
         & $qsb --hlsl 50 -o $tmp $s.FullName
         if ($LASTEXITCODE -ne 0) { $failed += "$($s.Name)(qsb)"; continue }
 
-        #   从 --dump 里抠出 HLSL 源：取 "Shader N: HLSL" 之后那个 Contents: 到 *** 分隔符
+        #   extract the HLSL source from --dump: from the Contents: after "Shader N: HLSL" up to the *** separator
         $lines = & $qsb --dump $tmp
         $hlsl = @(); $inHlsl = $false; $capture = $false
         foreach ($l in $lines) {
@@ -551,21 +551,21 @@ function Invoke-HlslCheck {
         if ($hlsl.Count -eq 0) { $failed += "$($s.Name)(dump)"; continue }
 
         $f = Join-Path $work ($s.BaseName + '.hlsl')
-        #   ★ 不能写 BOM：`fxc` 会把 BOM 当成非法字符（`error X3000 at (1,1)`）。
-        #     Windows PowerShell 5.1 的 `-Encoding UTF8` 恰恰会写 BOM（PS7 不会）。
+        #   !! no BOM allowed: fxc treats it as an illegal character (error X3000 at (1,1)).
+        #      Windows PowerShell 5.1 with -Encoding UTF8 writes a BOM (PS7 does not).
         Set-Content -Path $f -Value $hlsl -Encoding ASCII
         & $fxc /nologo /T ps_5_0 /E main /Fo (Join-Path $work ($s.BaseName + '.cso')) $f
         if ($LASTEXITCODE -ne 0) { $failed += $s.Name }
     }
-    if ($failed.Count -gt 0) { throw "HLSL 编译失败：$($failed -join ', ')" }
-    Write-Host '  HLSL 全部通过' -ForegroundColor Green
+    if ($failed.Count -gt 0) { throw "HLSL compile failed: $($failed -join ', ')" }
+    Write-Host '  HLSL all passed' -ForegroundColor Green
 }
 
-# ══ test：逐个跑、逐个超时（对应 workflow 的 Test 步骤）════════════════════
+# == test: run each suite with its own timeout (mirrors the Test step) ==============
 
-#   用 .NET Process 起子进程并拿退出码。
-#   ★ 不用 `Start-Process -PassThru`：PS 5.1 上带超时的 `WaitForExit(ms)` 之后
-#     拿不到 `ExitCode`（实测三个测试全被误判成失败），无参 `WaitForExit()` 也不行。
+#   Spawn the child process through .NET Process and read the exit code.
+#   !! do not use Start-Process -PassThru: on PS 5.1, after a timed WaitForExit(ms)
+#      ExitCode is not available (observed: three suites were all misjudged as failures), and plain WaitForExit() is no better.
 function Invoke-Captured([string]$Exe, [string[]]$ArgList, [int]$TimeoutMs,
                          [string]$OutFile, [string]$ErrFile, [string]$WorkingDir) {
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -601,7 +601,7 @@ function Invoke-Captured([string]$Exe, [string[]]$ArgList, [int]$TimeoutMs,
 
 function Invoke-Tests {
     Write-Head 'Test'
-    #   offscreen：本机可能有桌面，但测试不该弹窗；与 CI 保持一致
+    #   offscreen: this machine may have a desktop, but tests must not pop windows; stay consistent with CI
     $env:QT_QPA_PLATFORM = 'offscreen'
     $env:QT_FORCE_STDERR_LOGGING = '1'
     Add-EnvPath (Join-Path $VcpkgInstalled 'bin')
@@ -609,10 +609,10 @@ function Invoke-Tests {
     Add-EnvPath (Join-Path $QtRoot 'bin')
 
     $failed = @()
-    #   ★ 与 `tests/CMakeLists.txt` 里的套件列表一一对应（新增套件时两边都要加）。
-    #   `ib-test-ui-hidpi` **不是一个二进制**：ctest 里它是同一个 `ib-test-ui` 加
-    #   `QT_SCALE_FACTOR=1.35` 再跑一遍（1.35 是这台设备的真实条件，也是旧实现算错
-    #   气泡位置的地方）⇒ 这里用 `exe` + `env` 两个字段表达同一件事。
+    #   !! mirrors the suite list in tests/CMakeLists.txt (add to both when you add a suite).
+    #   ib-test-ui-hidpi is NOT a binary: in ctest it is the same ib-test-ui plus
+    #   QT_SCALE_FACTOR=1.35 run a second time (1.35 is this device's real condition and where the old code
+    #   mis-computed the bubble position) => the exe + env fields express exactly that.
     $suites = @(
         @{ exe = 'ib-test-scan' },
         @{ exe = 'ib-test-progress' },
@@ -625,12 +625,12 @@ function Invoke-Tests {
     )
     foreach ($s in $suites) {
         $t = $s.exe
-        #   ⚠️ 本脚本开着 `Set-StrictMode`：哈希表**缺键时直接取属性会抛** ⇒ 先 ContainsKey
+        #   NOTE: this script runs under Set-StrictMode: reading a missing hashtable key THROWS => use ContainsKey
         $label = if ($s.ContainsKey('label')) { $s.label } else { $t }
         Write-Host "  == $label =="
         $exe = Join-Path $BuildDir ("$t.exe")
         if (-not (Test-Path $exe)) { $failed += "$label(missing)"; continue }
-        #   套件专属环境变量：跑完就恢复（下一个套件不能带着上一个的缩放）
+        #   suite-specific env vars: restore afterwards (the next suite must not inherit the previous scale)
         $restore = @{}
         if ($s.ContainsKey('env')) {
             foreach ($k in $s.env.Keys) {
@@ -640,7 +640,7 @@ function Invoke-Tests {
         }
         $out = Join-Path $BuildDir "$label.out"
         $err = Join-Path $BuildDir "$label.err"
-        #   工作目录与 ctest 的 WORKING_DIRECTORY 一致（源码根）
+        #   working directory matches ctest's WORKING_DIRECTORY (the source root)
         $r = Invoke-Captured $exe @() 120000 $out $err $RepoRoot
         foreach ($k in $restore.Keys) {
             [Environment]::SetEnvironmentVariable($k, $restore[$k])
@@ -662,15 +662,15 @@ function Invoke-Tests {
     $exe = Join-Path $BuildDir 'photoset-reader.exe'
     $r = Invoke-Captured $exe @('--version') 60000 (Join-Path $BuildDir 'ver.out') (Join-Path $BuildDir 'ver.err') $BuildDir
     if (-not $r.Exited) {
-        Write-Warning 'version smoke 超时（GUI 初始化卡住）'
+        Write-Warning 'version smoke timed out (GUI init is stuck)'
     } else {
         Get-Content (Join-Path $BuildDir 'ver.out') -ErrorAction SilentlyContinue
     }
 
-    if ($failed.Count -gt 0) { throw "测试未通过：$($failed -join ', ')" }
+    if ($failed.Count -gt 0) { throw "tests failed: $($failed -join ', ')" }
 }
 
-# ══ package：windeployqt + PE 依赖闭包（对应 workflow 的 Package 步骤）══════
+# == package: windeployqt + PE dependency closure (mirrors the Package step) ========
 
 function Invoke-Package {
     Write-Head 'Package'
@@ -682,10 +682,10 @@ function Invoke-Package {
     & (Join-Path $QtRoot 'bin\windeployqt.exe') --release --no-opengl-sw --no-translations --qmldir (Join-Path $RepoRoot 'src\ui') (Join-Path $stage 'photoset-reader.exe')
     if ($LASTEXITCODE -ne 0) { throw 'windeployqt failed' }
 
-    #   ── 瘦身：只留 Basic 风格（用户 2026-11-06）──────────────────────────────
-    #   `QQuickStyle::setStyle("Basic")` 在 main.cpp 里是写死的，别的风格纯属白带；
-    #   windeployqt 会把 Controls 模块目录整个拷过来（含 5 种风格 ≈15.6 MB DLL）。
-    #   `vc_redist.x64.exe`（≈18 MB）也删：windeployqt 顺手拷的安装器，我们直接带 CRT DLL。
+    #   -- slimming: keep the Basic style only (user, 2026-11-06) ------------------------
+    #   QQuickStyle::setStyle("Basic") is hard-coded in main.cpp, other styles are dead weight;
+    #   windeployqt copies the whole Controls module dir (5 styles, about 15.6 MB of DLLs).
+    #   vc_redist.x64.exe (about 18 MB) is deleted too: an installer windeployqt drags along; we ship the CRT DLLs directly.
     Remove-Item (Join-Path $stage 'vc_redist.x64.exe') -Force -ErrorAction SilentlyContinue
     foreach ($style in 'Fusion', 'Material', 'Universal', 'Imagine', 'FluentWinUI3', 'Windows') {
         Remove-Item (Join-Path $stage "qml\QtQuick\Controls\$style") -Recurse -Force -ErrorAction SilentlyContinue
@@ -693,7 +693,7 @@ function Invoke-Package {
             Remove-Item -Force
     }
 
-    #   ── 依赖闭包：从 exe 与 Qt 的 DLL 出发，递归补齐 ──
+    #   -- dependency closure: start from the exe and the Qt DLLs, fill in recursively --
     $search = @(
         $stage
         (Join-Path $VcpkgInstalled 'bin')
@@ -729,51 +729,51 @@ function Invoke-Package {
             $queue.Enqueue($dst)
         }
     }
-    Write-Host "  补齐的 DLL：$($added -join ', ')"
-    if ($missing.Count -gt 0) { throw "缺依赖：$($missing -join '; ')" }
+    Write-Host "  DLLs added: $($added -join ', ')"
+    if ($missing.Count -gt 0) { throw "missing deps: $($missing -join '; ')" }
 
-    #   ── 红线：禁止分发 HEVC 解码/编码器（设计 21 §8）──
+    #   -- red line: never ship an HEVC decoder/encoder (design 21 s8) --
     foreach ($bad in @('libde265.dll', 'libx265.dll', 'libheif-hevc.dll')) {
-        if (Test-Path (Join-Path $stage $bad)) { throw "禁止分发 HEVC 组件：$bad" }
+        if (Test-Path (Join-Path $stage $bad)) { throw "refusing to ship an HEVC component: $bad" }
     }
     if (Test-Path (Join-Path $UnrarPrefix 'lib\unrar.dll')) {
         Copy-Item (Join-Path $UnrarPrefix 'lib\unrar.dll') $stage -Force
     }
 
-    #   ── ICU：Qt6Core.dll 硬导入 icuuc.dll（Qt 6.12 起），windeployqt 不拷 ──
-    #   ★ Qt 6.12 的 Windows 包**不自带** ICU（实测：整个 Qt 目录里没有 icu*.dll），它硬导入
-    #     系统 ICU：`System32\icuuc.dll`（36 KB 的转发壳，导出转发到同目录 `icu.dll`）。
-    #   ★ 为什么"系统一定有"：system32 的 ICU 是 **Windows 10 1703 起**随系统内置的
-    #     （Server 侧对应 Server 2019；.NET 也以 1703 / Server 2019 为可加载 ICU 的分界），
-    #     而 **Qt 6.12 支持的 Windows 起点是 10 1809 / 11（Server 2019+）** —— 比 ICU 的
-    #     内置时间还晚 ⇒ **我们能支持的系统上都有它**，不必随包分发（也不该分发微软的系统 DLL）。
-    #     ⇒ 下面这个 throw 只会在 WinPE / 被裁剪的极简镜像这类"本来也跑不了 Qt 6.12"的环境触发。
-    #   ★ 真要覆盖更老的系统（Win10 ≤1703 / Server 2016）得换 Qt 5.15，不是拷一个 DLL 能解决的；
-    #     若哪天需要在缺失 ICU 的镜像上跑，唯一办法是随包带 ICU（vcpkg 的 icu，+~30 MB，app-local
-    #     优先于 System32）—— 那时把这里改成拷到 stage 即可。
+    #   -- ICU: Qt6Core.dll hard-imports icuuc.dll (since Qt 6.12) and windeployqt does not copy it --
+    #   !! the Qt 6.12 Windows package does NOT ship ICU (verified: no icu*.dll anywhere in the Qt tree); it hard-imports
+    #      the system ICU: System32\icuuc.dll (a 36 KB forwarder whose exports live in icu.dll next door).
+    #   !! why "the system always has it": ICU in system32 has been part of Windows since 10 1703
+    #      (Server 2019 on the server side; .NET also draws the loadable-ICU line at 1703 / Server 2019),
+    #      while Qt 6.12 starts at Windows 10 1809 / 11 (Server 2019+), which is LATER than
+    #      the ICU cut-in => every OS we support has it; no need to ship it (and shipping Microsoft system DLLs would be wrong).
+    #      => the throw below can only fire in WinPE / stripped images that cannot run Qt 6.12 anyway.
+    #   !! covering older systems (Win10 <=1703 / Server 2016) needs Qt 5.15, not a copied DLL;
+    #      if such an image ever needs support, the only way is to ship ICU (vcpkg icu, +~30 MB; app-local
+    #      wins over System32) - then change this to copy it into stage.
     $icu = Get-ChildItem $QtRoot -Recurse -Include icu*.dll, icu*.dat -ErrorAction SilentlyContinue
     if ($icu) {
         $icu | ForEach-Object { Copy-Item $_.FullName $stage -Force }
-        Write-Host "  ICU（来自 Qt）：$(($icu.Name | Sort-Object -Unique) -join ', ')"
+        Write-Host "  ICU (from Qt): $(($icu.Name | Sort-Object -Unique) -join ', ')"
     } elseif (Test-Path (Join-Path $env:SystemRoot 'System32\icuuc.dll')) {
-        Write-Host "  ICU：使用系统自带的 $env:SystemRoot\System32\icuuc.dll（Win10 1703+ / Server 2019+，Qt 6.12 最低要求 10 1809）"
+        Write-Host "  ICU: using the system $env:SystemRoot\System32\icuuc.dll (Win10 1703+ / Server 2019+; Qt 6.12 needs 10 1809+)"
     } else {
-        throw 'ICU 缺失：系统没有 System32\icuuc.dll。Qt 6.12 要求 Windows 10 1809+ / Server 2019+（这些系统都自带 ICU）；请确认目标不是 WinPE / 被裁剪的镜像，或需要把 Qt 换成不依赖系统 ICU 的构建。'
+        throw 'ICU missing: the system has no System32\icuuc.dll. Qt 6.12 requires Windows 10 1809+ / Server 2019+ (all of them ship ICU); check that the target is not WinPE or a stripped image, or use a Qt build that does not rely on the system ICU.'
     }
 
-    #   ── VC++ 运行时：windeployqt 不拷，目标机没装可再发行包就起不来 ──
+    #   -- VC++ runtime: windeployqt does not copy it; without the redistributable the app will not start --
     $crt = Get-ChildItem -Path (Join-Path $env:VCToolsRedistDir 'x64') -Filter 'Microsoft.VC*.CRT' -Directory -ErrorAction SilentlyContinue |
            Select-Object -First 1
     if ($crt) {
         Copy-Item (Join-Path $crt.FullName '*.dll') $stage
-        Write-Host "  VC 运行时来自：$($crt.FullName)"
+        Write-Host "  VC runtime from: $($crt.FullName)"
     } else {
-        Write-Warning "找不到 VC 运行时目录（VCToolsRedistDir=$env:VCToolsRedistDir）"
+        Write-Warning "VC runtime directory not found (VCToolsRedistDir=$env:VCToolsRedistDir)"
     }
 
-    #   ── 冒烟：用打包好的目录跑一次（缺 DLL / 缺平台插件会立刻露出来）──
-    #   ★ 必须先把 qoffscreen.dll 放进 stage：windeployqt 只部署 qwindows.dll，
-    #     指定 offscreen 却没有插件时，Qt 会弹模态错误框把进程挂住。
+    #   -- smoke: run once from the packaged dir (a missing DLL / platform plugin shows up immediately) --
+    #   !! qoffscreen.dll must be put into stage first: windeployqt only deploys qwindows.dll
+    #      and with offscreen requested but no plugin, Qt pops a modal error box and hangs.
     $off = Join-Path $QtRoot 'plugins\platforms\qoffscreen.dll'
     if (Test-Path $off) {
         Copy-Item $off (Join-Path $stage 'platforms') -Force
@@ -781,11 +781,11 @@ function Invoke-Package {
     }
     $r = Invoke-Captured (Join-Path $stage 'photoset-reader.exe') @('--version') 60000 `
         (Join-Path $BuildDir 'stage-ver.out') (Join-Path $BuildDir 'stage-ver.err') $stage
-    if (-not $r.Exited) { throw '打包后冒烟超时' }
+    if (-not $r.Exited) { throw 'post-package smoke timed out' }
     Get-Content (Join-Path $BuildDir 'stage-ver.out') -ErrorAction SilentlyContinue
     if ($r.ExitCode -ne 0) {
         Get-Content (Join-Path $BuildDir 'stage-ver.err') -ErrorAction SilentlyContinue
-        throw "打包后冒烟失败：exit $($r.ExitCode)"
+        throw "post-package smoke failed: exit $($r.ExitCode)"
     }
 
     Copy-Item (Join-Path $RepoRoot 'LICENSE') $stage
@@ -794,28 +794,28 @@ function Invoke-Package {
     Get-ChildItem (Join-Path $RepoRoot 'LICENSES') -Filter '*.txt' | ForEach-Object { Copy-Item $_.FullName $stage }
 
     $dlls = Get-ChildItem $stage -Filter '*.dll' | Measure-Object -Property Length -Sum
-    Write-Host ("  DLL 共 {0} 个 / {1:N1} MB" -f $dlls.Count, ($dlls.Sum / 1MB))
+    Write-Host ("  DLLs: {0} files / {1:N1} MB" -f $dlls.Count, ($dlls.Sum / 1MB))
 
     $dist = Join-Path $RepoRoot 'dist'
     New-Item -ItemType Directory -Force -Path $dist | Out-Null
     $zip = Join-Path $dist 'photoset-reader-windows-x64.zip'
     if (Test-Path $zip) { Remove-Item $zip -Force }
-    #   ★ 本地这里压的是**发布用**的单层 zip（解开就是 exe + DLL）。
-    #     CI 那边不再压这一层：`upload-artifact` 自己会打包，再压就成「zip 里套 zip」
-    #     （用户 2026-11-05 指出）——CI 直接上传 stage 的内容。
+    #   !! locally this is the RELEASE single-layer zip (unpack it and you get exe + DLLs).
+    #     CI no longer zips this layer: upload-artifact packs by itself, zipping again gives a zip inside a zip
+    #     (pointed out by the user on 2026-11-05); CI uploads the contents of stage directly.
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
-    Write-Host "  产物：$zip" -ForegroundColor Green
+    Write-Host "  artifact: $zip" -ForegroundColor Green
 }
 
-# ══ 主流程 ════════════════════════════════════════════════════════════════
+# == main =========================================================================
 
 Import-MsvcEnvironment
 
 switch ($Step) {
     'deps'      { Invoke-Deps; break }
     'configure' { Invoke-Configure; break }
-    #   ★ `-Clean` 在 `-Step build` 上也要生效（2026-11-05 教训，见 docs 坑-18）：
-    #     只删 build 目录会让 `cmake --build` 没有缓存，所以这里**先 configure（它负责删）**再 build。
+    #   !! -Clean must work for -Step build too (lesson from 2026-11-05, see docs pit-18):
+    #     just deleting the build dir leaves cmake --build without a cache, so configure (which deletes) runs BEFORE build.
     'build'     { if ($Clean) { Invoke-Configure }; Invoke-Build; break }
     'hlsl'      { Invoke-HlslCheck; break }
     'test'      { Invoke-Tests; break }
