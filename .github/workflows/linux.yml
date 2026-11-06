@@ -132,14 +132,12 @@ jobs:
       - name: AppImage
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
-          #   linuxdeploy 自带的 strip 认不出 Arch 的 `.relr.dyn` 段（strip 失败会被
-          #   Qt 插件当成致命错误）⇒ 干脆不 strip，体积差几 MB。
           NO_STRIP: "1"
         run: |
           set -euo pipefail
           mkdir -p .ci/tools .ci/AppDir .ci/icon dist
-          #   ★ linuxdeploy 按**文件名**给图标取名（desktop 里是 `Icon=photoset-reader`）
-          #     ⇒ 传进去的 png 必须就叫这个名字，否则报 "Could not find suitable icon"。
+          #   * linuxdeploy names the icon after the FILE, and the desktop file says
+          #     Icon=photoset-reader => the png we hand it must already carry that name.
           cp assets/icons/photoset-reader-256.png .ci/icon/photoset-reader.png
           curl -fL -o .ci/tools/linuxdeploy \
             https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
@@ -147,13 +145,9 @@ jobs:
             https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
           chmod +x .ci/tools/linuxdeploy .ci/tools/linuxdeploy-plugin-qt
           export PATH="$PWD/.ci/tools:$PATH"
-          #   qt 插件靠 qmake 找 Qt 的安装位置
           export QMAKE="$(command -v qmake6 || command -v qmake)"
-          #   ★★ 2026-11-07：只装 `qt6-wayland` **不够** —— linuxdeploy-plugin-qt 默认只收
-          #     xcb 那一个平台插件（真机实测：AppImage 里 `platforms/` 只有 libqxcb.so，
-          #     Wayland 会话里 `could not find the Qt platform plugin` 直接 abort）。
-          #     显式点名要 wayland 模块 + 平台插件，它才会把 `libqwayland*.so` 和
-          #     `libQt6WaylandClient.so.6` 一起打进去。
+          #   !! arch's wayland platform plugin is a single libqwayland.so (not Qt5's
+          #      -egl/-generic pair) and the plugin only ships it when asked explicitly.
           export EXTRA_QT_MODULES="waylandclient"
           export EXTRA_PLATFORM_PLUGINS="libqwayland.so"
           linuxdeploy --appdir .ci/AppDir \
@@ -161,15 +155,54 @@ jobs:
             --desktop-file assets/photoset-reader.desktop \
             --icon-file .ci/icon/photoset-reader.png \
             --plugin qt
-          #   图标在 AppDir 里必须叫 <Icon= 的值>.png（desktop 写的是 photoset-reader）
-          cp assets/icons/photoset-reader-256.png .ci/AppDir/usr/share/icons/hicolor/256x256/apps/photoset-reader.png || true
-          cp assets/icons/photoset-reader-256.png .ci/AppDir/photoset-reader.png || true
-          #   ★ offscreen/minimal 插件补进去：CI 里要能在没有 display 的环境冒烟测 AppImage
+
+          #   -- AppDir fixups (must happen BEFORE appimagetool) ----------------------
+          #   * offscreen/minimal platform plugins: needed for the headless smoke below
           mkdir -p .ci/AppDir/usr/plugins/platforms
           for p in libqoffscreen.so libqminimal.so; do
             [ -f "/usr/lib/qt6/plugins/platforms/$p" ] && cp "/usr/lib/qt6/plugins/platforms/$p" .ci/AppDir/usr/plugins/platforms/
           done
+          #   * wayland must be in the bundle: with only xcb the app aborts on a pure
+          #     Wayland session (measured on the real machine, rc=134).
           ls .ci/AppDir/usr/plugins/platforms/
+          ls .ci/AppDir/usr/plugins/platforms/ | grep -q libqwayland || {
+            echo "::error::wayland platform plugin missing from the AppImage (xcb only)"; exit 1; }
+          #   * AppRun is a SYMLINK to the binary, so nobody sets QT_PLUGIN_PATH and Qt
+          #     looks for plugins in <AppDir>/platforms => "Could not find the Qt platform
+          #     plugin" and abort. A qt.conf next to the binary fixes the lookup.
+          cat > .ci/AppDir/usr/bin/qt.conf <<'EOF'
+          [Paths]
+          Prefix = ..
+          Plugins = plugins
+          Qml2Imports = qml
+          EOF
+          #   * Qt QML modules: our QML is compiled into the qrc, so linuxdeploy cannot see
+          #     the imports; copy the modules we use (QtQuick is 15 MB, the rest is tiny).
+          mkdir -p .ci/AppDir/usr/qml
+          for m in QtQuick QtQml QtCore; do
+            [ -d "/usr/lib/qt6/qml/$m" ] && cp -r "/usr/lib/qt6/qml/$m" .ci/AppDir/usr/qml/
+          done
+          ls .ci/AppDir/usr/qml/
+
+          #   -- smoke: really start it (offscreen + a one-image dir), wait for [ui] viewer
+          #      --version alone proves nothing: it returns before engine.load()
+          mkdir -p /tmp/aisample
+          QT_QPA_PLATFORM=offscreen .ci/AppDir/usr/bin/photoset-reader /tmp/aisample \
+            --log-level info --log-file /tmp/ai.log >/dev/null 2>&1 &
+          AI_PID=$!
+          for i in $(seq 1 20); do
+            sleep 0.5
+            grep -q '\[ui\] viewer' /tmp/ai.log && break
+          done
+          kill $AI_PID 2>/dev/null || true
+          wait $AI_PID 2>/dev/null || true
+          grep -q '\[ui\] viewer' /tmp/ai.log || {
+            echo "::error::the bundled executable does not start (QML/platform plugin?)"
+            tail -30 /tmp/ai.log || true
+            exit 1; }
+          grep -m1 '\[cap\] total' /tmp/ai.log || true
+
+          #   -- package ---------------------------------------------------------------
           curl -fL -o .ci/tools/appimagetool \
             https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x .ci/tools/appimagetool
@@ -177,19 +210,6 @@ jobs:
           export VERSION
           .ci/tools/appimagetool .ci/AppDir "dist/photoset-reader-${VERSION}-x86_64.AppImage"
           ls -l dist/
-          ls .ci/AppDir/usr/plugins/platforms/
-          #   ★ 断言：wayland 平台插件必须在包里（装 qt6-wayland 不点名就是一包只有 xcb，
-          #     这是真机踩过的坑；以后谁改了这里，这条会立刻红）
-          ls .ci/AppDir/usr/plugins/platforms/ | grep -q libqwayland || {
-            echo "::error::wayland 平台插件没进 AppImage（只有 xcb ⇒ 纯 Wayland 会话起不来）"; exit 1; }
-          #   ★ 冒烟 ①：AppDir 里那个**真可执行文件**必须能起来（缺库/缺平台插件在这里露出来）。
-          #     它是 AppImage 里实际会被执行的东西，等价性足够。
-          QT_QPA_PLATFORM=offscreen .ci/AppDir/usr/bin/photoset-reader --version
-          #   ★ 冒烟 ②：AppImage 运行时本身在容器里可能起不来（没有 FUSE / fuse-overlayfs），
-          #     那与产物质量无关 ⇒ 只告警，不让构建失败。
-          QT_QPA_PLATFORM=offscreen APPIMAGE_EXTRACT_AND_RUN=1 \
-            "dist/photoset-reader-${VERSION}-x86_64.AppImage" --version \
-            || echo "::warning::AppImage 运行时在容器里起不来（无 FUSE），产物本身仍已生成"
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v7
