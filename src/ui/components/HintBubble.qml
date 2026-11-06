@@ -22,6 +22,25 @@ import AppUi
 //     改成 `Popup.Item` 后它只是**同一个窗口里的一个 item**：没有独立表面、没有 grab，
 //     结构上就不可能抢指针。（不用 `WindowTransparentForInput`：Wayland 上对 popup 无效。）
 //
+//     ↑ 这段不是推测，2026-11-06 在 **Qt 6.12.0 源码**上逐行确认过（`qtdeclarative`）：
+//       · `qquickpopup.cpp:1183 resolvedPopupType()` —— 只有 `Window`/`Native` 才可能
+//         解析成 `Window`，其余一律 `Item`；`Item` 是**无条件**的（连平台能力都不查）。
+//       · `qquickpopup.cpp:1202 usePopupWindow()` = `resolvedPopupType()==Window`。
+//       · `qquickpopup.cpp:1207 adjustPopupItemParentAndWindow()`：
+//         `if (usePopupWindow()) { popupWindow = new QQuickPopupWindow(...) }
+//          else { popupItem->setParentItem(overlay); }`
+//         ⇒ **`QQuickPopupWindow` 只在这一条分支里 new**。没有 QWindow 就没有
+//           新 wl_surface，没有 wl_surface 就没有 xdg_popup，没有 xdg_popup 就没有
+//           合成器给的隐式 grab —— "抢指针"的物理通路被删掉了，不是靠时序避开。
+//       · `qquickpopup.cpp:575 blockInput()`：挡输入的条件是
+//         `modal && …` —— 我们 `modal: false`，所以**即使几何重叠也挡不住**；
+//         唯一会挡的情况是 `popupItem->contains(point)`（指针真的在气泡里），
+//         而几何契约（见下）保证指针在按钮上时永远不在气泡里。
+//       · `qquickpopup.cpp:1320` 起 `createDimmer()`：`modal:false` 且没人设过
+//         `Overlay.modeless` ⇒ 返回 nullptr ⇒ **连那块全窗口 dimmer 都不存在**。
+//     ⇒ 回归护栏是 `ib-test-ui`：`popupType==Item` + 打开前后**窗口数不变**
+//       （`QGuiApplication::topLevelWindows()`），后者就是"没有新表面"的运行时证明。
+//
 //   ★ 位置计算**只用 `contentItem` 一个坐标空间**（2026-11-06 另一个坑）：
 //     原来混用了 `win.width/height`（QWindow 空间）和 `mapToItem(win.contentItem, …)`
 //     （item 空间）。当窗口带缩放时（本机 dpr=1.35 / zoom=0.675）两者不是同一数量级，

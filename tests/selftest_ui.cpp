@@ -22,6 +22,7 @@
 
 #include <QEventLoop>
 #include <QFontDatabase>
+#include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
 #include <QQmlContext>
@@ -62,6 +63,8 @@ struct BubbleProbe
     bool     visible = false;
     int      type = -1;
     qreal    dpr = 0;
+    int      windowsBefore = -1;   // 打开气泡**之前**进程里的顶层窗口数
+    int      windowsAfter = -1;    // 打开之后
     QRectF   rect;
 };
 
@@ -92,6 +95,9 @@ BubbleProbe probeBubble(QQmlEngine *engine, qreal scale)
     bubble->setWidth(w);
     bubble->setHeight(h);
     bubble->setProperty("text", QStringLiteral("probe"));
+    //   ★ 数 `allWindows()` 而不是 `topLevelWindows()`：`QQuickPopupWindow` 是**子窗口**
+    //     （构造时给了 parent），不会进 topLevelWindows —— 用后者这条断言就是空的。
+    out.windowsBefore = QGuiApplication::allWindows().size();
     bubble->setProperty("hovered", true);
 
     spin(1200);           // 500ms 延迟 + 余量
@@ -99,6 +105,13 @@ BubbleProbe probeBubble(QQmlEngine *engine, qreal scale)
     out.visible = bubble->property("bubbleVisible").toBool();
     out.type = bubble->property("bubbleType").toInt();
     out.rect = bubble->property("bubbleRect").toRectF();
+    //   ★ "没有抢指针"的**运行时证明**（2026-11-06）：
+    //     Qt 只在 `usePopupWindow()` 为真时才 new `QQuickPopupWindow`
+    //     （qquickpopup.cpp:1207 `adjustPopupItemParentAndWindow()`），而窗口 =
+    //     Wayland surface = xdg_popup = 合成器给的隐式 grab。所以"气泡打开后
+    //     **顶层窗口数没变**"等价于"没有多出表面"，也就等价于"没有 grab 的通路"。
+    //     旧实现（Popup.Window）这一条会红：打开后多一个 QQuickPopupWindow。
+    out.windowsAfter = QGuiApplication::allWindows().size();
     return out;
 }
 
@@ -152,7 +165,11 @@ int main(int argc, char *argv[])
         check(b.type == 0,
               QStringLiteral("② ★ popupType 必须是 Item（实际 %1；Window/Native 会抢指针）")
                   .arg(b.type));
-        //   容器坐标里 y=0 是目标顶边 ⇒ "在上方"等价于 bottom <= 0，且不能远得离谱
+        //   ★ 上面那条只是"我们写了 Item"，这一条才是 Qt 真的没建窗口：
+        //     窗口数变多 ⇒ 多了一个 Wayland surface ⇒ 那颗炸弹又回来了。
+        check(b.windowsBefore > 0 && b.windowsAfter == b.windowsBefore,
+              QStringLiteral("② ★ 打开气泡**没有多出窗口**（前 %1 / 后 %2；多出即有新表面 = 有 grab 风险）")
+                  .arg(b.windowsBefore).arg(b.windowsAfter));        //   容器坐标里 y=0 是目标顶边 ⇒ "在上方"等价于 bottom <= 0，且不能远得离谱
         check(b.visible && b.rect.bottom() <= 0.5,
               QStringLiteral("② ★ 气泡在目标**上方**（bottom=%1）").arg(b.rect.bottom()));
         check(b.visible && b.rect.bottom() > -200,
