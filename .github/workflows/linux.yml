@@ -1,0 +1,87 @@
+name: linux
+
+# ── Linux 构建 + 测试（主平台）──────────────────────────────────────────────
+#   ★★ 为什么是 **Arch 容器**而不是 `ubuntu-latest`：
+#     项目要求 **Qt ≥ 6.9**（`RectangularShadow` 是 6.9 才有的，见 CMakeLists 的
+#     `find_package(Qt6 6.9 ...)`），而 **Ubuntu 24.04 只提供 Qt 6.4** ⇒ 在
+#     ubuntu-latest 上 configure 第一步就失败，跑多少次都一样。
+#     Arch 官方源里的 Qt 与主平台构建环境同源（2026-11-06 实测 6.12.0），
+#     且 **libunrar 是官方包**（Windows 那边没有 port，才必须自编）。
+#   ★ 发行版覆盖说明（给用户，不是给 CI）：`scripts/install-deps.sh` 覆盖
+#     Arch / Debian·Ubuntu / Fedora / openSUSE，含 libunrar 在各家的出处。
+#     本工作流只负责"这棵树能编、能过测试、能力探测正常"，**不是发布渠道**。
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm --needed \
+            git cmake ninja gcc pkgconf \
+            qt6-base qt6-declarative qt6-shadertools qt6-tools qt6-svg qt6-imageformats \
+            libarchive libexif xz zlib libunrar
+          #   `Qt6::GuiPrivate` 需要 Qt 的私有头（Arch 的 qt6-base 自带）
+          echo "Qt $(qmake6 -query QT_VERSION)"
+
+      - uses: actions/checkout@v7
+
+      - name: Configure
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          #   ★ 不许静默降级：`-Step` 之外没有快路径，配置失败就是失败
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Test
+        #   ★ 两个环境变量由 `tests/CMakeLists.txt` 的 ENVIRONMENT 已经带上；
+        #     这里再显式给一次，方便单看这一步的日志（无 display 时套件会 abort）。
+        run: |
+          ctest --test-dir build --output-on-failure \
+            --test-output-size-passed 65536
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_FORCE_STDERR_LOGGING: "1"
+
+      - name: Capability report ([cap])
+        #   ★ 这一步是这个项目在 Linux 上最重要的"体检"：
+        #     打印**这台机器到底能解什么**（Qt 插件 / gdk-pixbuf / 外部程序各贡献了哪些后缀）。
+        #     以后排查"某个格式为什么看不到"时，先看这里。
+        #   ⚠️ 必须给 `QT_QPA_PLATFORM=offscreen`：容器里没有 display，
+        #      不给的话进程**启动即 abort**（不是我们这个 bug，是 Qt 平台插件起不来），
+        #      于是在 CI 里只会看到一行 "Aborted"、日志文件根本不生成。
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_FORCE_STDERR_LOGGING: "1"
+        run: |
+          mkdir -p /tmp/capsample
+          #   ⚠️ 先清掉可能残留的实例：本项目**单实例**（`QLocalServer`）——
+          #      已有实例在跑时，新进程只会把路径转发过去然后退出，
+          #      `[cap]` 一行都不会有（2026-11-06 实测踩到）。
+          pkill -f photoset-reader 2>/dev/null || true
+          timeout 10 ./build/photoset-reader /tmp/capsample \
+            --log-level info --log-file /tmp/cap.log >/dev/null 2>&1 || true
+          echo "──────── [cap] ────────"
+          grep -E '\[cap\]' /tmp/cap.log || echo "(没有 cap 日志 —— 探测没跑到，是 bug)"
+
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-cap-log
+          path: /tmp/cap.log
+          if-no-files-found: ignore
+          retention-days: 7

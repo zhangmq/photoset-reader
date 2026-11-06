@@ -24,7 +24,14 @@
 
 ## 构建（Linux）
 
-依赖：CMake ≥ 3.21、C++20、Qt 6（含 Concurrent）、libarchive、libexif、libheif、liblzma、zlib、libunrar。
+依赖：CMake ≥ 3.21、C++20、**Qt 6.9+**（含 Concurrent）、libarchive、libexif、liblzma、zlib、libunrar。
+`libheif` **可选**：装了才有 HEIC/AVIF 的 Exif/ICC 元数据（运行期加载），**看图不需要**它。
+
+一键装依赖（Arch / Debian·Ubuntu / Fedora / openSUSE 自动识别）：
+
+```bash
+./scripts/install-deps.sh --build
+```
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -92,8 +99,8 @@ ctest --test-dir build --output-on-failure
 cmake --install build --prefix "$HOME/.local"
 ```
 
-依赖：CMake ≥ 3.21、C++20、Qt 6（Widgets / Quick / QuickControls2 / ShaderTools / DBus / LinguistTools）、
-libarchive、libexif、libheif、liblzma、zlib、libunrar。
+依赖：CMake ≥ 3.21、C++20、Qt 6.9+（Widgets / Quick / QuickControls2 / ShaderTools / DBus / LinguistTools）、
+libarchive、libexif、liblzma、zlib、libunrar（`libheif` 可选，仅影响 HEIC/AVIF 的 Exif/ICC）。
 
 ## 发布
 
