@@ -167,6 +167,8 @@ qt_add_shaders(ibcore "gpuscale_shaders"
 )
 
 target_link_libraries(ibcore PUBLIC
+    #   * Network 不在这里：多实例 IPC 删掉后应用侧用不到 QLocalSocket（只有 ib-test-instance 用），
+    #     少链一个 Qt 模块对**静态** AppImage 是实打实几 MB。
     Qt6::Core Qt6::Gui Qt6::Quick Qt6::Qml Qt6::QuickControls2 Qt6::Widgets Qt6::Concurrent
     $<$<BOOL:${UNIX}>:Qt6::DBus>
     Qt6::GuiPrivate

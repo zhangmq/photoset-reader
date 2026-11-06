@@ -4,8 +4,12 @@
 #   ./scripts/package-appimage.sh [--deps <前缀>] [--out <输出文件>]
 #     默认 deps = .tmp/deps（最小化的 libarchive / libheif，见 scripts/build-minimal-deps.sh）
 #
-# 依赖：build-static/photoset-reader（见 scripts/build-static-qt.sh）、appimagetool、
-#       python3。appimagetool 默认取 .tmp/appimage/appimagetool.AppImage，没有就下载。
+# 依赖：build-static/photoset-reader、appimagetool、python3。
+#   ★ 静态 Qt 的构建脚本已搬到**独立仓库**（用户 2026-11-07）：
+#       https://github.com/zhangmq/photoset-reader-qt
+#     编一次几十分钟、~19 GB，不该在主仓库每次提交时重编 ⇒ 那边出 release 资产
+#     `qt-<版本>-static-linux-x86_64.tar.xz`，主仓库 CI 下载解包到 `.tmp/qt-static` 再用。
+#   ★ 体积（用户 2026-11-07）：可执行文件拷进 AppDir 后再 strip；squashfs 用 zstd 19。
 #
 # 打进包里的库 = 可执行文件的动态依赖闭包，减去：
 #   · C/C++ 运行时（glibc / libstdc++ / libgcc）—— 按 AppImage 惯例用系统的
@@ -47,6 +51,9 @@ rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/lib" \
          "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 cp "$BIN" "$APPDIR/usr/bin/photoset-reader"
+#   * 体积（用户 2026-11-07：AppImage 是便携版，尽量小）：
+#     静态链接的单文件里符号表/调试段能占好几 MB，拷进 AppDir 后**再 strip 一次**。
+strip --strip-unneeded "$APPDIR/usr/bin/photoset-reader" 2>/dev/null || true
 
 # ── 依赖闭包 ─────────────────────────────────────────────────────────────
 python3 - "$APPDIR" "$DEPS" <<'PY'
@@ -124,6 +131,12 @@ cp "$ROOT/LICENSE" "$ROOT/THIRD-PARTY.md" "$ROOT/THIRD-PARTY.en.md" \
 
 mkdir -p "$(dirname "$OUT")"
 cd "$ROOT/.tmp/appimage"
-APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 "$TOOL" "$APPDIR" "$OUT" >/dev/null
+#   * 压缩：squashfs 默认 gzip ⇒ 换 **zstd 19**（脚本头实测：61.8 MB 的单文件 zstd-19 压到 17.5 MB，
+#     gzip 明显更大、解包也更慢）。两个变量都给：新版 appimagetool 认 `APPIMAGE_COMPRESSION`，
+#     老的只认 `MKSQUASHFS_OPTIONS`（不认的那个会被忽略，不会报错）。
+APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 \
+  APPIMAGE_COMPRESSION="zstd" \
+  MKSQUASHFS_OPTIONS="-comp zstd -Xcompression-level 19 -b 1M" \
+  "$TOOL" "$APPDIR" "$OUT" >/dev/null
 chmod +x "$OUT"
 echo "✓ $OUT  ($(du -h "$OUT" | cut -f1))"

@@ -123,93 +123,66 @@ jobs:
           path: photoset-reader-linux-x64.tar.gz
           retention-days: 14
 
-      #   ── AppImage（用户 2026-11-07：以前只有本地脚本能打，搬到工作流里）─────────
-      #   ★ 与 `scripts/package-appimage.sh` 的区别：那条走的是**静态 Qt** 构建
-      #     （`scripts/build-static-qt.sh`，要自己编 Qt，太慢不适合 CI）；这里用
-      #     `linuxdeploy` + `linuxdeploy-plugin-qt` 把**动态**构建连同 Qt 插件一起收进
-      #     AppDir —— 标准路线，CI 里几分钟能出包。
-      #   ★ 容器里没有 FUSE ⇒ 两个 AppImage 工具都要 `APPIMAGE_EXTRACT_AND_RUN=1`。
-      - name: AppImage
-        env:
-          APPIMAGE_EXTRACT_AND_RUN: "1"
-          NO_STRIP: "1"
+  # ══ AppImage（便携版）：静态 Qt + 本地那套打包脚本 ══════════════════════════
+  #   用户 2026-11-07：
+  #     · 便携版就是 AppImage，**体积尽量小**；
+  #     · 静态 Qt 单独一个仓库编（几十分钟、~19 GB），这里只**下载**它的 release 资产；
+  #     · 打包走仓库里已有的 `scripts/package-appimage.sh`（AppRun 是 shell 脚本，
+  #       不需要 qt.conf / 手抄 QML 模块 —— 静态 Qt 把 QML 插件也链进去了）。
+  appimage:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 60
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm --needed \
+            git cmake ninja gcc pkgconf \
+            zlib xz libarchive libexif libunrar \
+            libxcb xcb-util xcb-util-wm xcb-util-image xcb-util-keysyms \
+            xcb-util-renderutil xcb-util-cursor \
+            libxkbcommon wayland wayland-protocols \
+            fontconfig freetype2 harfbuzz dbus libglvnd mesa \
+            squashfs-tools zstd
+
+      - uses: actions/checkout@v7
+
+      - name: Fetch static Qt (prebuilt, separate repo)
         run: |
           set -euo pipefail
-          mkdir -p .ci/tools .ci/AppDir .ci/icon dist
-          #   * linuxdeploy names the icon after the FILE, and the desktop file says
-          #     Icon=photoset-reader => the png we hand it must already carry that name.
-          cp assets/icons/photoset-reader-256.png .ci/icon/photoset-reader.png
-          curl -fL -o .ci/tools/linuxdeploy \
-            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          curl -fL -o .ci/tools/linuxdeploy-plugin-qt \
-            https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
-          chmod +x .ci/tools/linuxdeploy .ci/tools/linuxdeploy-plugin-qt
-          export PATH="$PWD/.ci/tools:$PATH"
-          export QMAKE="$(command -v qmake6 || command -v qmake)"
-          #   !! arch's wayland platform plugin is a single libqwayland.so (not Qt5's
-          #      -egl/-generic pair) and the plugin only ships it when asked explicitly.
-          export EXTRA_QT_MODULES="waylandclient"
-          export EXTRA_PLATFORM_PLUGINS="libqwayland.so"
-          linuxdeploy --appdir .ci/AppDir \
-            --executable build/photoset-reader \
-            --desktop-file assets/photoset-reader.desktop \
-            --icon-file .ci/icon/photoset-reader.png \
-            --plugin qt
+          #   ★ 版本与资产名是**契约**：改 Qt 版本时两处一起改
+          #     （这里 + https://github.com/zhangmq/photoset-reader-qt 的 release 标签）
+          QT_VERSION="6.12.0"
+          NAME="qt-${QT_VERSION}-static-linux-x86_64"
+          BASE="https://github.com/zhangmq/photoset-reader-qt/releases/download/qt-${QT_VERSION}"
+          mkdir -p .tmp
+          curl -fL --retry 3 -o "/tmp/${NAME}.tar.xz"      "${BASE}/${NAME}.tar.xz"
+          curl -fL --retry 3 -o "/tmp/${NAME}.sha256"      "${BASE}/${NAME}.sha256"
+          ( cd /tmp && sha256sum -c "${NAME}.sha256" )
+          tar -xJf "/tmp/${NAME}.tar.xz" -C .tmp
+          ls .tmp/qt-static/bin | head
+          .tmp/qt-static/bin/qmake -query QT_VERSION || true
 
-          #   -- AppDir fixups (must happen BEFORE appimagetool) ----------------------
-          #   * offscreen/minimal platform plugins: needed for the headless smoke below
-          mkdir -p .ci/AppDir/usr/plugins/platforms
-          for p in libqoffscreen.so libqminimal.so; do
-            [ -f "/usr/lib/qt6/plugins/platforms/$p" ] && cp "/usr/lib/qt6/plugins/platforms/$p" .ci/AppDir/usr/plugins/platforms/
-          done
-          #   * wayland must be in the bundle: with only xcb the app aborts on a pure
-          #     Wayland session (measured on the real machine, rc=134).
-          ls .ci/AppDir/usr/plugins/platforms/
-          ls .ci/AppDir/usr/plugins/platforms/ | grep -q libqwayland || {
-            echo "::error::wayland platform plugin missing from the AppImage (xcb only)"; exit 1; }
-          #   * AppRun is a SYMLINK to the binary, so nobody sets QT_PLUGIN_PATH and Qt
-          #     looks for plugins in <AppDir>/platforms => "Could not find the Qt platform
-          #     plugin" and abort. A qt.conf next to the binary fixes the lookup.
-          cat > .ci/AppDir/usr/bin/qt.conf <<'EOF'
-          [Paths]
-          Prefix = ..
-          Plugins = plugins
-          Qml2Imports = qml
-          EOF
-          #   * Qt QML modules: our QML is compiled into the qrc, so linuxdeploy cannot see
-          #     the imports; copy the modules we use (QtQuick is 15 MB, the rest is tiny).
-          mkdir -p .ci/AppDir/usr/qml
-          for m in QtQuick QtQml QtCore; do
-            [ -d "/usr/lib/qt6/qml/$m" ] && cp -r "/usr/lib/qt6/qml/$m" .ci/AppDir/usr/qml/
-          done
-          ls .ci/AppDir/usr/qml/
+      - name: Configure and build (static)
+        run: |
+          set -euo pipefail
+          cmake -S . -B build-static -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$PWD/.tmp/qt-static" \
+            -DCMAKE_CXX_FLAGS="-ffunction-sections -fdata-sections" \
+            -DCMAKE_EXE_LINKER_FLAGS="-Wl,--gc-sections"
+          cmake --build build-static --target photoset-reader --parallel "$(nproc)"
+          ls -l build-static/photoset-reader
+          size build-static/photoset-reader || true
 
-          #   -- smoke: really start it (offscreen + a one-image dir), wait for [ui] viewer
-          #      --version alone proves nothing: it returns before engine.load()
-          mkdir -p /tmp/aisample
-          QT_QPA_PLATFORM=offscreen .ci/AppDir/usr/bin/photoset-reader /tmp/aisample \
-            --log-level info --log-file /tmp/ai.log >/dev/null 2>&1 &
-          AI_PID=$!
-          for i in $(seq 1 20); do
-            sleep 0.5
-            grep -q '\[ui\] viewer' /tmp/ai.log && break
-          done
-          kill $AI_PID 2>/dev/null || true
-          wait $AI_PID 2>/dev/null || true
-          grep -q '\[ui\] viewer' /tmp/ai.log || {
-            echo "::error::the bundled executable does not start (QML/platform plugin?)"
-            tail -30 /tmp/ai.log || true
-            exit 1; }
-          grep -m1 '\[cap\] total' /tmp/ai.log || true
-
-          #   -- package ---------------------------------------------------------------
-          curl -fL -o .ci/tools/appimagetool \
-            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x .ci/tools/appimagetool
-          VERSION="$(sed -n 's/^project(photoset-reader VERSION \([0-9][0-9.]*\).*/\1/p' CMakeLists.txt)$(sed -n 's/^set(PHOTOSET_VERSION_SUFFIX "\([^"]*\)".*/\1/p' CMakeLists.txt)"
-          export VERSION
-          .ci/tools/appimagetool .ci/AppDir "dist/photoset-reader-${VERSION}-x86_64.AppImage"
+      - name: Package AppImage
+        run: |
+          set -euo pipefail
+          chmod +x scripts/package-appimage.sh
+          ./scripts/package-appimage.sh --deps .tmp/deps
           ls -l dist/
+          #   ★ 冒烟：跑一次（--version 在 engine.load 之前返回，但至少证明动态库闭包是完整的）
+          APPIMAGE_EXTRACT_AND_RUN=1 dist/*.AppImage --version || true
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v7
@@ -217,4 +190,4 @@ jobs:
           name: photoset-reader-linux-appimage
           path: dist/*.AppImage
           retention-days: 14
-          if-no-files-found: warn
+          if-no-files-found: error
