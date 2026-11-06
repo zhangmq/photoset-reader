@@ -140,7 +140,7 @@ Sequence::Sequence(const Sequence &o)
       m_rows(o.m_rows),
       m_scanOptions(o.m_scanOptions),
       m_rowIndexByOrd(o.m_rowIndexByOrd), m_nodeIndexByOrd(o.m_nodeIndexByOrd),
-      m_rootInit(o.m_rootInit), m_markMissingBySize(o.m_markMissingBySize),
+      m_rootInit(o.m_rootInit),
       m_gStart(o.m_gStart), m_gSize(o.m_gSize), m_pending(o.m_pending), m_decided(o.m_decided),
       m_unsupported(o.m_unsupported), m_root(o.m_root), m_recursive(o.m_recursive),
       m_archivePages(o.m_archivePages), m_rootIsArchive(o.m_rootIsArchive),
@@ -166,7 +166,6 @@ Sequence &Sequence::operator=(const Sequence &o)
     m_rowIndexByOrd = o.m_rowIndexByOrd;
     m_nodeIndexByOrd = o.m_nodeIndexByOrd;
     m_rootInit = o.m_rootInit;
-    m_markMissingBySize = o.m_markMissingBySize;
     m_gStart = o.m_gStart;
     m_gSize = o.m_gSize;
     m_pending = o.m_pending;
@@ -741,7 +740,6 @@ void Sequence::resetRows()
     m_rowIndexByOrd.clear();
     m_nodeIndexByOrd.clear();
     m_rootInit = false;
-    m_markMissingBySize = false;
     resetGrouping();
 }
 
@@ -806,7 +804,7 @@ void Sequence::applyRows(const QVector<Row> &rows)
         //   ★ **尺寸读不到 ≠ 缺图**（用户 2026-11-06 定）：只要后缀在能力表里，扫描就必须
         //     列出它 —— 显示侧按"占位"处理（有尺寸 ⇒ 等比装进 1920×1080；无尺寸 ⇒ 1080×1080
         //     方图，方图天然不与邻图配对）。原来这里是
-        //     `m_markMissingBySize && !size.isValid()`：头坏掉的图被当成"缺图"**永久跳过**，
+        //     旧实现是"尺寸无效 ⇒ 标 missing"：头坏掉的图被当成"缺图"**永久跳过**，
         //     连占位都不给 —— 与三态（缺图 / 占位 / 残图）冲突。
         //     `missing` 从此只由 `markMissing()`（磁盘上真的没了）写出。
         it.missing = false;
@@ -853,7 +851,6 @@ void Sequence::restore(const QString &rootPath, RowSource &src, bool rootIsArchi
     m_recursive = true;
     m_archivePages = rootIsArchive;
     m_rootIsArchive = rootIsArchive;
-    m_markMissingBySize = false;              // 库行路径：尺寸未知 ≠ 缺失（库里没有 missing）
     initRoot(true, rootIsArchive ? Kind::Archive : Kind::Folder,
              rootLabel.isEmpty() ? QFileInfo(m_root).fileName() : rootLabel);
     m_rootInit = true;
@@ -885,9 +882,6 @@ void Sequence::startScan(const QString &path, int maxDepth, bool hidden, const S
 
     resetRows();
     m_scanOptions = opt;                      // ★ 扫描参数**调用方传**（序列不读设置）
-    m_markMissingBySize = false;              // ★ 2026-11-06 退役：尺寸读不到不再当缺图
-                                              //   （判据见上面 `it.missing = false` 那段注释；
-                                              //    这个成员现在恒为 false，下一步连同赋值一起删）
     m_root = absClean(path);
     m_recursive = true;
     m_archivePages = false;
@@ -1443,7 +1437,6 @@ void Sequence::buildFromFolder(const QString &dir, bool recursive)
     m_root = absClean(dir);
     m_recursive = recursive;
     m_rootIsArchive = false;
-    m_markMissingBySize = false;
     initRoot(true, Kind::Folder, QFileInfo(m_root).fileName());
     m_rootInit = true;
 
@@ -1503,7 +1496,6 @@ void Sequence::buildFromSingleFile(const QString &filePath)
     const QFileInfo fi(filePath);
     m_root = fi.absolutePath();
     m_archivePages = false;
-    m_markMissingBySize = false;
     Item it;
     it.displayName = fi.fileName();
     it.label = fi.fileName();
@@ -1520,7 +1512,6 @@ void Sequence::buildFromMultiPageFile(const QString &filePath, int pageCount)
     const QFileInfo fi(filePath);
     m_root = fi.absolutePath();
     m_archivePages = false;
-    m_markMissingBySize = false;
     for (int i = 0; i < pageCount; ++i) {
         Item it;
         it.displayName = QStringLiteral("%1 [%2/%3]").arg(fi.fileName()).arg(i + 1).arg(pageCount);
@@ -1539,7 +1530,6 @@ void Sequence::buildFromNames(const QString &archivePath, const QStringList &nam
     m_root = absClean(archivePath);
     m_archivePages = true;
     m_rootIsArchive = true;
-    m_markMissingBySize = false;
     initRoot(true, Kind::Archive, QFileInfo(m_root).fileName());
     m_rootInit = true;
 
@@ -1564,7 +1554,6 @@ void Sequence::buildFromEntries(const QString &rootPath, const QVector<Item> &en
 {
     clear();
     m_root = absClean(rootPath);
-    m_markMissingBySize = false;
     for (const Item &it : entries) appendItem(it);
     finishAppend();
 }

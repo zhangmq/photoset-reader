@@ -157,8 +157,11 @@ public:
         imageread::Location loc;  // ★ 读取位置（磁盘路径 + 容器成员链 + 页号）
         QString folderLabel;     // 所属容器（显示用）
         int folderDepth = 0;
-        bool missing = false;    // 惰性发现：已消失 / 读不到（**只在会话内**标记）
-        QSize size;              // 不解码读到的像素尺寸（判宽窄用；无效 = 未知）
+        //   **缺图** = 文件真的不在了（只在本会话内标记，由 `markMissing()` 的 exists 判定产出）。
+        //   ★ 与"尺寸读不到"无关（用户 2026-11-06）：三态是 缺图 / 占位（有字节但解不出）/
+        //     残图（非空就显示）。原来那句"已消失 / 读不到"把两件事混写，已拆开。
+        bool missing = false;
+        QSize size;              // 不解码读到的像素尺寸（判宽窄用；无效 = 未知 ⇒ 不配对、占位用方图）
         int ord = -1;            // ★ 遍历序号（写入磁盘时的排序依据）
         int parentNode = -1;     // 所属树节点（**派生**，不写入磁盘；根级 = -1）
 
@@ -559,8 +562,6 @@ private:
     QHash<int, int>   m_rowIndexByOrd;       // 行 ord → 行下标（**沿链解析**用）
     QHash<int, int>   m_nodeIndexByOrd;      // 行 ord → 树节点下标（含 -1 → 根）
     bool              m_rootInit = false;    // 根节点描述已到（或本来就没有树）
-    // 扫描路径：尺寸读不到 ⇒ 标 missing（**只在会话内**）；库行路径：尺寸未知 ≠ 缺失
-    bool              m_markMissingBySize = true;
 
     // 从头锚定分组
     QVector<int> m_gStart;
