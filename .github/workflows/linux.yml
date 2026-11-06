@@ -155,7 +155,7 @@ jobs:
           #     显式点名要 wayland 模块 + 平台插件，它才会把 `libqwayland*.so` 和
           #     `libQt6WaylandClient.so.6` 一起打进去。
           export EXTRA_QT_MODULES="waylandclient"
-          export EXTRA_PLATFORM_PLUGINS="libqwayland-egl.so;libqwayland-generic.so"
+          export EXTRA_PLATFORM_PLUGINS="libqwayland.so"
           linuxdeploy --appdir .ci/AppDir \
             --executable build/photoset-reader \
             --desktop-file assets/photoset-reader.desktop \
