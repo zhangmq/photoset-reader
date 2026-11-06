@@ -88,7 +88,8 @@ Popup {
                 anchors.rightMargin: Theme.spaceMd
                 anchors.verticalCenter: parent.verticalCenter
                 glyph: Theme.icClose
-                tooltip: qsTr("Close")
+                //   这里**不会保存**：关掉 = 丢弃草稿（与左下角「放弃修改」同一个语义）
+                tooltip: qsTr("Discard changes")
                 onTriggered: { root.close(); root.finished() }
             }
         }
@@ -208,7 +209,7 @@ Popup {
 
                 Button {
                     variant: "outline"
-                    label: qsTr("Cancel")
+                    label: qsTr("Discard changes")
                     onClicked: root.close()
                 }
                 Button {
@@ -230,6 +231,8 @@ Popup {
         message: qsTr("Restore every setting to its default value? This cannot be undone.")
         acceptText: qsTr("Reset")
         danger: true
+        //   用户 2026-11-06：点「恢复」**只把表单重置成默认值**（草稿），
+        //   对话框不关、不写盘 —— 之后「确定」才生效并保存，「放弃修改」就什么都不干。
         onAccepted: ui.resetSettingsEditToDefaults()
     }
 }

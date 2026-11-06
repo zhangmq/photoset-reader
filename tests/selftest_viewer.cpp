@@ -472,14 +472,16 @@ int runViewerSelfTest(const QString &realDir)
                           .arg(fresh.prefetchWindow()));
             }
 
-            //   「恢复默认」只改草稿，仍要点「确定」
+            //   「恢复默认」只重置表单（草稿）：不关框、不写盘；「确定」才生效
             ui.beginSettingsEdit();
+            ui.settingsDraft()->setPrefetchWindow(7);
             ui.resetSettingsEditToDefaults();
-            check(ui.prefetchWindow() == 4 && ui.settingsDraft()->prefetchWindow() == 1,
-                  QStringLiteral("⑥ 草稿：恢复默认只改草稿（生效仍 4，草稿 1）"));
+            check(ui.settingsDraft()->prefetchWindow() == 1 && ui.prefetchWindow() == 4,
+                  QStringLiteral("⑥ 恢复默认：只重置草稿（草稿 1、生效仍 4）"));
             ui.applySettingsEdit();
             check(ui.prefetchWindow() == 1,
-                  QStringLiteral("⑥ 草稿：确定后预取回到 1（实际 %1）").arg(ui.prefetchWindow()));
+                  QStringLiteral("⑥ 恢复默认：确定后生效（预取 1，实际 %1）")
+                      .arg(ui.prefetchWindow()));
             app::AppSettings afterReset;
             afterReset.load();
             check(afterReset.prefetchWindow() == 1 && afterReset.intervalMs() == 1000,

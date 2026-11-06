@@ -648,7 +648,7 @@ void UiModel::applySettingsEdit()
 
 void UiModel::resetSettingsEditToDefaults()
 {
-    m_draft->resetToDefaults();               // 只改草稿；仍要点「确定」才生效/落盘
+    m_draft->resetToDefaults();               // 只重置表单；「确定」才生效/写盘
 }
 
 void UiModel::resetSettingsToDefaults()
