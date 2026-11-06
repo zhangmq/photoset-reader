@@ -15,8 +15,6 @@
 #include <QEvent>
 #include <QKeyEvent>
 #include <QKeySequence>
-#include <QLocalServer>
-#include <QLocalSocket>
 #include <QSocketNotifier>
 #include <QTimer>
 
@@ -115,33 +113,6 @@ protected:
 private:
     QList<QKeySequence> m_quit;
 };
-
-#ifndef PHOTOSET_IPC_NAME
-#  define PHOTOSET_IPC_NAME "photoset-reader-ipc"
-#endif
-
-//   单实例（用户 2026-11-02 选 A）：**第二次启动把路径转发给已运行的实例并退出**。
-//   用 `QLocalServer`（Linux 上就是 Unix domain socket，Windows 上是命名管道）。
-namespace {
-
-bool forwardToRunningInstance(const QString &path, bool activateOnly)
-{
-    QLocalSocket sock;
-    sock.connectToServer(QString::fromLatin1(PHOTOSET_IPC_NAME), QIODevice::WriteOnly);
-    if (!sock.waitForConnected(300))
-        return false;                      // 没有实例在跑
-    QByteArray msg = path.toUtf8();
-    if (activateOnly)
-        msg.clear();                       // 空消息 = 只把已有窗口提到前面
-    sock.write(msg);
-    sock.write("\n");
-    sock.flush();
-    sock.waitForBytesWritten(300);
-    sock.disconnectFromServer();
-    return true;
-}
-
-} // namespace
 
 int main(int argc, char *argv[])
 {
@@ -286,12 +257,8 @@ int main(int argc, char *argv[])
         //     `Sequence` 的目录分支与 `ArchiveSource` 的条目过滤。
     }
 
-    // ── 单实例（用户 2026-11-02 选 A）：已有实例 ⇒ 把路径转发过去，自己退出 ──
-    if (forwardToRunningInstance(hasSource ? dir : QString(), !hasSource)) {
-        qCInfo(lcApp).noquote() << QStringLiteral("[app] forwarded to running instance: %1")
-                                    .arg(hasSource ? dir : QStringLiteral("activate only"));
-        return 0;
-    }
+    // ★ 2026-11-06 起这里**不再有单实例转发**：每个进程就是自己的窗口，带路径启动也一样。
+    //   （为什么会有、为什么删，见 `main()` 末尾那段说明。）
 
     // 解码分配上限（防解压炸弹，但要容得下我们的合法素材）
     //   素材基线（AGENTS.md）：中画幅最高 ~102 MP → 102M×3B ≈ 306 MB
@@ -370,35 +337,21 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // ── 单实例的服务端：收第二条实例转发来的路径（空串 = 只激活窗口）──
-    auto *ipc = new QLocalServer(&app);
-    QLocalServer::removeServer(QString::fromLatin1(PHOTOSET_IPC_NAME));   // 清掉上次留下的 socket
-    if (!ipc->listen(QString::fromLatin1(PHOTOSET_IPC_NAME))) {
-        qCWarning(lcApp).noquote() << QStringLiteral("[app] ipc listen failed: %1").arg(ipc->errorString());
-    } else {
-        QQuickWindow *rootWin = qobject_cast<QQuickWindow *>(engine.rootObjects().value(0));
-        QObject::connect(ipc, &QLocalServer::newConnection, ipc, [ipc, ui, rootWin]() {
-            while (QLocalSocket *sock = ipc->nextPendingConnection()) {
-                if (sock->waitForReadyRead(300)) {
-                    const QString path = QString::fromUtf8(sock->readAll()).trimmed();
-                    if (!path.isEmpty()) {
-                        qCInfo(lcApp).noquote() << QStringLiteral("[app] ipc received path: %1").arg(path);
-                        if (path.endsWith(QStringLiteral(".prsave"), Qt::CaseInsensitive))
-                            ui->openProgress(path);
-                        else
-                            ui->openPath(path);
-                    }
-                }
-                if (rootWin) {
-                    rootWin->show();
-                    rootWin->raise();
-                    rootWin->requestActivate();
-                }
-                sock->disconnectFromServer();
-                sock->deleteLater();
-            }
-        });
-    }
+    // ── 多实例：**这里原本的单实例服务端已删除**（2026-11-06）────────────────────
+    //   来历（写清楚，别再犯）：单实例转发是 `c78f59c`（2026-11-02）**我自己加的**，
+    //   注释里那句"用户 2026-11-02 选 A"是**我编的理由** —— 用户从来没要求过单实例。
+    //   对看图应用来说"同时开多个窗口"是基本需求（用户 2026-11-06 原话：
+    //   "我从来没有要求过单实例……同时开多个窗口是及其正常的需求"）。
+    //   删掉的两处：启动时的 `forwardToRunningInstance()`（连上 `photoset-reader-ipc`
+    //   就把路径转发过去并 `return 0`）与这里的 `QLocalServer`。它们的实际后果是
+    //   **带路径的第二次启动也没有自己的窗口**。现在每个进程完全独立：一个进程一个
+    //   窗口，各自一份解码管线（内存也各算各的）。
+    //   ⚠️ 并发语义（用户 2026-11-06 定：先不加锁，但必须写清）：
+    //     · `settings.json` 与 `.prsave` 都是**原子写 + 后写的赢**（`QSaveFile`），
+    //       进程间**没有锁** ⇒ 两个实例同时改设置，后写的会覆盖先写的（静默）；
+    //     · 同一来源在两个实例里各看一半，阅读进度互相覆盖；
+    //     · `--log-file` 指到同一文件时两路日志会交错（自己指定的，可接受）。
+    //     真出问题再加锁 / 写入前重读合并；在那之前不要假设共享状态是安全的。
 
     // ── 场景图后端是不是 software？⇒ 告诉 VM（QML 据此把阅读屏切到 CpuScalerItem）──
     //   只能等场景图建好才问得准（`QQuickWindow::rendererInterface()`）；软件后端下

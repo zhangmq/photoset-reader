@@ -50,6 +50,16 @@ qt_add_executable(ib-test-decode
 )
 target_link_libraries(ib-test-decode PRIVATE testsupport)
 
+# ── 多实例契约（**两个进程必须能同时跑**）──
+#   为什么需要（2026-11-06）：单实例转发是 `c78f59c` 里我自己加的（注释写的"用户选 A"
+#   是编造的），后果是"带路径的第二次启动没有自己的窗口"。这类退化编译、别的套件、
+#   CTest 全发现不了 —— 只有人点第二次才看得到 ⇒ 用两个真进程钉住。
+#   ★ 套件自己启动 `photoset-reader`（同目录），并把设置指到临时目录。
+qt_add_executable(ib-test-instance
+    selftest_instance.cpp
+)
+target_link_libraries(ib-test-instance PRIVATE testsupport)
+
 # ── UI 契约（QML 加载 + `HintBubble` 几何 / 弹出类型）──
 #   为什么需要：解码/渲染有测试，**QML 一行覆盖都没有** ⇒ "某类型不存在"、
 #   "tooltip 在缩放窗口里压住按钮并抢指针"这类事故只能靠人眼发现。
@@ -73,6 +83,9 @@ add_test(NAME ib-test-viewer COMMAND ib-test-viewer
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME ib-test-decode COMMAND ib-test-decode
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+#   多实例：套件自己起两个真进程（工作目录随意，靠 applicationDirPath 找产品）
+add_test(NAME ib-test-instance COMMAND ib-test-instance
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 #   UI 契约跑两遍：缩放 1.0 与 1.35（后者是这台设备真实的条件，也是旧实现出错的地方）
 add_test(NAME ib-test-ui COMMAND ib-test-ui
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
@@ -91,7 +104,7 @@ add_test(NAME ib-test-ui-hidpi COMMAND ib-test-ui
 #       stderr 上一个字都没有 ⇒ 测试看起来"没有任何输出"，CI 里连 FAIL 都看不见。
 #     两个变量在 Windows 上无害（offscreen 插件照样有、stderr 本来就是控制台）。
 set_tests_properties(ib-test-scan ib-test-progress ib-test-meta ib-test-viewer ib-test-decode
-                     ib-test-ui ib-test-ui-hidpi
+                     ib-test-ui ib-test-ui-hidpi ib-test-instance
                      PROPERTIES SKIP_RETURN_CODE 77
                      ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_FORCE_STDERR_LOGGING=1")
 #   ★ `ENVIRONMENT` 是**整体替换**、不是追加（2026-11-06 实测：先设 offscreen 再单独

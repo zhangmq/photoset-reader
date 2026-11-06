@@ -73,9 +73,8 @@ jobs:
           QT_FORCE_STDERR_LOGGING: "1"
         run: |
           mkdir -p /tmp/capsample
-          #   ⚠️ 先清掉可能残留的实例：本项目**单实例**（`QLocalServer`）——
-          #      已有实例在跑时，新进程只会把路径转发过去然后退出，
-          #      `[cap]` 一行都不会有（2026-11-06 实测踩到）。
+          #   ⚠️ 先清掉可能残留的实例（2026-11-06 起应用是**多实例**，不再有"第二次启动
+          #      转发给旧进程然后退出"的旧行为；这里 pkill 只是为了日志干净、端口/socket 干净）。
           pkill -f photoset-reader 2>/dev/null || true
           timeout 10 ./build/photoset-reader /tmp/capsample \
             --log-level info --log-file /tmp/cap.log >/dev/null 2>&1 || true
