@@ -111,6 +111,9 @@ add_library(ibcore STATIC
     #   Linux gdk-pixbuf：**全部 dlopen**，不加编译期依赖；非 Linux 编译成空桩
     src/decode/provider_gdk.cpp
     src/decode/provider_gdk.h
+    #   外部程序（数据驱动 profile，子进程隔离）：两平台同一份
+    src/decode/provider_cli.cpp
+    src/decode/provider_cli.h
     # ── 占位图（有字节但解不出；主显示与缩略图共用同一份几何）──
     src/placeholder.cpp
     src/placeholder.h

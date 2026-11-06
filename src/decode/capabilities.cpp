@@ -1,5 +1,6 @@
 #include "capabilities.h"
 
+#include "provider_cli.h"
 #include "provider_gdk.h"
 #include "provider_qt.h"
 #include "provider_wic.h"
@@ -11,6 +12,17 @@
 
 namespace decode {
 namespace {
+
+//   ★★ **产品策略性排除**（不是能力声明，**只做减法**）：用户 2026-11-06 定 ——
+//     **PDF 不做**："首先我们目标是看图，PDF 以什么形式接进来都别扭"。
+//     有些发行版的 Qt 插件（`libqpdf.so`）能解 PDF，能力探测会把 `pdf` 广告进来；
+//     但一个"没有页语义、只有第一页"的东西混在图集里比不支持更糟 ⇒ 在这里减掉。
+//     ⚠️ 减掉的只是**收录与显示**：用户显式打开一个 PDF 仍会进解码链（那是他的选择）。
+bool excludedSuffix(const QString &suffix)
+{
+    static const QSet<QString> denied = {QStringLiteral("pdf"), QStringLiteral("pdd")};
+    return denied.contains(suffix);
+}
 
 //   注册表：**按平台**装配（不是按格式）。新增一个来源 = 这里多一行，
 //   `imagedecoder.h` / 上层调用点一个字都不用改。
@@ -26,6 +38,9 @@ QList<Provider *> makeProviders()
     //   ★ KDE 机器上它和 kimageformats 高度重叠（去重后没影响）；GNOME 机器上往往
     //     是 AVIF / JXL / HEIF 唯一能用的那一路。
     if (Provider *gdk = makeGdkProvider()) out << gdk;
+    //   rank 90：外部程序（`magick` / `vips` …）。**永远最后**：能自己解就不起子进程。
+    //   默认 profile 的 suffixes 为空 ⇒ 它只兜底、不往文件列表里塞东西。
+    out << makeCliProvider();
 #ifdef Q_OS_LINUX
     //   阶段 B：gdk-pixbuf（dlopen，GNOME 栈的 loader）
 #endif
@@ -63,7 +78,9 @@ void Capabilities::ensureProbed() const
     QSet<QString> unionOf;
     for (const Provider *p : m_providers) {
         const QStringList sfx = p->advertisedSuffixes();
-        for (const QString &s : sfx) unionOf.insert(s);
+        //   统计口径与 `suffixes()` 一致：**排除掉的策略性后缀不算进总数**
+        for (const QString &s : sfx)
+            if (!excludedSuffix(s)) unionOf.insert(s);
         qCInfo(lcDecode).noquote()
             << QStringLiteral("[cap] %1%2: %3 suffixes%4")
                    .arg(p->name(), -5)
@@ -73,9 +90,19 @@ void Capabilities::ensureProbed() const
                                       : QStringLiteral(" (%1)").arg(sfx.join(QLatin1Char(' '))));
         if (p->available()) total += sfx.size();
     }
+    //   ★ 把"被策略排除的"写出来：否则看日志的人会以为"这台机器解不了 pdf"，
+    //     而不是"我们不做 pdf"（用户 2026-11-06：有更合适的工具，不凑这个热闹）。
+    QStringList denied;
+    for (const Provider *p : m_providers)
+        for (const QString &s : p->advertisedSuffixes())
+            if (excludedSuffix(s) && !denied.contains(s)) denied << s;
+    denied.sort();
     qCInfo(lcDecode).noquote()
-        << QStringLiteral("[cap] total : %1 suffixes from %2 providers")
-               .arg(unionOf.size()).arg(m_providers.size());
+        << QStringLiteral("[cap] total : %1 suffixes from %2 providers%3")
+               .arg(unionOf.size()).arg(m_providers.size())
+               .arg(denied.isEmpty() ? QString()
+                                     : QStringLiteral(" (excluded by policy: %1)")
+                                           .arg(denied.join(QLatin1Char(' '))));
 }
 
 void Capabilities::probe()
@@ -89,7 +116,8 @@ QStringList Capabilities::suffixes() const
     QStringList out;
     for (const Provider *p : m_providers) {
         if (!p->available()) continue;
-        for (const QString &s : p->advertisedSuffixes()) out << s;
+        for (const QString &s : p->advertisedSuffixes())
+            if (!excludedSuffix(s)) out << s;
     }
     out.removeDuplicates();
     out.sort();
@@ -100,7 +128,7 @@ bool Capabilities::canDecodeSuffix(const QString &suffix) const
 {
     ensureProbed();
     const QString s = suffix.trimmed().toLower();
-    if (s.isEmpty()) return false;
+    if (s.isEmpty() || excludedSuffix(s)) return false;
     for (const Provider *p : m_providers) {
         if (!p->available()) continue;
         if (p->advertisedSuffixes().contains(s)) return true;
@@ -114,7 +142,8 @@ QHash<QString, QStringList> Capabilities::owners() const
     QHash<QString, QStringList> out;
     for (const Provider *p : m_providers) {
         if (!p->available()) continue;
-        for (const QString &s : p->advertisedSuffixes()) out[s] << p->name();
+        for (const QString &s : p->advertisedSuffixes())
+            if (!excludedSuffix(s)) out[s] << p->name();
     }
     return out;
 }
