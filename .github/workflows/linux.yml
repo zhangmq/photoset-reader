@@ -128,6 +128,9 @@ jobs:
       - name: AppImage
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
+          #   linuxdeploy 自带的 strip 认不出 Arch 的 `.relr.dyn` 段（strip 失败会被
+          #   Qt 插件当成致命错误）⇒ 干脆不 strip，体积差几 MB。
+          NO_STRIP: "1"
         run: |
           set -euo pipefail
           mkdir -p .ci/tools .ci/AppDir dist
