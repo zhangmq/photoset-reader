@@ -32,7 +32,11 @@ jobs:
             git cmake ninja gcc pkgconf \
             qt6-base qt6-declarative qt6-shadertools qt6-tools qt6-svg qt6-imageformats \
             libarchive libexif xz zlib libunrar \
-            gdk-pixbuf2
+            gdk-pixbuf2 \
+            qt6-wayland
+          #   ★ `qt6-wayland`（2026-11-07）：不装它，linuxdeploy 只把 **xcb** 平台插件收进
+          #     AppImage ⇒ 纯 Wayland 会话里 `Could not find the Qt platform plugin` 直接 abort
+          #     （真机实测 rc=134）。装了之后 wayland 插件才会一起被打包。
           #   ★ `gdk-pixbuf2`（2026-11-06 补）：我们的 `provider_gdk` 用 `dlopen` 找
           #     `libgdk_pixbuf-2.0.so.0`，**容器里没装就整条 provider 静默消失** ——
           #     第一次跑本工作流时 `[cap]` 只有 `qt(21) + cli(0)`，"2 providers"，
@@ -153,6 +157,12 @@ jobs:
           #   图标在 AppDir 里必须叫 <Icon= 的值>.png（desktop 写的是 photoset-reader）
           cp assets/icons/photoset-reader-256.png .ci/AppDir/usr/share/icons/hicolor/256x256/apps/photoset-reader.png || true
           cp assets/icons/photoset-reader-256.png .ci/AppDir/photoset-reader.png || true
+          #   ★ offscreen/minimal 插件补进去：CI 里要能在没有 display 的环境冒烟测 AppImage
+          mkdir -p .ci/AppDir/usr/plugins/platforms
+          for p in libqoffscreen.so libqminimal.so; do
+            [ -f "/usr/lib/qt6/plugins/platforms/$p" ] && cp "/usr/lib/qt6/plugins/platforms/$p" .ci/AppDir/usr/plugins/platforms/
+          done
+          ls .ci/AppDir/usr/plugins/platforms/
           curl -fL -o .ci/tools/appimagetool \
             https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x .ci/tools/appimagetool
@@ -160,6 +170,8 @@ jobs:
           export VERSION
           .ci/tools/appimagetool .ci/AppDir "dist/photoset-reader-${VERSION}-x86_64.AppImage"
           ls -l dist/
+          #   ★ 冒烟：AppImage 必须能起来（缺平台插件/缺库在这里就露出来）
+          QT_QPA_PLATFORM=offscreen "dist/photoset-reader-${VERSION}-x86_64.AppImage" --version
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v7
