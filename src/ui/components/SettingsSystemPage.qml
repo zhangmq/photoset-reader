@@ -11,8 +11,8 @@ import AppUi
 //      它是**滑动窗口** —— 向前/向后翻页时窗口跟着滑动，
 //      **两侧各分多少由机制动态决定**，不再让用户分别配"前进/后退"两个数
 //   （用户 2026-10-11：这三项从常规页拆出来独立成页）
-//   ★ 值一律**读写 ViewModel**（`ui.scanHidden` / `ui.recurseDepth` / `ui.prefetchWindow` /
-//     `ui.themeMode`）：设置是**语义状态**，单一来源在 ViewModel（本页不再存第二份占位属性）
+//   ★ 值一律**读写 ViewModel**（`ui.settingsDraft.scanHidden` / `ui.settingsDraft.recurseDepth` / `ui.settingsDraft.prefetchWindow` /
+//     `ui.settingsDraft.themeMode`）：设置是**语义状态**，单一来源在 ViewModel（本页不再存第二份占位属性）
 Item {
     id: page
 
@@ -26,8 +26,8 @@ Item {
             label: qsTr("Include hidden items")
             description: qsTr("Hidden folders are skipped by default")
             Switch {
-                checked: ui.scanHidden
-                onToggled: ui.scanHidden = !ui.scanHidden
+                checked: ui.settingsDraft.scanHidden
+                onToggled: ui.settingsDraft.scanHidden = !ui.settingsDraft.scanHidden
             }
         }
 
@@ -35,11 +35,11 @@ Item {
             label: qsTr("Recursion depth")
             description: qsTr("Maximum subfolder depth to scan; deeper scans take longer and use more memory")
             NumberField {
-                value: ui.recurseDepth
+                value: ui.settingsDraft.recurseDepth
                 from: 1
                 to: 64
                 suffix: qsTr("levels")
-                onEdited: function (v) { ui.recurseDepth = v }
+                onEdited: function (v) { ui.settingsDraft.recurseDepth = v }
             }
         }
 
@@ -50,17 +50,17 @@ Item {
             label: qsTr("Prefetch window")
             description: qsTr("Images decoded ahead; 0 = current screen only. Higher values raise decoding concurrency and power use")
             DropdownButton {
-                label: String(ui.prefetchWindow)
-                menuItems: [ { text: "0", selected: ui.prefetchWindow === 0 },
-                             { text: "1", selected: ui.prefetchWindow === 1 },
-                             { text: "2", selected: ui.prefetchWindow === 2 },
-                             { text: "3", selected: ui.prefetchWindow === 3 },
-                             { text: "4", selected: ui.prefetchWindow === 4 },
-                             { text: "5", selected: ui.prefetchWindow === 5 },
-                             { text: "6", selected: ui.prefetchWindow === 6 },
-                             { text: "7", selected: ui.prefetchWindow === 7 },
-                             { text: "8", selected: ui.prefetchWindow === 8 } ]
-                onItemTriggered: function (i) { ui.prefetchWindow = i }
+                label: String(ui.settingsDraft.prefetchWindow)
+                menuItems: [ { text: "0", selected: ui.settingsDraft.prefetchWindow === 0 },
+                             { text: "1", selected: ui.settingsDraft.prefetchWindow === 1 },
+                             { text: "2", selected: ui.settingsDraft.prefetchWindow === 2 },
+                             { text: "3", selected: ui.settingsDraft.prefetchWindow === 3 },
+                             { text: "4", selected: ui.settingsDraft.prefetchWindow === 4 },
+                             { text: "5", selected: ui.settingsDraft.prefetchWindow === 5 },
+                             { text: "6", selected: ui.settingsDraft.prefetchWindow === 6 },
+                             { text: "7", selected: ui.settingsDraft.prefetchWindow === 7 },
+                             { text: "8", selected: ui.settingsDraft.prefetchWindow === 8 } ]
+                onItemTriggered: function (i) { ui.settingsDraft.prefetchWindow = i }
             }
         }
 
@@ -68,11 +68,11 @@ Item {
             label: qsTr("Nested archive limit")
             description: qsTr("Nested archives above this size are not opened (they are rare; avoids paying a big price for them)")
             NumberField {
-                value: ui.innerArchiveMaxMb
+                value: ui.settingsDraft.innerArchiveMaxMb
                 from: 64
                 to: 8192
                 suffix: "MB"
-                onEdited: function (v) { ui.innerArchiveMaxMb = v }
+                onEdited: function (v) { ui.settingsDraft.innerArchiveMaxMb = v }
             }
         }
 
@@ -85,15 +85,15 @@ Item {
                 readonly property var levels: ["debug", "info", "warning", "error", "off"]
                 readonly property var labels: [qsTr("Debug"), qsTr("Info"),
                                                qsTr("Warning"), qsTr("Error"), qsTr("Off")]
-                label: labels[Math.max(0, levels.indexOf(ui.logLevel))]
+                label: labels[Math.max(0, levels.indexOf(ui.settingsDraft.logLevel))]
                 menuItems: [
-                    { text: labels[0], selected: ui.logLevel === "debug" },
-                    { text: labels[1], selected: ui.logLevel === "info" },
-                    { text: labels[2], selected: ui.logLevel === "warning" },
-                    { text: labels[3], selected: ui.logLevel === "error" },
-                    { text: labels[4], selected: ui.logLevel === "off" }
+                    { text: labels[0], selected: ui.settingsDraft.logLevel === "debug" },
+                    { text: labels[1], selected: ui.settingsDraft.logLevel === "info" },
+                    { text: labels[2], selected: ui.settingsDraft.logLevel === "warning" },
+                    { text: labels[3], selected: ui.settingsDraft.logLevel === "error" },
+                    { text: labels[4], selected: ui.settingsDraft.logLevel === "off" }
                 ]
-                onItemTriggered: function (i) { ui.logLevel = levels[i] }
+                onItemTriggered: function (i) { ui.settingsDraft.logLevel = levels[i] }
             }
         }
 

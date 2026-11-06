@@ -43,6 +43,7 @@ UiModel::UiModel(QObject *parent)
 {
     // ★★ 运行期设置的**唯一实例**在这里 load（时机等价：本类被建出来之后才有人读设置）。
     m_settings.load();
+    m_draft = new app::SettingsDraft(this);   // 设置对话框的草稿（拷贝生效设置，确定才应用）
     //   验收用（`--log-level debug`）：设置**从哪个文件读到了什么** —— 排查"改了不生效"时
     //   第一眼要看的就是这一行（是没存进去、还是读的不是同一个文件？）
     qCDebug(lcUi).noquote()
@@ -617,14 +618,37 @@ void UiModel::setInnerArchiveMaxMb(int v)
 //     · 逐项调**现有 setter**：写盘、发信号、各自的副作用（语言重装 / 日志级别 / 预取下发给
 //       viewer）全都不用重复实现；setter 发现"已经是这个值"会自己 return，不会多写盘；
 //     · 阅读进度 / 当前 viewer 的会话态（缩放、平移、位置、循环）**不动** —— 只重置设置。
-//   * 2026-11-06 (user): settings live in memory; this is the ONLY write point
-//   (plus "restore defaults"). Cancel writes nothing and does not roll back.
-void UiModel::saveSettings()
+void UiModel::beginSettingsEdit()
 {
-    if (!m_settings.dirty())
-        return;
-    m_settings.saveNow();
-    qCInfo(lcUi).noquote() << QStringLiteral("[ui] settings saved to disk");
+    m_draft->loadFrom(m_settings);            // 打开对话框：拿一份拷贝
+}
+
+void UiModel::applySettingsEdit()
+{
+    //   把草稿**逐个走 UiModel 的 setter** 应用：主题 / 语言 / 日志级别 / 预取那些副作用
+    //   都挂在这些 setter 上，绕过去就会"值变了但没生效"。
+    const AppSettings d = m_draft->values();
+    setThemeMode(d.themeMode());
+    setSlideshowIntervalMs(d.intervalMs());
+    setFitMode(d.defaultFitMode());
+    setDefaultLayout(d.defaultLayout());
+    setDefaultLoop(d.defaultLoop());
+    setScaleAlgorithm(d.scaleAlgorithm());
+    setScanHidden(d.scanHidden());
+    setPreviewStrip(d.previewStrip());
+    setRecurseDepth(d.recurseDepth());
+    setPrefetchWindow(d.prefetchWindow());
+    setInnerArchiveMaxMb(d.innerArchiveMaxMb());
+    setFavoritesDir(d.favoritesDir());
+    setLogLevel(d.logLevel());
+    setLanguage(d.language());                // 最后：会重装翻译并重算界面
+    m_settings.saveNow();                     // 「确定」= 整份写一次
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] settings applied and written");
+}
+
+void UiModel::resetSettingsEditToDefaults()
+{
+    m_draft->resetToDefaults();               // 只改草稿；仍要点「确定」才生效/落盘
 }
 
 void UiModel::resetSettingsToDefaults()

@@ -5,7 +5,7 @@ import AppUi
 //   只有一个设置项：**缩放算法**（5 个一级选项，英文名照社区口径，不翻译）。
 //   ★ 2026-10-20 用户定案：不再有"档位 / 预设 / 二级参数"——
 //     每个算法内部的核宽、色彩空间、是否抑制振铃全部固定（见 gpuscale::Algorithm）。
-//   ★ 值一律读写 ViewModel（`ui.scaleAlgorithm`，键串唯一事实源在 gpuscale）。
+//   ★ 值一律读写 ViewModel（`ui.settingsDraft.scaleAlgorithm`，键串唯一事实源在 gpuscale）。
 //   ★ `Smooth (Qt)` 是唯一由 Qt 实现的项：软件渲染时它也是唯一能出画面的那项。
 Item {
     id: page
@@ -26,15 +26,15 @@ Item {
             description: ui.softwareBackend ? qsTr("Software rendering: Smooth (Qt) only; other options have no effect") : ""
             descriptionColor: Theme.warn
             DropdownButton {
-                label: page.algorithmLabels[Math.max(0, page.algorithmKeys.indexOf(ui.scaleAlgorithm))]
+                label: page.algorithmLabels[Math.max(0, page.algorithmKeys.indexOf(ui.settingsDraft.scaleAlgorithm))]
                 menuItems: [
-                    { text: "Nearest",     selected: ui.scaleAlgorithm === "nearest" },
-                    { text: "Smooth (Qt)", selected: ui.scaleAlgorithm === "smooth" },
-                    { text: "Bicubic",     selected: ui.scaleAlgorithm === "bicubic" },
-                    { text: "Lanczos 2",   selected: ui.scaleAlgorithm === "lanczos2" },
-                    { text: "Lanczos 3",   selected: ui.scaleAlgorithm === "lanczos3" }
+                    { text: "Nearest",     selected: ui.settingsDraft.scaleAlgorithm === "nearest" },
+                    { text: "Smooth (Qt)", selected: ui.settingsDraft.scaleAlgorithm === "smooth" },
+                    { text: "Bicubic",     selected: ui.settingsDraft.scaleAlgorithm === "bicubic" },
+                    { text: "Lanczos 2",   selected: ui.settingsDraft.scaleAlgorithm === "lanczos2" },
+                    { text: "Lanczos 3",   selected: ui.settingsDraft.scaleAlgorithm === "lanczos3" }
                 ]
-                onItemTriggered: function (i) { ui.scaleAlgorithm = page.algorithmKeys[i] }
+                onItemTriggered: function (i) { ui.settingsDraft.scaleAlgorithm = page.algorithmKeys[i] }
             }
         }
     }

@@ -64,6 +64,7 @@ Popup {
             x = p.x
             y = p.y
         }
+        ui.beginSettingsEdit()          // 打开即拷一份：编辑只改草稿，取消什么都不用做
         navCol.forceActiveFocus()
     }
 
@@ -214,7 +215,7 @@ Popup {
                     variant: "elevated"
                     label: qsTr("OK")
                     onClicked: {
-                        ui.saveSettings()
+                        ui.applySettingsEdit()      // 草稿 -> 生效设置（并整份写盘）
                         root.close()
                     }
                 }
@@ -229,6 +230,6 @@ Popup {
         message: qsTr("Restore every setting to its default value? This cannot be undone.")
         acceptText: qsTr("Reset")
         danger: true
-        onAccepted: ui.resetSettingsToDefaults()
+        onAccepted: ui.resetSettingsEditToDefaults()
     }
 }

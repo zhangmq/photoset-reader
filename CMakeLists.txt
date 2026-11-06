@@ -130,6 +130,9 @@ add_library(ibcore STATIC
     src/heifmeta.h
     src/appsettings.cpp
     src/appsettings.h
+    # ── 设置对话框的草稿副本（确定才应用到生效设置）──
+    src/settingsdraft.cpp
+    src/settingsdraft.h
     # ── 进度文件（`.prsave`）：收藏 / 打开进度的唯一实现（设计 20）──
     src/progressfile.cpp
     src/progressfile.h

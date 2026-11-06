@@ -27,6 +27,7 @@
 //       本类只在建 viewer 时把**全局默认**下发一次（`applyViewerDefaults`）。
 
 #include "appsettings.h"
+#include "settingsdraft.h"
 #include "progressfile.h"
 #include "progresslock.h"
 
@@ -165,8 +166,14 @@ public:
     //     默认值的唯一来源仍是 `AppSettings` 的成员初值；这里只是按顺序调每个 setter
     //     （写盘 / 发信号 / 语言重装 / 日志级别 / 预取下发给 viewer 都复用它们的副作用）。
     //     **不碰**阅读进度与当前 viewer 的会话态（缩放、平移、位置、循环）。
-    //   * 2026-11-06: settings are written ONLY here (dialog OK) and by "restore defaults".
-    Q_INVOKABLE void saveSettings();
+    //   * 2026-11-06: the settings dialog edits a DRAFT copy and applies it on OK.
+    //     Open: beginSettingsEdit(); OK: applySettingsEdit(); Cancel: nothing at all.
+    //     QML binds the dialog pages to `ui.settingsDraft.*` (never to the live settings).
+    Q_PROPERTY(app::SettingsDraft *settingsDraft READ settingsDraft CONSTANT)
+    app::SettingsDraft *settingsDraft() { return m_draft; }
+    Q_INVOKABLE void beginSettingsEdit();          // copy live settings into the draft
+    Q_INVOKABLE void applySettingsEdit();          // apply draft -> live settings + write file
+    Q_INVOKABLE void resetSettingsEditToDefaults();// reset the DRAFT only (OK still required)
     Q_INVOKABLE void resetSettingsToDefaults();
     bool sourceFavorited() const { return m_sourceFavorited; }
     ProgressListModel *favorites() const { return m_favorites; }
@@ -414,6 +421,7 @@ private:
     QTimer *m_autosave = nullptr;       // 固定间隔的自动保存
     bool    m_progressDirty = false;    // 位置 / 版面 / 行变过（没变就不重写）
     //   * 独占锁（sidecar）：只在"当前关联了某份 .prsave"期间持有；切来源 / 另存时换锁。
+    app::SettingsDraft *m_draft = nullptr;      // 设置对话框的草稿（构造时 new，父对象=this）
     progresslock::Guard m_progressLock;
     bool    m_progressReadOnly = false;         // 只读模式（锁被占 / 目录不可写）
     QString m_progressReadOnlyReason;           // "in-use" / "readonly-dir" / "lock-error"

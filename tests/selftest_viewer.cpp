@@ -402,6 +402,7 @@ int runViewerSelfTest(const QString &realDir)
         qInfo().noquote() << QStringLiteral("[viewerselftest] ⑥ 设置文件（测试隔离）：%1")
                                  .arg(QDir::toNativeSeparators(settingsPath));
         {
+            //   边界只有一处（AppSettings），且 setter **不写盘**（2026-11-06 用户定）。
             app::AppSettings s;
             s.load();
             check(s.prefetchWindow() == 1,
@@ -415,57 +416,74 @@ int runViewerSelfTest(const QString &realDir)
             s.setPrefetchWindow(999);
             check(s.prefetchWindow() == 8,
                   QStringLiteral("⑥ 设置：上限 8（实际 %1）").arg(s.prefetchWindow()));
-            s.setPrefetchWindow(6);           // 留一个"普通值"给下面落盘
-            //   ★ 2026-11-06 语义变更（用户定）：setter **不写盘**，只标脏；
-            //     写盘只有两个入口 —— 设置对话框「确定」(`saveSettings`) 与「恢复默认」。
-            check(s.dirty(), QStringLiteral("⑥ 设置：setter 只标脏"));
+            s.setPrefetchWindow(6);
+            check(s.dirty(), QStringLiteral("⑥ 设置：setter 只标脏、不写盘"));
+            s.saveNow();
+            check(!s.dirty(), QStringLiteral("⑥ 设置：saveNow 清脏标记"));
         }
         {
-            app::AppSettings again;           // 新实例 = 重新读盘
-            again.load();
-            check(again.prefetchWindow() == 1,
-                  QStringLiteral("⑥ 设置：setter **没有落盘**（新实例仍是默认 1，实际 %1）")
-                      .arg(again.prefetchWindow()));
-        }
-        {
-            app::AppSettings s2;
-            s2.load();
-            s2.setPrefetchWindow(6);
-            s2.saveNow();
-            check(!s2.dirty(), QStringLiteral("⑥ 设置：saveNow 清脏标记"));
-            app::AppSettings again;
-            again.load();
-            check(again.prefetchWindow() == 6,
+            app::AppSettings after;
+            after.load();
+            check(after.prefetchWindow() == 6,
                   QStringLiteral("⑥ 设置：saveNow 之后文件里是 6（实际 %1）")
-                      .arg(again.prefetchWindow()));
+                      .arg(after.prefetchWindow()));
         }
         {
-            //   ★ 走**产品那条路**：QML 里 `ui.prefetchWindow = v` 等价于调这个 setter。
-            //     用户报的"改成 8 也变回 3"就出在这条路上（重复夹取 + 提前 return）。
+            //   ★ 草稿模型（用户 2026-11-06 定）：对话框打开时拷一份，编辑只改拷贝；
+            //     「确定」才应用成生效设置并写盘；「取消」什么都不做（不需要回滚）。
             app::UiModel ui;
             ui.setPrefetchWindow(8);
             check(ui.prefetchWindow() == 8,
                   QStringLiteral("⑥ 设置：UiModel 收到 8（实际 %1）").arg(ui.prefetchWindow()));
-            app::AppSettings unwritten;
-            unwritten.load();
-            check(unwritten.prefetchWindow() == 6,
-                  QStringLiteral("⑥ 设置：经 UiModel 改也不自动写盘（文件仍是 6，实际 %1）")
-                      .arg(unwritten.prefetchWindow()));
-            ui.saveSettings();                // = 设置对话框「确定」
-            app::AppSettings fresh;
-            fresh.load();
-            check(fresh.prefetchWindow() == 8,
-                  QStringLiteral("⑥ 设置：`saveSettings`（确定）之后文件里是 8（实际 %1）")
-                      .arg(fresh.prefetchWindow()));
-            //   ★ 「恢复全部默认设置」（2026-11-05 用户要求）：刚才把预取改成了 8，
-            //     重置之后必须回到默认值 1，而且**立刻落盘**。
-            ui.resetSettingsToDefaults();
+            {
+                app::AppSettings unwritten;
+                unwritten.load();
+                check(unwritten.prefetchWindow() == 6,
+                      QStringLiteral("⑥ 设置：经 UiModel 改也不自动写盘（文件仍是 6，实际 %1）")
+                          .arg(unwritten.prefetchWindow()));
+            }
+
+            ui.beginSettingsEdit();
+            ui.settingsDraft()->setPrefetchWindow(4);
+            check(ui.prefetchWindow() == 8,
+                  QStringLiteral("⑥ 草稿：编辑**不影响生效设置**（仍是 8，实际 %1）")
+                      .arg(ui.prefetchWindow()));
+            {
+                app::AppSettings untouched;
+                untouched.load();
+                check(untouched.prefetchWindow() == 6,
+                      QStringLiteral("⑥ 草稿：编辑**不写盘**（文件仍是 6，实际 %1）")
+                          .arg(untouched.prefetchWindow()));
+            }
+            //   丢弃草稿 = 「取消」：重新拷一份即可，没有"还原"动作
+            ui.beginSettingsEdit();
+            check(ui.prefetchWindow() == 8 && ui.settingsDraft()->prefetchWindow() == 8,
+                  QStringLiteral("⑥ 草稿：取消 = 重新拷贝，生效值与文件都不变"));
+
+            ui.settingsDraft()->setPrefetchWindow(4);
+            ui.applySettingsEdit();                     // = 「确定」
+            check(ui.prefetchWindow() == 4,
+                  QStringLiteral("⑥ 草稿：确定后生效值是 4（实际 %1）").arg(ui.prefetchWindow()));
+            {
+                app::AppSettings fresh;
+                fresh.load();
+                check(fresh.prefetchWindow() == 4,
+                      QStringLiteral("⑥ 草稿：确定后文件里是 4（实际 %1）")
+                          .arg(fresh.prefetchWindow()));
+            }
+
+            //   「恢复默认」只改草稿，仍要点「确定」
+            ui.beginSettingsEdit();
+            ui.resetSettingsEditToDefaults();
+            check(ui.prefetchWindow() == 4 && ui.settingsDraft()->prefetchWindow() == 1,
+                  QStringLiteral("⑥ 草稿：恢复默认只改草稿（生效仍 4，草稿 1）"));
+            ui.applySettingsEdit();
             check(ui.prefetchWindow() == 1,
-                  QStringLiteral("⑥ 设置：重置后预取回到默认 1（实际 %1）").arg(ui.prefetchWindow()));
+                  QStringLiteral("⑥ 草稿：确定后预取回到 1（实际 %1）").arg(ui.prefetchWindow()));
             app::AppSettings afterReset;
             afterReset.load();
             check(afterReset.prefetchWindow() == 1 && afterReset.intervalMs() == 1000,
-                  QStringLiteral("⑥ 设置：重置**落盘**（预取 %1，间隔 %2 ms）")
+                  QStringLiteral("⑥ 草稿：恢复默认落盘（预取 %1，间隔 %2 ms）")
                       .arg(afterReset.prefetchWindow()).arg(afterReset.intervalMs()));
         }
         QFile::remove(settingsPath);

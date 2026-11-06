@@ -6,7 +6,7 @@ import AppUi
 //   ★ 这些全是**全局默认**（2026-10-20 定案）：新建 viewer / 进沉浸视图时取一次；
 //     底栏上改的是当前阅读态，**不会**回写这里。行文案只写"默认"，不再加解释性描述。
 //   行结构见 `SettingsRow.qml`（左「标题+描述」、右控件垂直居中、行底 hairline）
-//   ★ 值一律**读写 ui**（`ui.themeMode` / `ui.slideshowIntervalMs`）：
+//   ★ 值一律**读写 ui**（`ui.settingsDraft.themeMode` / `ui.settingsDraft.slideshowIntervalMs`）：
 //     设置是**语义状态**：值在 `Settings`，QML 面在 `ui`（本页不再存第二份占位属性）
 Item {
     id: page
@@ -16,10 +16,10 @@ Item {
     //   ★ 语言下拉的当前值：跟随系统时显示"跟随系统（zh_CN）"，否则显示该语言自己的名字。
     //     ⚠️ 必须定义在**根对象**上：定义在 Column 里的话 `page.languageLabel()` 找不到（实测报错）。
     function languageLabel() {
-        if (ui.language === "") return qsTr("Follow system") + " (" + ui.effectiveLanguage + ")"
-        if (ui.language === "zh_CN") return "中文"
-        if (ui.language === "en") return "English"
-        return ui.language
+        if (ui.settingsDraft.language === "") return qsTr("Follow system") + " (" + ui.effectiveLanguage + ")"
+        if (ui.settingsDraft.language === "zh_CN") return "中文"
+        if (ui.settingsDraft.language === "en") return "English"
+        return ui.settingsDraft.language
     }
 
     Column {
@@ -29,15 +29,15 @@ Item {
         SettingsRow {
             label: qsTr("Theme")
             DropdownButton {
-                label: [qsTr("Follow system"), qsTr("Light"), qsTr("Dark")][ui.themeMode]
-                menuItems: [ { text: qsTr("Follow system"), selected: ui.themeMode === 0 },
-                             { text: qsTr("Light"),         selected: ui.themeMode === 1 },
-                             { text: qsTr("Dark"),          selected: ui.themeMode === 2 } ]
-                onItemTriggered: function (i) { ui.themeMode = i }
+                label: [qsTr("Follow system"), qsTr("Light"), qsTr("Dark")][ui.settingsDraft.themeMode]
+                menuItems: [ { text: qsTr("Follow system"), selected: ui.settingsDraft.themeMode === 0 },
+                             { text: qsTr("Light"),         selected: ui.settingsDraft.themeMode === 1 },
+                             { text: qsTr("Dark"),          selected: ui.settingsDraft.themeMode === 2 } ]
+                onItemTriggered: function (i) { ui.settingsDraft.themeMode = i }
             }
         }
 
-        //   ★ 语言（2026-11-02）：`ui.language` 是**语言代码**（空串 = 跟随系统）。
+        //   ★ 语言（2026-11-02）：`ui.settingsDraft.language` 是**语言代码**（空串 = 跟随系统）。
         //     下拉里每项都用**它自己的语言**写（中文写"中文"、英文写"English"）——
         //     看的人认得出自己的语言，比把语言名翻成当前界面语言更可靠。
         SettingsRow {
@@ -46,12 +46,12 @@ Item {
                 label: page.languageLabel()
                 menuItems: [
                     { text: qsTr("Follow system") + " (" + ui.effectiveLanguage + ")",
-                      selected: ui.language === "" },
-                    { text: "中文",    selected: ui.language === "zh_CN" },
-                    { text: "English", selected: ui.language === "en" }
+                      selected: ui.settingsDraft.language === "" },
+                    { text: "中文",    selected: ui.settingsDraft.language === "zh_CN" },
+                    { text: "English", selected: ui.settingsDraft.language === "en" }
                 ]
                 onItemTriggered: function (i) {
-                    ui.language = ["", "zh_CN", "en"][i]
+                    ui.settingsDraft.language = ["", "zh_CN", "en"][i]
                 }
             }
         }
@@ -63,28 +63,28 @@ Item {
             Row {
                 spacing: Theme.spaceXs
                 NumberField {
-                    value: ui.slideshowIntervalMs
+                    value: ui.settingsDraft.slideshowIntervalMs
                     from: 0           // 与 app::kMinSlideshowIntervalMs 一致（下限的唯一来源；0 = 不设限）
                     to: 60000
                     step: 10
                     suffix: "ms"
-                    onEdited: function (v) { ui.slideshowIntervalMs = v }
+                    onEdited: function (v) { ui.settingsDraft.slideshowIntervalMs = v }
                 }
                 // 预设只做**快速输入**：点一下把 ms 数值填进去，保存的仍是单个 ms 值
                 // （与图像查看界面 `[切换速度▾]` 的预设一致；那里的"自定义/加速/减速"不搬过来）
                 DropdownButton {
                     label: qsTr("Presets")
                     menuItems: [
-                        { text: "100ms", selected: ui.slideshowIntervalMs === 100 },
-                        { text: "500ms", selected: ui.slideshowIntervalMs === 500 },
-                        { text: "1s",    selected: ui.slideshowIntervalMs === 1000 },
-                        { text: "2s",    selected: ui.slideshowIntervalMs === 2000 },
-                        { text: "3s",    selected: ui.slideshowIntervalMs === 3000 },
-                        { text: "4s",    selected: ui.slideshowIntervalMs === 4000 },
-                        { text: "5s",    selected: ui.slideshowIntervalMs === 5000 }
+                        { text: "100ms", selected: ui.settingsDraft.slideshowIntervalMs === 100 },
+                        { text: "500ms", selected: ui.settingsDraft.slideshowIntervalMs === 500 },
+                        { text: "1s",    selected: ui.settingsDraft.slideshowIntervalMs === 1000 },
+                        { text: "2s",    selected: ui.settingsDraft.slideshowIntervalMs === 2000 },
+                        { text: "3s",    selected: ui.settingsDraft.slideshowIntervalMs === 3000 },
+                        { text: "4s",    selected: ui.settingsDraft.slideshowIntervalMs === 4000 },
+                        { text: "5s",    selected: ui.settingsDraft.slideshowIntervalMs === 5000 }
                     ]
                     onItemTriggered: function (i) {
-                        ui.slideshowIntervalMs = [100, 500, 1000, 2000, 3000, 4000, 5000][i]
+                        ui.settingsDraft.slideshowIntervalMs = [100, 500, 1000, 2000, 3000, 4000, 5000][i]
                     }
                 }
             }
@@ -94,8 +94,8 @@ Item {
             label: qsTr("Timeline hover preview")
             description: qsTr("Show neighbouring pages above the progress bar while hovering it")
             Switch {
-                checked: ui.previewStrip
-                onToggled: ui.previewStrip = !ui.previewStrip
+                checked: ui.settingsDraft.previewStrip
+                onToggled: ui.settingsDraft.previewStrip = !ui.settingsDraft.previewStrip
             }
         }
 
@@ -103,33 +103,33 @@ Item {
         SettingsRow {
             label: qsTr("Default zoom")
             DropdownButton {
-                label: [qsTr("Original size"), qsTr("Fit window"), qsTr("Fit width"), qsTr("Fit height")][ui.fitMode]
-                menuItems: [ { text: qsTr("Original size"), selected: ui.fitMode === 0 },
-                             { text: qsTr("Fit window"),    selected: ui.fitMode === 1 },
-                             { text: qsTr("Fit width"),     selected: ui.fitMode === 2 },
-                             { text: qsTr("Fit height"),    selected: ui.fitMode === 3 } ]
-                onItemTriggered: function (i) { ui.fitMode = i }
+                label: [qsTr("Original size"), qsTr("Fit window"), qsTr("Fit width"), qsTr("Fit height")][ui.settingsDraft.fitMode]
+                menuItems: [ { text: qsTr("Original size"), selected: ui.settingsDraft.fitMode === 0 },
+                             { text: qsTr("Fit window"),    selected: ui.settingsDraft.fitMode === 1 },
+                             { text: qsTr("Fit width"),     selected: ui.settingsDraft.fitMode === 2 },
+                             { text: qsTr("Fit height"),    selected: ui.settingsDraft.fitMode === 3 } ]
+                onItemTriggered: function (i) { ui.settingsDraft.fitMode = i }
             }
         }
 
         SettingsRow {
             label: qsTr("Default layout")
             DropdownButton {
-                label: [qsTr("Single page"), qsTr("Two pages")][ui.defaultLayout]
-                menuItems: [ { text: qsTr("Single page"), selected: ui.defaultLayout === 0 },
-                             { text: qsTr("Two pages"),   selected: ui.defaultLayout === 1 } ]
-                onItemTriggered: function (i) { ui.defaultLayout = i }
+                label: [qsTr("Single page"), qsTr("Two pages")][ui.settingsDraft.defaultLayout]
+                menuItems: [ { text: qsTr("Single page"), selected: ui.settingsDraft.defaultLayout === 0 },
+                             { text: qsTr("Two pages"),   selected: ui.settingsDraft.defaultLayout === 1 } ]
+                onItemTriggered: function (i) { ui.settingsDraft.defaultLayout = i }
             }
         }
 
         SettingsRow {
             label: qsTr("Default loop mode")
             DropdownButton {
-                label: [qsTr("No loop"), qsTr("Loop all"), qsTr("Loop folder")][ui.defaultLoop]
-                menuItems: [ { text: qsTr("No loop"),     selected: ui.defaultLoop === 0 },
-                             { text: qsTr("Loop all"),    selected: ui.defaultLoop === 1 },
-                             { text: qsTr("Loop folder"), selected: ui.defaultLoop === 2 } ]
-                onItemTriggered: function (i) { ui.defaultLoop = i }
+                label: [qsTr("No loop"), qsTr("Loop all"), qsTr("Loop folder")][ui.settingsDraft.defaultLoop]
+                menuItems: [ { text: qsTr("No loop"),     selected: ui.settingsDraft.defaultLoop === 0 },
+                             { text: qsTr("Loop all"),    selected: ui.settingsDraft.defaultLoop === 1 },
+                             { text: qsTr("Loop folder"), selected: ui.settingsDraft.defaultLoop === 2 } ]
+                onItemTriggered: function (i) { ui.settingsDraft.defaultLoop = i }
             }
         }
 
@@ -137,7 +137,7 @@ Item {
         //     可以指到任意目录（含外部盘）。改路径**不迁移**旧文件。
         SettingsRow {
             label: qsTr("Favorites folder")
-            description: ui.favoritesDir
+            description: ui.settingsDraft.favoritesDir
             Button {
                 label: qsTr("Change…")
                 onClicked: ui.chooseFavoritesDir()
