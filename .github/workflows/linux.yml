@@ -145,6 +145,9 @@ jobs:
           pacman -S --noconfirm --needed \
             git cmake ninja gcc pkgconf \
             zlib xz libarchive libexif libunrar \
+            #   * qt6-tools 提供 lrelease6：静态 Qt 前缀里没有 LinguistTools（只编了 4 个模块），
+            #     CMakeLists 会退回到系统的 lrelease 生成 .qm（第一次跑就栽在这）。
+            qt6-tools \
             libxcb xcb-util xcb-util-wm xcb-util-image xcb-util-keysyms \
             xcb-util-renderutil xcb-util-cursor \
             libxkbcommon wayland wayland-protocols \
