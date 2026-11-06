@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       #   MSVC 只在 Windows runner 上有：这一步把 cl / link / msbuild 放进 PATH。
       #   ★ 不锁 VS 版本（runner 镜像会换，锁了反而找不到）；unrar 那一步也**不用 msbuild**，
@@ -44,7 +44,7 @@ jobs:
       #     于是每挂一次就白等 30 分钟重下 Qt + 重编 vcpkg。
       - name: Restore Qt
         id: qt-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: C:\Qt
           key: qt-6.12.0-msvc2022_64-v1
@@ -85,7 +85,7 @@ jobs:
       #   ★ 显式保存（`always()`）：后面任何一步失败，Qt 也不用重下
       - name: Save Qt
         if: always() && steps.qt-cache.outputs.cache-matched-key == ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: C:\Qt
           key: qt-6.12.0-msvc2022_64-v1
@@ -102,7 +102,7 @@ jobs:
       #       只会给包体加一堆 DLL。
       - name: Restore vcpkg
         id: vcpkg-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
             C:\vcpkg\installed
@@ -128,7 +128,7 @@ jobs:
 
       - name: Save vcpkg
         if: always() && steps.vcpkg-cache.outputs.cache-matched-key != 'vcpkg-x64-windows-v3'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: |
             C:\vcpkg\installed
@@ -289,6 +289,17 @@ jobs:
           & "C:\Qt\$env:QT_VERSION\msvc2022_64\bin\windeployqt.exe" `
             --release --no-opengl-sw --no-translations --qmldir src\ui "$stage\photoset-reader.exe"
 
+          #   ── 瘦身：只留 Basic 风格（用户 2026-11-06）────────────────────
+          #   `QQuickStyle::setStyle("Basic")` 在 main.cpp 里是写死的，别的风格纯属白带；
+          #   windeployqt 会把 Controls 模块目录整个拷过来（含 5 种风格 ≈15.6 MB DLL）。
+          #   `vc_redist.x64.exe`（≈18 MB）也删：windeployqt 顺手拷的安装器，CRT DLL 我们直接带。
+          Remove-Item "$stage\vc_redist.x64.exe" -Force -ErrorAction SilentlyContinue
+          foreach ($style in "Fusion", "Material", "Universal", "Imagine", "FluentWinUI3", "Windows") {
+            Remove-Item "$stage\qml\QtQuick\Controls\$style" -Recurse -Force -ErrorAction SilentlyContinue
+            Get-ChildItem $stage -Filter "Qt6QuickControls2$style*.dll" -ErrorAction SilentlyContinue |
+              Remove-Item -Force
+          }
+
           #   ── 依赖闭包：从 exe 与 Qt 的 DLL 出发，递归补齐 ──
           $search = @(
             (Resolve-Path $stage).Path
@@ -385,7 +396,7 @@ jobs:
       #      这里直接上传 stage 的内容 ⇒ 下载得到一个 zip，解开就是 exe + DLL。
       #      需要发布单文件 zip 时，在 release 那步再压（本地 `scripts/ci-windows.ps1 -Step package`
       #      产出的 `dist/photoset-reader-windows-x64.zip` 就是那个形态）。
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: photoset-reader-windows-x64
           path: stage/**

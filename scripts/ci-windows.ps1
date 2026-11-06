@@ -654,6 +654,17 @@ function Invoke-Package {
     & (Join-Path $QtRoot 'bin\windeployqt.exe') --release --no-opengl-sw --no-translations --qmldir (Join-Path $RepoRoot 'src\ui') (Join-Path $stage 'photoset-reader.exe')
     if ($LASTEXITCODE -ne 0) { throw 'windeployqt failed' }
 
+    #   ── 瘦身：只留 Basic 风格（用户 2026-11-06）──────────────────────────────
+    #   `QQuickStyle::setStyle("Basic")` 在 main.cpp 里是写死的，别的风格纯属白带；
+    #   windeployqt 会把 Controls 模块目录整个拷过来（含 5 种风格 ≈15.6 MB DLL）。
+    #   `vc_redist.x64.exe`（≈18 MB）也删：windeployqt 顺手拷的安装器，我们直接带 CRT DLL。
+    Remove-Item (Join-Path $stage 'vc_redist.x64.exe') -Force -ErrorAction SilentlyContinue
+    foreach ($style in 'Fusion', 'Material', 'Universal', 'Imagine', 'FluentWinUI3', 'Windows') {
+        Remove-Item (Join-Path $stage "qml\QtQuick\Controls\$style") -Recurse -Force -ErrorAction SilentlyContinue
+        Get-ChildItem $stage -Filter "Qt6QuickControls2$style*.dll" -ErrorAction SilentlyContinue |
+            Remove-Item -Force
+    }
+
     #   ── 依赖闭包：从 exe 与 Qt 的 DLL 出发，递归补齐 ──
     $search = @(
         $stage
