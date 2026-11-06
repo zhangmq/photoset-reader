@@ -7,16 +7,22 @@
 //   需求，而这类退化**编译、别的套件、CTest 全都发现不了** —— 只有人去点第二次才
 //   会看到。所以把契约钉成测试：
 //
-//   ① 第一个实例先跑起来（写出启动日志）；
-//   ② 再起第二个**带路径**的实例 ⇒ 它也必须启动、写自己的日志（旧实现会转发后退出）；
-//   ③ 观察 4 秒，**两个进程都还在**；
-//   ④ 谁的日志里都不该出现 `forwarded to running instance`（旧实现的痕迹）。
+//   ① 第一个实例先**跑到稳态**（写出 `[ui] viewer:` 行 —— 它排在"建窗口 + 装 IPC 服务端"
+//     之后，用它当"第一个实例已经就绪"的信号）；如果只等 `log started` 就会**太早**：
+//      那行在解析命令行时就写了，旧实现的 `QLocalServer` 那时还没建 ⇒ 第二个实例连不上
+//      ⇒ 它照常开窗口 ⇒ 测试**假绿**（2026-11-06 实测踩到，护栏一度形同虚设）；
+//   ② ★ 结构性断言：从外部连 `photoset-reader-ipc` **必须失败**
+//      —— 这个产品不提供进程间转发通道。连得上就说明单实例又回来了（与第二个实例的
+//      行为无关，不依赖时序，旧实现下必红）；
+//   ③ 再起第二个**带路径**的实例 ⇒ 它必须启动、写自己的日志、且不写 `forwarded`；
+//   ④ 观察 4 秒，**两个进程都还在**。
 //
 //   ★ 用 `PHOTOSET_CONFIG_DIR` 把设置指到临时目录：多实例各写各的 settings.json，
 //     绝不能碰用户真实配置（这条套件也不例外）。
 
 #include <QDir>
 #include <QFile>
+#include <QLocalSocket>
 #include <QProcess>
 #include <QProcessEnvironment>
 
@@ -28,6 +34,10 @@ QString readAll(const QString &path)
     if (!f.open(QIODevice::ReadOnly)) return QString();
     return QString::fromUtf8(f.readAll());
 }
+
+//   旧实现用的固定名字（`PHOTOSET_IPC_NAME`）；这里故意写字面量 —— 一旦哪天又有人
+//   想加回"把路径转给已运行实例"，这条断言会直接亮红。
+constexpr char kLegacyIpcName[] = "photoset-reader-ipc";
 
 }  // namespace
 
@@ -80,9 +90,22 @@ int main(int argc, char *argv[])
         QProcess *a = launch(QStringLiteral("a"));
         const bool aStarted = a->waitForStarted(5000);
         const QString aLog = tmp.filePath(QStringLiteral("a.log"));
-        const bool aLogged = testsupport::waitFor(
-            [&] { return readAll(aLog).contains(QStringLiteral("log started")); }, 20000);
-        check(aStarted && aLogged, QStringLiteral("① 第一个实例启动了，并写出自己的日志"));
+        //   ★ 等 `[ui] viewer:` 而**不是** `log started`：后者在解析参数时就写了，
+        //     旧实现的 IPC 服务端那时还没建 ⇒ 第二个实例连不上 ⇒ 假绿（见文件头）。
+        const bool aReady = testsupport::waitFor(
+            [&] { return readAll(aLog).contains(QStringLiteral("[ui] viewer:")); }, 30000);
+        check(aStarted && aReady, QStringLiteral("① 第一个实例跑到稳态（出现 `[ui] viewer:` 行）"));
+
+        //   ★★ 结构性断言：产品**不该**提供进程间转发通道（旧实现的痕迹）
+        {
+            QLocalSocket probe;
+            probe.connectToServer(QString::fromLatin1(kLegacyIpcName), QIODevice::WriteOnly);
+            const bool connected = probe.waitForConnected(1500);
+            if (connected) probe.disconnectFromServer();
+            check(!connected,
+                  QStringLiteral("① ★ 连得上 `%1` ⇒ 单实例转发又回来了（必须连不上）")
+                      .arg(QString::fromLatin1(kLegacyIpcName)));
+        }
 
         //   ★ 顺序就是"用户点第二次"：第一个已经在跑，再起第二个**带路径**的
         QProcess *b = launch(QStringLiteral("b"));
@@ -96,7 +119,7 @@ int main(int argc, char *argv[])
         //   观察窗口：两个都得一直活着（旧实现里第二个 `return 0` 之后就不在了）
         testsupport::waitFor([] { return false; }, 4000);
         check(a->state() == QProcess::Running && b->state() == QProcess::Running,
-              QStringLiteral("② ★ 两个进程**同时在跑**（a=%1 b=%2；1=Starting 2=Running 0=NotRunning）")
+              QStringLiteral("② ★ 两个进程**同时在跑**（a=%1 b=%2；0=NotRunning 1=Starting 2=Running）")
                   .arg(int(a->state())).arg(int(b->state())));
 
         const QString aText = readAll(aLog);

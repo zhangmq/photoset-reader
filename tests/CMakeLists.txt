@@ -55,10 +55,12 @@ target_link_libraries(ib-test-decode PRIVATE testsupport)
 #   是编造的），后果是"带路径的第二次启动没有自己的窗口"。这类退化编译、别的套件、
 #   CTest 全发现不了 —— 只有人点第二次才看得到 ⇒ 用两个真进程钉住。
 #   ★ 套件自己启动 `photoset-reader`（同目录），并把设置指到临时目录。
+#   ★ 链 `Qt6::Network` 只为 `QLocalSocket`：套件会**主动去连旧实现的那个 socket 名**，
+#     连得上就说明"进程间转发"又回来了（产品本身不链 Network）。
 qt_add_executable(ib-test-instance
     selftest_instance.cpp
 )
-target_link_libraries(ib-test-instance PRIVATE testsupport)
+target_link_libraries(ib-test-instance PRIVATE testsupport Qt6::Network)
 
 # ── UI 契约（QML 加载 + `HintBubble` 几何 / 弹出类型）──
 #   为什么需要：解码/渲染有测试，**QML 一行覆盖都没有** ⇒ "某类型不存在"、
