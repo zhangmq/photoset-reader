@@ -177,7 +177,21 @@ jobs:
           ls .tmp/qt-static/bin | head
           .tmp/qt-static/bin/qmake -query QT_VERSION || true
 
+      - name: Build minimal libarchive
+        #   * 用户 2026-11-07（体积）：AppImage 里 `usr/lib` 一度有 46 MB，其中
+        #     `libicudata.so.78` 独占 32 MB + libcrypto 5.7 MB + libicuuc 2.1 MB + libxml2 1.3 MB
+        #     —— 全是**系统 libarchive 的传递依赖**。这个脚本编的 libarchive 关了
+        #     libxml2/expat/curl/openssl ⇒ 那 40 MB 直接消失（这正是它存在的理由）。
+        run: |
+          set -euo pipefail
+          chmod +x scripts/build-minimal-deps.sh
+          ./scripts/build-minimal-deps.sh .tmp/deps
+          ls .tmp/deps/lib
+
       - name: Configure and build (static)
+        env:
+          #   让 CMake 优先用最小化的 libarchive（而不是系统那个带 ICU 的）
+          PKG_CONFIG_PATH: ${{ github.workspace }}/.tmp/deps/lib/pkgconfig
         run: |
           set -euo pipefail
           cmake -S . -B build-static -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -195,7 +209,8 @@ jobs:
           ./scripts/package-appimage.sh --deps .tmp/deps
           ls -l dist/
           #   ★ 冒烟：跑一次（--version 在 engine.load 之前返回，但至少证明动态库闭包是完整的）
-          APPIMAGE_EXTRACT_AND_RUN=1 dist/*.AppImage --version || true
+          #   冒烟必须**能失败**：静态 Qt 里若没导入平台插件、或依赖闭包缺库，--version 就会非 0
+          QT_QPA_PLATFORM=offscreen APPIMAGE_EXTRACT_AND_RUN=1 dist/*.AppImage --version
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v7
