@@ -149,6 +149,13 @@ jobs:
           export PATH="$PWD/.ci/tools:$PATH"
           #   qt 插件靠 qmake 找 Qt 的安装位置
           export QMAKE="$(command -v qmake6 || command -v qmake)"
+          #   ★★ 2026-11-07：只装 `qt6-wayland` **不够** —— linuxdeploy-plugin-qt 默认只收
+          #     xcb 那一个平台插件（真机实测：AppImage 里 `platforms/` 只有 libqxcb.so，
+          #     Wayland 会话里 `could not find the Qt platform plugin` 直接 abort）。
+          #     显式点名要 wayland 模块 + 平台插件，它才会把 `libqwayland*.so` 和
+          #     `libQt6WaylandClient.so.6` 一起打进去。
+          export EXTRA_QT_MODULES="waylandclient"
+          export EXTRA_PLATFORM_PLUGINS="libqwayland-egl.so;libqwayland-generic.so"
           linuxdeploy --appdir .ci/AppDir \
             --executable build/photoset-reader \
             --desktop-file assets/photoset-reader.desktop \
@@ -170,6 +177,11 @@ jobs:
           export VERSION
           .ci/tools/appimagetool .ci/AppDir "dist/photoset-reader-${VERSION}-x86_64.AppImage"
           ls -l dist/
+          ls .ci/AppDir/usr/plugins/platforms/
+          #   ★ 断言：wayland 平台插件必须在包里（装 qt6-wayland 不点名就是一包只有 xcb，
+          #     这是真机踩过的坑；以后谁改了这里，这条会立刻红）
+          ls .ci/AppDir/usr/plugins/platforms/ | grep -q libqwayland || {
+            echo "::error::wayland 平台插件没进 AppImage（只有 xcb ⇒ 纯 Wayland 会话起不来）"; exit 1; }
           #   ★ 冒烟 ①：AppDir 里那个**真可执行文件**必须能起来（缺库/缺平台插件在这里露出来）。
           #     它是 AppImage 里实际会被执行的东西，等价性足够。
           QT_QPA_PLATFORM=offscreen .ci/AppDir/usr/bin/photoset-reader --version

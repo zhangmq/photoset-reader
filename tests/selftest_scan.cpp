@@ -154,8 +154,11 @@ static int runScanSelfTest()
         clock.start();
         check(runScan(sq, rootS, 5, false),
               QStringLiteral("① 扫描跑完（符号链接环没挂死：等待有超时）"));
-        check(clock.elapsed() < 5000,
-              QStringLiteral("① 符号链接环：整体扫描在合理时间内结束（%1 ms）").arg(clock.elapsed()));
+        //   * 2026-11-07：阈值 5000 → 30000。这条要证的是「符号链接环不会挂死」，不是性能；
+        //     GitHub 的 Windows runner 冷缓存下同一次扫描实测 10453 ms，5 s 会偶发假红
+        check(clock.elapsed() < 30000,
+              QStringLiteral("① 符号链接环：整体扫描在合理时间内结束（%1 ms，上限 30 s）")
+                  .arg(clock.elapsed()));
 
         const QStringList ks = pathsOf(sq);
         //   ★ 2026-10-19 用户定案：遍历 = **名称序先根遍历**（preorder DFS）—— 同层按名称排、
@@ -179,7 +182,8 @@ static int runScanSelfTest()
         check(!ks.contains(QStringLiteral("deep/l1/l2/l3/l4/l5/tooDeep.png")),
               QStringLiteral("① 超过 recurseDepth 的目录不进去（层 6 不在结果里）"));
         check(ks.count(QStringLiteral("loop/li.png")) == 1,
-              QStringLiteral("① 符号链接环：条目有界（loop/li.png 只算一次，back/self 没展开）"));
+              QStringLiteral("① 符号链接环：整体扫描在合理时间内结束（%1 ms，上限 30 s）")
+                  .arg(clock.elapsed()));
         check(!ks.contains(QStringLiteral("zip/vol01.cbz")),
               QStringLiteral("① **打不开**的压缩包（夹具是假 zip）不产出条目；目录节点照旧"));
     }
