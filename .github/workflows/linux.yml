@@ -31,7 +31,12 @@ jobs:
           pacman -S --noconfirm --needed \
             git cmake ninja gcc pkgconf \
             qt6-base qt6-declarative qt6-shadertools qt6-tools qt6-svg qt6-imageformats \
-            libarchive libexif xz zlib libunrar
+            libarchive libexif xz zlib libunrar \
+            gdk-pixbuf2
+          #   ★ `gdk-pixbuf2`（2026-11-06 补）：我们的 `provider_gdk` 用 `dlopen` 找
+          #     `libgdk_pixbuf-2.0.so.0`，**容器里没装就整条 provider 静默消失** ——
+          #     第一次跑本工作流时 `[cap]` 只有 `qt(21) + cli(0)`，"2 providers"，
+          #     gdk 那 43 个后缀一个都没被覆盖，而构建照样全绿。下面那步断言把它变成红灯。
           #   `Qt6::GuiPrivate` 需要 Qt 的私有头（Arch 的 qt6-base 自带）
           echo "Qt $(qmake6 -query QT_VERSION)"
 
@@ -76,6 +81,12 @@ jobs:
             --log-level info --log-file /tmp/cap.log >/dev/null 2>&1 || true
           echo "──────── [cap] ────────"
           grep -E '\[cap\]' /tmp/cap.log || echo "(没有 cap 日志 —— 探测没跑到，是 bug)"
+          #   ★ 断言而不是只看：能力**静默变少**是这个项目最难发现的退化
+          #     （provider 靠 dlopen，缺个 .so 就整条消失，构建和测试全绿）。
+          if ! grep -qE '\[cap\] gdk +: [1-9]' /tmp/cap.log; then
+            echo "::error::gdk-pixbuf provider 没有生效：CI 的能力覆盖少了一大块（见上表的 gdk 行）"
+            exit 1
+          fi
 
       - name: Upload log
         if: always()
