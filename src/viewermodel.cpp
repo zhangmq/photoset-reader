@@ -1189,8 +1189,13 @@ void ViewerModel::startPreviewBatch(const QVector<PreviewJob> &jobs)
         });
     }
     m_previewWatcher->setFuture(QtConcurrent::mapped(jobs, [store](const PreviewJob &j) -> QString {
-        const QImage img = imageread::imageScaled(j.loc, j.target);
-        if (img.isNull()) return j.key;                    // 解不出来 ⇒ 报给主线程记一笔
+        bool hasBytes = false;
+        QImage img = imageread::imageScaled(j.loc, j.target, &hasBytes);
+        //   ★ 坏图（有字节、解不出）在条上**也要有个东西**（用户 2026-11-06：不能空）：
+        //     按 `j.target` **直接画**占位（绝不"画 1080 再缩到 90px"）。
+        //     缺图（读不到字节）才是真空位 —— 那种什么都不画。
+        if (img.isNull() && hasBytes) img = placeholder::draw(j.target);
+        if (img.isNull()) return j.key;                    // 真的没有 ⇒ 报给主线程记一笔
         QMutexLocker lk(&store->mutex);                    // 锁只护内存读写，锁里不解码
         if (store->images.size() >= 512) store->images.clear();   // **先清后插**（别抹掉刚写进去的）
         store->images.insert(j.key, img);

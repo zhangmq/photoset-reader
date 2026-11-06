@@ -310,9 +310,17 @@ int runViewerSelfTest(const QString &realDir)
                 check(idle == 1,
                       QStringLiteral("⑦ 坏图算已了结：只发一次通知、没有反复重派（实际 %1 次）")
                           .arg(idle));
-                check(store->images.size() == 7,
-                      QStringLiteral("⑦ 缓存里 7 张（8 张里 1 张解不出，实际 %1）")
+                //   ★ 坏图在缩略图上**也必须有个东西**（用户 2026-11-06：不能空），
+                //     所以缓存里是 8 张 —— 7 张真图 + 1 张**按目标尺寸直接画**的占位图
+                //     （绝不"画 1080 再缩到 90px"，那是 40 张一起时的内存灾难）。
+                check(store->images.size() == 8,
+                      QStringLiteral("⑦ 缓存里 8 张（7 张真图 + 1 张坏图占位，实际 %1）")
                           .arg(store->images.size()));
+                bool allNonNull = true;
+                for (const QImage &img : store->images) {
+                    if (img.isNull()) allNonNull = false;
+                }
+                check(allNonNull, QStringLiteral("⑦ 条上不留空位：每一格都有图（坏图 = 占位）"));
             }
         }
     }

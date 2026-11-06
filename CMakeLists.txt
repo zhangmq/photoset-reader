@@ -105,6 +105,9 @@ add_library(ibcore STATIC
     src/decode/capabilities.h
     src/decode/provider_qt.cpp
     src/decode/provider_qt.h
+    #   Windows 系统编解码器（WIC）：非 Windows 编译成空桩，调用方拿到 nullptr
+    src/decode/provider_wic.cpp
+    src/decode/provider_wic.h
     # ── 占位图（有字节但解不出；主显示与缩略图共用同一份几何）──
     src/placeholder.cpp
     src/placeholder.h
@@ -157,7 +160,10 @@ target_link_libraries(ibcore PUBLIC
     ${LIBHEIF_LIBRARIES}
     ZLIB::ZLIB
     LibLZMA::LibLZMA
-    ${UNRAR_LIBRARY})
+    ${UNRAR_LIBRARY}
+    #   WIC（Windows 系统编解码器）：windowscodecs = WIC 实现，ole32 = COM
+    $<$<BOOL:${WIN32}>:windowscodecs>
+    $<$<BOOL:${WIN32}>:ole32>)
 target_include_directories(ibcore PUBLIC ${LIBARCHIVE_INCLUDE_DIRS} ${LIBEXIF_INCLUDE_DIRS}
                                         ${LIBHEIF_INCLUDE_DIRS} ${UNRAR_INCLUDE_DIR})
 #   `IB_HAVE_DBUS`：`uimodel.cpp` 的屏幕抑制只在有 QtDBus 的平台编译（Windows 没有）

@@ -1,6 +1,7 @@
 #include "capabilities.h"
 
 #include "provider_qt.h"
+#include "provider_wic.h"
 
 #include "../logging.h"
 
@@ -16,9 +17,10 @@ QList<Provider *> makeProviders()
 {
     QList<Provider *> out;
     out << makeQtProvider();          // rank 10：Qt 插件（含 Linux 发行版的 kimageformats）
-#ifdef Q_OS_WIN
-    //   阶段 B：WIC（系统已注册的全部解码器）
-#endif
+    //   rank 20：Windows 的**系统编解码器**。非 Windows 返回 nullptr ⇒ 这一路不存在。
+    //   ★ 它把"用户装了 Raw / HEIF / AV1 扩展"变成"我们能解 arw / heic / avif"，
+    //     而我们**不加一行格式代码**（枚举与解码全在参数化调用里）。
+    if (Provider *wic = makeWicProvider()) out << wic;
 #ifdef Q_OS_LINUX
     //   阶段 B：gdk-pixbuf（dlopen，GNOME 栈的 loader）
 #endif
@@ -130,6 +132,11 @@ Result Capabilities::decode(const Source &src, int page) const
             out.image = img;
             out.originalSize = img.size();     // 解码器没报时以像素为准
             out.provider = p->name();
+            qCDebug(lcDecode).noquote()
+                << QStringLiteral("[decode] image %1x%2 by %3 <- %4")
+                       .arg(img.width()).arg(img.height()).arg(p->name(),
+                                                               src.path.isEmpty() ? QStringLiteral("<member>")
+                                                                                  : src.path);
             return out;
         }
         if (!err.isEmpty()) why << QStringLiteral("%1: %2").arg(p->name(), err);
@@ -138,6 +145,44 @@ Result Capabilities::decode(const Source &src, int page) const
     out.outcome = Outcome::Placeholder;
     out.detail = why.join(QStringLiteral("; "));
     return out;
+}
+
+//   不解码问尺寸：**第一个给出有效尺寸的就用**（与 decode 同一条链，只是问题不同）。
+//   ★ 扫描期要对每个文件调一次，所以这里必须便宜：provider 的实现只读头，不解像素。
+QSize Capabilities::querySize(const Source &src, int page) const
+{
+    ensureProbed();
+    for (Provider *p : m_providers) {
+        if (!p->available()) continue;
+        const QSize s = p->querySize(src, page);
+        if (s.isValid() && !s.isEmpty()) {
+            //   debug 级：排查"扫描尺寸与解码尺寸不一致 / 占位形状怪"时唯一的一手信息
+            qCDebug(lcDecode).noquote()
+                << QStringLiteral("[decode] size %1x%2 by %3 <- %4")
+                       .arg(s.width()).arg(s.height()).arg(p->name(),
+                                                           src.path.isEmpty() ? QStringLiteral("<member>")
+                                                                              : src.path);
+            return s;
+        }
+    }
+    qCDebug(lcDecode).noquote()
+        << QStringLiteral("[decode] size unknown <- %1")
+               .arg(src.path.isEmpty() ? QStringLiteral("<member>") : src.path);
+    return {};
+}
+
+//   缩略图：同样链式回退。**"缩略图逻辑"仍然在我们这边**（要多大、什么时候要、缓存键都是
+//   调用方的事）；provider 只是被允许少花点力气（默认实现就是 decode() + 我们的缩放）。
+QImage Capabilities::thumbnail(const Source &src, const QSize &target, int page) const
+{
+    ensureProbed();
+    if (!target.isValid()) return {};
+    for (Provider *p : m_providers) {
+        if (!p->available()) continue;
+        const QImage img = p->thumbnail(src, target);
+        if (!img.isNull()) return img;
+    }
+    return {};
 }
 
 QList<Report> Capabilities::report() const

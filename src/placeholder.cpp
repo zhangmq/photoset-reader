@@ -23,7 +23,10 @@ QSize screenSize(const QSize &originalSize)
 {
     if (!originalSize.isValid() || originalSize.isEmpty()) return QSize(kSquare, kSquare);
     QSize s = originalSize;
-    s.scale(QSize(kBoxW, kBoxH), Qt::KeepAspectRatio);
+    //   ★ **只缩不放**（2026-11-06 踩到）：`QSize::scale()` 对比框还小的图会**放大**
+    //     —— 40×60 的图会被"等比装进 1920×1080"放大成 720×1080，占位图凭空变大 300 倍。
+    //     占位图的意义是"按原版面占一屏"，原图本来就小就保持原样。
+    if (s.width() > kBoxW || s.height() > kBoxH) s.scale(QSize(kBoxW, kBoxH), Qt::KeepAspectRatio);
     //   极端薄图（如 4000×20）缩完可能有一边变 0 ⇒ 夹到至少 1px
     return QSize(qMax(1, s.width()), qMax(1, s.height()));
 }

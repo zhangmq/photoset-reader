@@ -56,6 +56,20 @@ public:
         return r.size();          // 只读头，不解码
     }
 
+    //   ★ 覆盖默认实现：交给 Qt 的 `setScaledSize`，JPEG/PNG 这类会走**解码器自己的降采样**
+    //     （libjpeg 的 DCT 缩放 = 1/2、1/4、1/8），比"解全图再缩"快几倍、峰值内存也小得多。
+    //     这就是那个 thumbnail 钩子的全部意义 —— 缩略图**策略**仍然在调用方手里。
+    QImage thumbnail(const Source &src, const QSize &target) override
+    {
+        if (!target.isValid()) return {};
+        QImageReader r;
+        QBuffer buf;
+        if (!open(src, r, buf, nullptr)) return {};
+        r.setAutoTransform(true);
+        r.setScaledSize(target);
+        return r.read();
+    }
+
 private:
     static bool open(const Source &src, QImageReader &r, QBuffer &buf, QString *why)
     {

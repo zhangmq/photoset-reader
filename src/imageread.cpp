@@ -2,6 +2,7 @@
 #include "logging.h"
 
 #include "archivesource.h"
+#include "decode/capabilities.h"
 
 #include <QBuffer>
 #include <QColorSpace>
@@ -281,49 +282,55 @@ public:
     //     ≠ 没有这一条。查看屏前者画占位图、后者才当"缺"跳过去。
     bool hasBytes = false;
 
-    explicit EntryReader(const Location &loc)
+    explicit EntryReader(const Location &loc) : m_page(loc.page)
     {
         if (loc.members.isEmpty()) {
             hasBytes = QFileInfo(loc.diskPath).size() > 0;
-            m_r.setFileName(loc.diskPath);
+            m_source.isDisk = true;
+            m_source.path = loc.diskPath;
         } else {
             // ★ v7：沿链取字节 = `readBytesAt`（**内层包单槽物化**：区间内复用、离开即释放）
-            m_bytes = readBytesAt(loc.diskPath, loc.members.mid(0, loc.members.size() - 1),
-                                  loc.members.last(), loc.innerArchiveMaxMb * 1024 * 1024,
-                                  loc.passwords, &passwordLevel);
-            if (m_bytes.isEmpty()) return;
+            m_source.bytes = readBytesAt(loc.diskPath, loc.members.mid(0, loc.members.size() - 1),
+                                         loc.members.last(), loc.innerArchiveMaxMb * 1024 * 1024,
+                                         loc.passwords, &passwordLevel);
+            if (m_source.bytes.isEmpty()) return;
             hasBytes = true;                  // 字节拿到了（下面"认不出格式"也算有字节）
-            if (!looksLikeImage(m_bytes)) {   // 不是已知图片格式 ⇒ 不交给 Qt（防 libraw 崩）
+            if (!looksLikeImage(m_source.bytes)) {   // 不是已知图片格式 ⇒ 不交给解码器（防插件崩）
                 qCDebug(lcDecode).noquote()
                     << QStringLiteral("[decode] unrecognised member bytes, skipped: %1")
                            .arg(loc.members.last());
+                m_source.bytes.clear();
                 return;
             }
-            m_buf.setData(m_bytes);
-            if (!m_buf.open(QIODevice::ReadOnly)) return;
-            m_r.setDevice(&m_buf);
         }
-        m_r.setAutoTransform(true);
-        if (loc.page > 0) m_r.jumpToImage(loc.page);
         m_ok = true;
     }
 
     bool ok() const { return m_ok; }
-    QSize size() { return m_ok ? m_r.size() : QSize(); }
-    QImage read() { return m_ok ? toDisplayable(toSrgb(m_r.read())) : QImage(); }
-    //   缩略图：**按目标尺寸解码**（下采样预处理，不是最终缩放）
+
+    //   ★★ 全部走 `decode::Capabilities`（**按 rank 链式回退**），不再只认 `QImageReader`。
+    //     2026-11-06 的教训：能力表把 `arw` 列出来（WIC 广告），但解码还走 QImageReader
+    //     ⇒ 列了 173 个条目、每一张都只能画占位。**"能列"和"能解"必须是同一条链**。
+    QSize size()
+    {
+        return m_ok ? decode::Capabilities::instance().querySize(m_source, m_page) : QSize();
+    }
+    QImage read()
+    {
+        if (!m_ok) return {};
+        return toDisplayable(toSrgb(decode::Capabilities::instance().decode(m_source, m_page).image));
+    }
+    //   缩略图：**按目标尺寸出图**（provider 可优化，默认是解码后我们自己的缩放）
     QImage readScaled(const QSize &target)
     {
         if (!m_ok || !target.isValid()) return {};
-        m_r.setScaledSize(target);
-        return toDisplayable(toSrgb(m_r.read()));
+        return toDisplayable(toSrgb(decode::Capabilities::instance().thumbnail(m_source, target, m_page)));
     }
 
 private:
-    QByteArray   m_bytes;
-    QBuffer      m_buf;
-    QImageReader m_r;
-    bool         m_ok = false;
+    decode::Source m_source;
+    int            m_page = 0;
+    bool           m_ok = false;
 };
 
 }  // namespace

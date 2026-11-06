@@ -41,6 +41,14 @@ public:
     //   解码：按 rank 升序逐个试，**首个解出非空图即停**（一个格式多个解码器是常态）
     Result decode(const Source &src, int page = 0) const;
 
+    //   不解码问尺寸：同样按 rank 逐个问，**第一个给出有效尺寸的就用**。
+    //   ★ 这是"能力表敢列出来"的配套：列了就必须给出尺寸/像素，不能只列不解。
+    QSize querySize(const Source &src, int page = 0) const;
+
+    //   按目标尺寸出图（预览条用）：按 rank 逐个试，先成功的算。
+    //   provider 可以自己优化（如 JPEG 的 DCT 缩放），默认实现是解码后我们自己的缩放。
+    QImage thumbnail(const Source &src, const QSize &target, int page = 0) const;
+
     QList<Report> report() const;
 
 private:
