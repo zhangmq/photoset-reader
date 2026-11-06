@@ -142,12 +142,14 @@ jobs:
       - name: Install dependencies
         run: |
           pacman -Syu --noconfirm
+          #   * qt6-tools 提供 lrelease6：静态 Qt 前缀里没有 LinguistTools（只编了 4 个模块），
+          #     CMakeLists 会退回到系统的 lrelease 生成 .qm（第一次跑就栽在这）。
+          #   !! 注释不能夹在 `\` 续行中间 —— shell 会把续行末尾的注释当成行尾，
+          #      后面的参数就变成"命令找不到"（qt6-tools: command not found）。
           pacman -S --noconfirm --needed \
             git cmake ninja gcc pkgconf \
-            zlib xz libarchive libexif libunrar \
-            #   * qt6-tools 提供 lrelease6：静态 Qt 前缀里没有 LinguistTools（只编了 4 个模块），
-            #     CMakeLists 会退回到系统的 lrelease 生成 .qm（第一次跑就栽在这）。
             qt6-tools \
+            zlib xz libarchive libexif libunrar \
             libxcb xcb-util xcb-util-wm xcb-util-image xcb-util-keysyms \
             xcb-util-renderutil xcb-util-cursor \
             libxkbcommon wayland wayland-protocols \
