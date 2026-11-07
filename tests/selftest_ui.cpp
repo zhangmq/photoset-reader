@@ -28,6 +28,10 @@
 #include <QQmlContext>
 #include <QQmlEngine>
 #include <QQuickItem>
+#include <QDir>
+#include <QTest>
+#include <QUrl>
+#include <viewermodel.h>
 #include <QQuickWindow>
 #include <QTimer>
 
@@ -177,6 +181,55 @@ int main(int argc, char *argv[])
         check(b.visible && !b.rect.intersects(QRectF(0, 0, 40, 40)),
               QStringLiteral("② ★ 气泡**不与目标矩形相交**（rect=%1,%2 %3x%4）")
                   .arg(b.rect.x()).arg(b.rect.y()).arg(b.rect.width()).arg(b.rect.height()));
+
+        //   ── ③ 键盘：**合成按键必须真的驱动界面**（2026-11-07 用户报"快捷键全部失效"）──
+        //   为什么放这里：`FullscreenView` 的 `Keys.onPressed` 依赖 `activeFocus`；
+        //   只要焦点在哪一环断掉，**所有**快捷键一起死。这条用进程内按键把它钉住，
+        //   不依赖桌面/窗口管理器（真机窗口没前台时 SendKeys 也不可靠）。
+        {
+            QQuickWindow *win = qobject_cast<QQuickWindow *>(engine.rootObjects().value(0));
+            const QString src = tmp.filePath(QStringLiteral("keys"));
+            QDir().mkpath(src);
+            for (int i = 0; i < 3; ++i) {
+                QImage img(400, 600, QImage::Format_RGB32);
+                img.fill(QColor(40 + i * 60, 90, 160));
+                img.save(src + QStringLiteral("/k%1.png").arg(i + 1), "PNG");
+            }
+            ui.openPath(QUrl::fromLocalFile(src));
+            auto viewer = [&]() { return qobject_cast<fetch::ViewerModel *>(ui.viewer()); };
+            const bool opened = testsupport::waitFor(
+                [&] { return viewer() != nullptr && viewer()->totalPages() >= 3; }, 20000);
+            testsupport::waitFor([]{ return false; }, 500);      // 让第一帧落定（焦点链建好）
+            check(opened, QStringLiteral("③ 夹具：三张图打开成功"));
+
+            if (opened && win && viewer()) {
+                //   ★ 实测（2026-11-07）：`requestActivate()` 之后**立刻**发的第一个键会被吞掉
+                //     （窗口还没成为活动窗口 ⇒ 键事件没有接收者）。真机上的"快捷键全部失效"
+                //     就是这个形态：窗口没拿到键盘焦点时，**所有**键都进不来；点一下窗口就恢复。
+                //     所以这里必须**等窗口真的 active** 再发键。
+                win->requestActivate();
+                const bool activated = testsupport::waitFor([&] { return win->isActive(); }, 5000);
+                check(activated, QStringLiteral("③ 窗口成为活动窗口（键盘焦点的前提）"));
+                const int before = viewer()->currentPage();
+                QTest::keyClick(win, Qt::Key_Right);
+                const bool moved = testsupport::waitFor(
+                    [&] { return viewer()->currentPage() > before; }, 3000);
+                check(moved, QStringLiteral("③ ★ →（右方向键）翻到下一页（%1 → %2）")
+                                 .arg(before).arg(viewer()->currentPage()));
+
+                const bool playingBefore = viewer()->playing();
+                QTest::keyClick(win, Qt::Key_Space);
+                const bool toggled = testsupport::waitFor(
+                    [&] { return viewer()->playing() != playingBefore; }, 3000);
+                check(toggled, QStringLiteral("③ ★ 空格切换播放/暂停"));
+
+                const bool osdBefore = viewer()->osdVisible();
+                QTest::keyClick(win, Qt::Key_I);
+                const bool osdToggled = testsupport::waitFor(
+                    [&] { return viewer()->osdVisible() != osdBefore; }, 3000);
+                check(osdToggled, QStringLiteral("③ ★ I 键切换信息行"));
+            }
+        }
 
         return check.finish();
     });

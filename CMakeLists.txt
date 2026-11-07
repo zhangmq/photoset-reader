@@ -14,7 +14,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 #     （6.9 才有；`MultiEffect` 做不到"只画影子"，会把半透明面板叠出第二层颜色）。
 #     本地与 Windows CI 都是 6.12。
 find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui Quick Qml QuickControls2 Widgets ShaderTools Concurrent
-                                            Network)
+                                            Network Test)
 #   ★ QtDBus 只有 Unix 有（幻灯片期间的屏幕抑制用它）⇒ 只在 Unix 上找、只在 Unix 上链
 if(UNIX)
     find_package(Qt6 REQUIRED COMPONENTS DBus)

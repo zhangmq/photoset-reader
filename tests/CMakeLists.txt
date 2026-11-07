@@ -79,7 +79,7 @@ target_link_libraries(ib-test-progresslock PRIVATE testsupport)
 qt_add_executable(ib-test-ui
     selftest_ui.cpp
 )
-target_link_libraries(ib-test-ui PRIVATE testsupport ibcore Qt6::Quick Qt6::Qml)
+target_link_libraries(ib-test-ui PRIVATE testsupport ibcore Qt6::Quick Qt6::Qml Qt6::Test)
 ib_add_qml_resources(ib-test-ui)
 
 # ── ctest：相对 `.testdata` 的套件在**源码根**跑 ──────────────────────────

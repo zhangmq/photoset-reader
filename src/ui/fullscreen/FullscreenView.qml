@@ -700,6 +700,19 @@ Item {
     //       · 这里**不要求** `overlaysVisible` —— 那是控件条的显隐，不是"能不能切"。
     //   ★ 2026-10-31：只剩这一个界面 ⇒ 焦点恒在本视图（没有别的屏可切）
     focus: true
+    //   ★ 窗口重新成为活动窗口时，若**没有任何 item 持有焦点**就还给本视图（2026-11-07）：
+    //     窗口失焦 ⇒ 键盘事件没有接收者 ⇒ **所有**快捷键一起失效。实测（ib-test-ui ③）：
+    //     等到 `win->isActive()` 后 Right/Space/I 全部正常 ⇒ handler 本身没问题，
+    //     缺的只是这条兜底。
+    Connections {
+        target: root.Window.window
+        function onActiveChanged() {
+            const w = root.Window.window
+            if (w && w.active && !w.activeFocusItem)
+                root.forceActiveFocus()
+        }
+    }
+
     Keys.onPressed: function (event) {
         root.wakeUi()
         switch (event.key) {
@@ -724,10 +737,13 @@ Item {
         // ── 用户已确认的那几个（设计 08 §三）──
         case Qt.Key_Space:       if (ui.viewer) ui.viewer.togglePlaying()
                                  event.accepted = true; break
-        case Qt.Key_BracketLeft: ui.slideshowIntervalMs = ui.slideshowIntervalMs - 10
-                                 event.accepted = true; break
-        case Qt.Key_BracketRight: ui.slideshowIntervalMs = ui.slideshowIntervalMs + 10
-                                 event.accepted = true; break
+        //   ★ 2026-11-07：`[` / `]` 以前直接改 `ui.slideshowIntervalMs` —— 那是**全局默认**，
+        //     当前这一屏的间隔在 `ui.viewer.intervalMs` ⇒ 打开来源后按了**没有任何效果**
+        //     （用户报的"快捷键失效"之一）。现在走与底栏 +/- 同一个入口（档位网格）。
+        case Qt.Key_BracketLeft:  ui.stepSlideshowInterval(-1)
+                                  event.accepted = true; break
+        case Qt.Key_BracketRight: ui.stepSlideshowInterval(1)
+                                  event.accepted = true; break
         case Qt.Key_I:           if (ui.viewer) ui.viewer.osdVisible = !ui.viewer.osdVisible;
                                  event.accepted = true; break
         // 缩放（Chrome 式档位）：**裸 + / −**，不要求 Shift 或 Ctrl（用户 2026-11-02）

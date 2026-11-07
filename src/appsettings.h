@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QList>
 
 namespace app {
 
@@ -21,15 +22,37 @@ inline constexpr int kMinSlideshowIntervalMs = 0;
 //   上限（与设置页 `NumberField.to` 一致）：连点"减速"不会跑到天上去
 inline constexpr int kMaxSlideshowIntervalMs = 60000;
 
-//   加速 / 减速的**分段步进**（唯一实现，用户 2026-11-03 定）：
-//     < 100ms ⇒ 10ms ｜ < 1s ⇒ 50ms ｜ < 10s ⇒ 500ms ｜ ≥ 10s ⇒ 1s
-//   理由：低区间 10ms 才有意义，高区间 10ms 点半天看不出变化。
-inline int slideshowStepMs(int ms)
+//   加速 / 减速的**档位网格**（唯一实现；2026-11-07 用户定：步长不变，但要**对称**）：
+//     0..100 步 10 ｜ 150..950 步 50 ｜ 1000..9500 步 500 ｜ 10000..60000 步 1000
+//   ★ 为什么不再"按当前值算步长"：那样刚跨过边界时，向上用新档步长、向下用旧档步长 ⇒
+//     两个方向不是同一条梯子（实测：从 1000 往下**一步跳到 500**，550–950 在减速方向
+//     不可达；10000→9000 丢掉 9500；100→50 丢掉 60–90）。现在加减速都是"在网格上移动一格"
+//     ⇒ **严格互逆**，且 UI 的预设 (100/500/1000/2000/3000/4000/5000) 全都在网格上。
+inline const QList<int> &slideshowLadder()
 {
-    if (ms < 100)   return 10;
-    if (ms < 1000)  return 50;
-    if (ms < 10000) return 500;
-    return 1000;
+    static const QList<int> grid = [] {
+        QList<int> g;
+        for (int v = 0; v <= 100; v += 10) g << v;
+        for (int v = 150; v < 1000; v += 50) g << v;
+        for (int v = 1000; v < 10000; v += 500) g << v;
+        for (int v = 10000; v <= 60000; v += 1000) g << v;
+        return g;
+    }();
+    return grid;
+}
+
+//   在网格上移动一格（dir > 0 加速 / < 0 减速）。当前值不在网格上（用户手填）⇒ 先**吸附**
+//   到相邻那一格：加速取"大于当前的最小格"，减速取"小于当前的最大格"。到头停在两端。
+inline int slideshowNextInterval(int cur, int dir)
+{
+    const QList<int> &g = slideshowLadder();
+    if (g.isEmpty()) return cur;
+    if (dir > 0) {
+        for (int v : g) if (v > cur) return v;
+        return g.last();
+    }
+    for (int i = g.size() - 1; i >= 0; --i) if (g.at(i) < cur) return g.at(i);
+    return g.first();
 }
 
 // ══ 应用设置（配置文件）════════════════════════════════════════

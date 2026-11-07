@@ -452,9 +452,9 @@ void UiModel::setSlideshowIntervalMs(int ms)
 void UiModel::stepSlideshowInterval(int dir)
 {
     const int cur = m_src.vm ? m_src.vm->intervalMs() : m_settings.intervalMs();
-    const int step = app::slideshowStepMs(cur);
+    //   ★ 2026-11-07：走**档位网格**（加减速严格互逆），不再按当前值算步长。
     const int next = qBound(app::kMinSlideshowIntervalMs,
-                            cur + (dir < 0 ? -step : step),
+                            app::slideshowNextInterval(cur, dir),
                             app::kMaxSlideshowIntervalMs);
     if (m_src.vm) m_src.vm->setIntervalMs(next);
     else          setSlideshowIntervalMs(next);
