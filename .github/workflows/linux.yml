@@ -16,6 +16,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+#   ★ 2026-11-07（用户）：tag 推送时**由 CI 直接把产物挂到 Release**（见末尾 `release` job），
+#     本地不用下载 21 MB AppImage + 2.4 MB 安装树（他的外网每天只有很慢的时段）。
+permissions:
+  contents: write
+
 concurrency:
   group: linux-${{ github.ref }}
   cancel-in-progress: true
@@ -240,3 +245,51 @@ jobs:
           path: dist/*.AppImage
           retention-days: 14
           if-no-files-found: error
+
+  #   ── 发布：把 Linux 两个产物**直接挂到 tag 对应的 Release**（用户 2026-11-07）──
+  #   以前要本地 `gh run download`（21 MB AppImage + 2.4 MB 安装树）再上传，慢外网下很痛。
+  #   · 只在 tag 推送时跑（`v*`）；
+  #   · 与 windows workflow 往**同一个** release 上传各自 asset，`--clobber` 容忍重跑；
+  #   · release 不存在时先建占位（标题 + 指向 CHANGELOG），双语 notes 随后由人工补。
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, appimage]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          path: pkg
+
+      - name: Normalise asset names
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#v}"
+          echo "VER=$VER" >> "$GITHUB_ENV"
+          ls -R pkg | head -20
+          #  build job 的 tar.gz 是"安装树"（无 install.sh），名字里带上这一点
+          TAR=$(find pkg -name '*.tar.gz' | head -1)
+          mv "$TAR" "photoset-reader-$VER-linux-x86_64-install-tree.tar.gz"
+          APPIMG=$(find pkg -name '*.AppImage' | head -1)
+          mv "$APPIMG" "photoset-reader-$VER-x86_64.AppImage"
+          ls -l photoset-reader-*
+
+      - name: Create release if missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --title "photoset-reader ${GITHUB_REF_NAME#v}" --prerelease \
+              --notes "See CHANGELOG.md for the full list of changes."
+          fi
+
+      - name: Upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh release upload "$GITHUB_REF_NAME" \
+            "photoset-reader-$VER-x86_64.AppImage" \
+            "photoset-reader-$VER-linux-x86_64-install-tree.tar.gz" --clobber
