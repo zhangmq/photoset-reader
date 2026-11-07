@@ -32,6 +32,8 @@
 #include <QSignalSpy>
 #include <QTest>
 #include <QUrl>
+#include <progressfile.h>
+#include <sequence.h>
 #include <viewermodel.h>
 #include <QQuickWindow>
 #include <QTimer>
@@ -300,6 +302,52 @@ int main(int argc, char *argv[])
                           .arg(spy.count() ? spy.at(0).at(0).toInt() : -1)
                           .arg(spy.count() ? spy.at(0).at(1).toInt() : -1));
                 delete menu;
+            }
+        }
+
+        //   ── ⑦ 拖放 `.prsave` 必须打开进度文件，而不是把它当图片解码 ────────────
+        //   用户 2026-11-07 报的 bug：拖进窗口走的是 `UiModel::openPath()`，而 `.prsave`
+        //   的分流只在 `main.cpp`（命令行/双击）里 ⇒ 拖放会把进度文件丢进图片解码链。
+        //   现在分流统一放在 `openPath()` 里。这里写一份**真的**进度文件再拖进来验。
+        {
+            QQuickWindow *win = qobject_cast<QQuickWindow *>(engine.rootObjects().value(0));
+            Q_UNUSED(win);
+            const QString src = tmp.filePath(QStringLiteral("keys"));   // ③ 建的三张 PNG
+            progressfile::Data d;
+            d.meta.savedAt = QDateTime::currentSecsSinceEpoch();
+            d.meta.title = QStringLiteral("keys");
+            d.meta.sourcePath = QDir::cleanPath(src);
+            d.meta.sourceKind = Sequence::Kind::Folder;
+            d.meta.sourceMtime = QFileInfo(src).lastModified().toSecsSinceEpoch();
+            d.meta.hidden = false;
+            d.meta.depth = 5;
+            d.meta.innerArchiveMaxMb = 512;
+            d.meta.layout = 0;
+            d.meta.chain = QStringList{ QStringLiteral("k1.png") };
+            d.meta.page = 1;
+            for (int i = 0; i < 3; ++i) {
+                Sequence::Row r;
+                r.ord = i;
+                r.kind = Sequence::Kind::Image;
+                r.label = QStringLiteral("k%1.png").arg(i + 1);
+                const QFileInfo fi(src + QStringLiteral("/k%1.png").arg(i + 1));
+                r.size = fi.size();
+                r.mtime = fi.lastModified().toSecsSinceEpoch();
+                d.rows.append(r);
+            }
+            const QString prsave = tmp.filePath(QStringLiteral("drop-test.prsave"));
+            QString err;
+            const bool wrote = progressfile::write(prsave, d, &err);
+            check(wrote, QStringLiteral("⑦ 夹具：写出一份真的进度文件 %1").arg(err));
+
+            if (wrote) {
+                ui.openPath(QStringLiteral("/"));            // 先换到无关来源
+                ui.openPath(QUrl::fromLocalFile(prsave));    // ★ 模拟拖放
+                const bool opened = testsupport::waitFor(
+                    [&] { return qobject_cast<fetch::ViewerModel *>(ui.viewer()) != nullptr
+                                 && qobject_cast<fetch::ViewerModel *>(ui.viewer())->totalPages() >= 3; },
+                    20000);
+                check(opened, QStringLiteral("⑦ ★ 拖入 .prsave ⇒ 打开的是进度文件里的来源（3 页）"));
             }
         }
 

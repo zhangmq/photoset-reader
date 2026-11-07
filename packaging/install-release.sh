@@ -71,7 +71,9 @@ sed -i "s|^Exec=.*|Exec=$PREFIX/bin/photoset-reader %F|" "$PREFIX/share/applicat
 
 command -v update-desktop-database >/dev/null && update-desktop-database "$PREFIX/share/applications" 2>/dev/null || true
 command -v update-mime-database   >/dev/null && update-mime-database   "$PREFIX/share/mime"         2>/dev/null || true
-command -v xdg-mime               >/dev/null && xdg-mime default "$DESKTOP_NAME" application/x-photoset-progress 2>/dev/null || true
+#   ★ 2026-11-07（用户）：**不做任何自动关联**（连 `.prsave` 也不）。
+#     上面的 `update-mime-database` 只是让 `application/x-photoset-progress` 这个**类型**
+#     能被识别，不属于"把某类型交给某程序"；默认程序一律交给用户自己选。
 
 echo
 echo "✓ 完成。启动：$PREFIX/bin/photoset-reader <文件夹|压缩包|图片>"

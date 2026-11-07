@@ -8,6 +8,18 @@
 **版本号的唯一来源是 `CMakeLists.txt` 的 `project(... VERSION x.y.z)`**：
 `--version` 打的是它，打包产物文件名也用它（见 README「发布」）。
 
+## [Unreleased]
+
+### 变更
+
+- **安装不再做任何自动文件关联**（包括 `.prsave` 进度文件）：只保留"出现在文件管理器的打开方式里"
+  的能力（`.desktop` 的 `MimeType=` + 自带 MIME 类型），默认程序完全交给用户自己选。
+
+### 修复
+
+- **把 `.prsave` 拖进窗口会被当成图片解码**：拖放走的是 `UiModel::openPath()`，而进度文件的分流
+  只在命令行那条路上 ⇒ 现在 `openPath()` 统一分流到 `openProgress()`。
+
 ## [0.1.0-beta.1] — 2026-11-07
 
 第二个预发布。相对 alpha 的主要变化：**Windows 移植落地**、**设置/进度/解码三条链路重做**、

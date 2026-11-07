@@ -66,5 +66,9 @@ echo "✓ 已安装：$DESKTOP"
 echo "  Exec = $EXEC %F"
 echo "  图标 = $ICONS/{16..512}x…/apps/$APP.png + scalable/apps/$APP.svg"
 echo
-echo "设为默认打开方式（可选）："
+#   ★ 2026-11-07（用户）：**不做任何自动关联**。这里只把"怎么关联"写清楚，
+#     由用户自己决定要不要执行 —— 安装过程绝不替用户改默认程序。
+echo "本应用已出现在文件管理器的「打开方式」里；**没有**替你把任何类型设为默认。"
+echo "想让它成为默认（可选，由你决定）："
 echo "  xdg-mime default $APP.desktop image/jpeg image/png image/webp application/vnd.comicbook+zip"
+echo "  xdg-mime default $APP.desktop application/x-photoset-progress   # .prsave 进度文件"

@@ -8,6 +8,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 **The single source of the version number is `project(... VERSION x.y.z)` in `CMakeLists.txt`**:
 `--version` prints it, and the packaged file names use it (see "Releasing" in the README).
 
+## [Unreleased]
+
+### Changed
+
+- **Installing no longer sets up any automatic file association** (progress files included): the app keeps
+  the ability to appear in the file manager's “Open with” list (`MimeType=` in the `.desktop` file plus a
+  bundled MIME type), but choosing a default application is entirely up to the user.
+
+### Fixed
+
+- **Dropping a `.prsave` into the window decoded it as an image**: drops go through
+  `UiModel::openPath()`, while the progress-file branch only existed on the command-line path — now
+  `openPath()` routes progress files to `openProgress()`.
+
 ## [0.1.0-beta.1] — 2026-11-07
 
 Second pre-release. Highlights since alpha: a working **Windows port**, reworked

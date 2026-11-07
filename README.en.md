@@ -111,6 +111,10 @@ The Windows package deliberately **omits** the DirectX Shader Compiler (`dxcompi
 `d3dcompiler_47.dll`. If `QSG_RHI_BACKEND=d3d12` is requested while `dxcompiler.dll` is missing, the
 app downgrades to D3D11 and logs it.
 
+**Installing never changes your default applications** (not even for `.prsave` progress files): the app
+only shows up in the file manager's “Open with” list (`MimeType` in the `.desktop` file); making it the
+default is up to you.
+
 From source (for development):
 
 ```bash

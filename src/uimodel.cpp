@@ -272,6 +272,15 @@ void UiModel::openPath(const QUrl &fileUrl)
 void UiModel::openPath(const QString &path, int index)
 {
     if (path.isEmpty()) return;
+    //   ★ 2026-11-07（用户报的 bug）：`.prsave` 拖进窗口时被当成"一张图片"进了图片解码链
+    //     （拖放走的是 `openPath()`，而 CLI 那条在 `main.cpp` 里另有 `.prsave` 分支 ⇒
+    //     只有命令行双击能正确打开进度文件）。这里在**唯一入口**上补同样的分流：
+    //     进度文件交给 `openProgress()`，其余（文件夹 / 压缩包 / 图片）照旧。
+    //     ⚠️ 判断放在 `dropSource()` **之前**：`openProgress()` 自己会拆旧来源。
+    if (path.endsWith(QLatin1String(".prsave"), Qt::CaseInsensitive)) {
+        openProgress(path);
+        return;
+    }
     dropSource();
     m_path = QDir::cleanPath(path);      // ★ 统一形态（去掉尾随 `/`），见 Sequence::absClean
     m_sessionNotice.clear();                  // 换来源 ⇒ 瞬时提示重新计
