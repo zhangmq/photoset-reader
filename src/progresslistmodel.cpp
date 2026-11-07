@@ -59,7 +59,7 @@ void ProgressListModel::setFilter(const QString &text)
 
 void ProgressListModel::reload()
 {
-    //   ★ 只列文件名（不读内容）—— 50k 个也只是目录一次遍历
+    //   ★ 只列文件名（不读内容）—— 目录大小只影响这次遍历，不读任何存档内容
     QStringList files;
     if (!m_dir.isEmpty() && QFileInfo(m_dir).isDir()) {
         QDir d(m_dir);

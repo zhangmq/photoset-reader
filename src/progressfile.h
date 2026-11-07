@@ -3,8 +3,8 @@
 // ══ 进度文件（`.prsave`）：**保存 / 打开进度的唯一实现** ═══════════════════════
 //   设计：[20-进度文件与收藏夹](../docs/design/20-进度文件与收藏夹.md)
 //
-//   · **一个源一个文件**：收藏夹里 = `<title>-<hash8>.prsave`（`hash8` = 源规范路径的
-//     SHA-256 前 8 位）⇒ 同一个源再保存**覆盖同一个文件**，不会越存越多；
+//   · **一个源一个文件**：收藏夹里 = `<title>-<hash8>.prsave`（`hash8` = 源绝对路径的
+//     SHA-256 前 8 位；相对路径先转绝对，**不解析符号链接**）⇒ 同一个源再保存**覆盖同一个文件**，不会越存越多；
 //   · 外部进度文件 = 同样内容，由用户选路径（不进收藏夹、不被列出）；
 //   · **文件就是记录**：没有数据库、没有索引文件；移除 = 删文件；
 //   · 写盘用 `QSaveFile`（临时文件 + 原子替换）：半截文件不会被读到。
@@ -82,7 +82,7 @@ struct Data {
 };
 
 // ── 命名 ────────────────────────────────────────────────────────────────
-QString hash8(const QString &sourcePath);          // 规范路径的短哈希
+QString hash8(const QString &sourcePath);          // 源绝对路径的短哈希（不解析符号链接）
 QString titleOf(const QString &sourcePath);        // 文件夹名 / 压缩包文件名
 QString fileNameFor(const QString &title, const QString &sourcePath);
 bool    isProgressFile(const QString &path);

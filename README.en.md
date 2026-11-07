@@ -117,9 +117,9 @@ only the D3D12 backend needs it, and the default D3D11 path uses the OS-provided
 `d3dcompiler_47.dll`. If `QSG_RHI_BACKEND=d3d12` is requested while `dxcompiler.dll` is missing, the
 app downgrades to D3D11 and logs it.
 
-**Installing never changes your default applications** (not even for `.prsave` progress files): the app
-only shows up in the file manager's “Open with” list (`MimeType` in the `.desktop` file); making it the
-default is up to you.
+**Installing never changes your default applications**: images, folders, archives and `.prsave`
+progress files all keep their current default handlers. The app only shows up in the file manager's
+“Open with” list (`MimeType` in the `.desktop` file); making it the default is up to you.
 
 From source (for development):
 

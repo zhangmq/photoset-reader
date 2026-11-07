@@ -268,7 +268,8 @@ void UiModel::openPath(const QUrl &fileUrl)
 //   ★ 只有一种来源：**会话来源**（文件夹 / 压缩包 / 文件同一套：建序列 → 看）。
 //     · 不写盘：进度与扫描结果都只在内存里（用户 2026-10-31）；
 //     · 换来源 ⇒ 旧组同步拆掉（不等工作线程）；
-//     · `index` 只给 CLI `--index N` 用（界面入口不传）。
+//     · `index` = 调用方显式指定的起始位置（`>= 0` 才用）；**产品 CLI 没有对应开关**，
+//       界面入口（拖放 / 打开对话框）一律传 `-1`。
 void UiModel::openPath(const QString &path, int index)
 {
     if (path.isEmpty()) return;
@@ -291,7 +292,7 @@ void UiModel::openPath(const QString &path, int index)
     //     "新鲜" = 存档里记的 `sourceMtime` 与当前目录/压缩包的 mtime 一致：
     //     目录增删文件会改 mtime ⇒ 存档过期就**不作数**，走正常扫描（否则会拿到
     //     一份和磁盘对不上、甚至指向已删除文件的行表）。
-    //     `--index N` 是调用方明确指定位置 ⇒ 优先于自动续读。
+    //     `index >= 0` = 调用方明确指定位置 ⇒ 优先于自动续读（**当前没有调用方这样用**）。
     if (index < 0) {
         const QFileInfo srcInfo(m_path);
         const QString fav = currentFavoritesFile();
@@ -319,7 +320,8 @@ void UiModel::openPath(const QString &path, int index)
     refreshScanning();
     refreshFavorited();
     if (m_sessionProbe) m_sessionProbe->start();
-    //   `--index N`：扫描是异步的 ⇒ 记下来，等条目够了再跳（见 onSequenceChanged）
+    //   显式起始位置（`openPath(path, index >= 0)`）：扫描是异步的
+    //   ⇒ 先记下来，等条目够了再跳（见 onSequenceChanged）
     m_pendingJump = index;
     if (m_pendingJump >= 0 && m_src.vm && m_src.seq && m_src.seq->count() > m_pendingJump) {
         m_src.vm->jump(m_pendingJump);
@@ -395,7 +397,7 @@ void UiModel::pumpSession()
 void UiModel::onSequenceChanged()
 {
     if (m_src.vm) m_src.vm->sequenceChanged();
-    //   CLI `--index N` 的延迟跳转：条目够了就跳一次；扫完了还没到 N 就放弃
+    //   显式起始位置的延迟跳转：条目够了就跳一次；扫完了还没到 N 就放弃
     if (m_pendingJump >= 0 && m_src.vm && m_src.seq) {
         if (m_src.seq->count() > m_pendingJump) {
             m_src.vm->jump(m_pendingJump);
@@ -1262,8 +1264,8 @@ QString UiModel::currentFavoritesFile() const
 
 void UiModel::refreshFavorited()
 {
-    //   ★ 2026-11-07（用户）：从**进度存档**打开时一律显示"未收藏" —— 那份存档与收藏夹里的
-    //     记录同源不同进度，此时 ★ 禁用（见 `favoriteDisabled`），所以状态也必须是"未收藏"。
+    //   ★ 2026-11-07（用户）：从**另一份**进度存档打开时一律显示"未收藏" —— 那份存档与收藏夹里
+    //     的记录同源不同进度，此时 ★ 禁用（见 `favoriteDisabled`），所以状态也必须是"未收藏"。
     const QString file = currentFavoritesFile();
     const bool now = !m_openedFromProgress && !file.isEmpty() && QFileInfo::exists(file);
     if (now == m_sourceFavorited)
@@ -1497,10 +1499,16 @@ bool UiModel::openProgress(const QString &filePath)
     m_pendingJump = -1;
     startTrackingProgress(filePath);                   // 之后按间隔 / 切来源自动保存
     snapshotSavedState(d.meta, d.rows.size());         // 文件里记着的就是这份
-    //   ★ 2026-11-07（用户）：**从"另一份"进度存档打开** ⇒ 收藏功能禁用（见头文件里的属性说明）。
-    //     只有"打开的就是该来源在收藏夹里的那份"才不算冲突（那种情况等于正常收藏态）。
-    setOpenedFromProgress(QFileInfo(filePath).absoluteFilePath()
-                          != QFileInfo(currentFavoritesFile()).absoluteFilePath());
+    //   ★ 2026-11-08（用户）：收藏夹里**一个源最多一份存档**（文件名 = `<title>-<hash8>`，
+    //     hash8 = 源**绝对路径**的 SHA-256 前 8 位，不解析符号链接）⇒ 判"同源"不需要读元数据：
+    //     按命名规则算出该源的规范文件名（`currentFavoritesFile()` 内部统一成绝对路径），
+    //     它存在、且不是正在打开的这份 ⇒ 冲突。
+    //     （以前比"文件路径 != 规范名"却不检查存在性，导致任何 .prsave 都被判同源，已修。）
+    const QString favored = currentFavoritesFile();
+    const bool conflict = !favored.isEmpty() && QFileInfo::exists(favored)
+                          && QDir::cleanPath(QFileInfo(favored).absoluteFilePath())
+                                 != QDir::cleanPath(QFileInfo(filePath).absoluteFilePath());
+    setOpenedFromProgress(conflict);
     if (m_sessionProbe) m_sessionProbe->stop();        // 恢复的序列已经收尾，不需要探测
     m_sessionNotice.clear();
     refreshScanning();

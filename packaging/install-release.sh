@@ -5,7 +5,8 @@
 #   ./install.sh --uninstall           # 按同一前缀卸载（只删本包文件，不动配置/收藏夹）
 #
 #   做的事：检查运行期依赖 → 复制文件 → 重写 .desktop 的 Exec 为绝对路径 →
-#   `update-desktop-database` / `update-mime-database` → 把 `.prsave` 默认交给本应用。
+#   `update-desktop-database` / `update-mime-database`（只让类型**可被识别**）→
+#   **不设任何默认程序**（图片 / 文件夹 / 压缩包 / `.prsave` 都不改，详见下面的 2026-11-07 注）。
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)

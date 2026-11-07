@@ -268,10 +268,9 @@ bool readV1(const QByteArray &bytes, Data *out, QString *err)
 
 QString hash8(const QString &sourcePath)
 {
-    //   ★ 规范路径（canonical）⇒ 同一个源（哪怕从符号链接打开）落到同一个文件
-    const QFileInfo fi(sourcePath);
-    const QString canon = fi.canonicalFilePath();
-    const QString key = canon.isEmpty() ? fi.absoluteFilePath() : canon;
+    //   ★ 统一成**绝对路径**（相对 ⇒ 绝对，`.`/`..` 折掉），但**不解析符号链接**——
+    //     符号链接是用户自己的选择，不替他归到"原始路径"（用户 2026-11-08）。
+    const QString key = QDir::cleanPath(QFileInfo(sourcePath).absoluteFilePath());
     const QByteArray hex = QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Sha256).toHex();
     return QString::fromLatin1(hex.left(8));
 }

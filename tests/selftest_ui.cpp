@@ -437,6 +437,71 @@ int main(int argc, char *argv[])
             }
         }
 
+        //   ── ⑫ 来源**没被收藏过**时打开它的存档 ⇒ 收藏不能被禁用（2026-11-08 用户报的 bug）──
+        //   旧判据："打开的文件路径 != 按来源算出来的规范名" ⇒ 任何非规范名的 `.prsave`
+        //   都被当成"同源不同进度"，哪怕这个来源从来没收藏过（收藏被误禁用，tooltip 还说错）。
+        {
+            const QString dir = tmp.filePath(QStringLiteral("favsrc3"));
+            QDir().mkpath(dir);
+            for (int i = 0; i < 2; ++i) {
+                QImage img(300, 450, QImage::Format_RGB32);
+                img.fill(QColor(40, 90, 200 + i * 20));
+                img.save(dir + QStringLiteral("/g%1.png").arg(i + 1), "PNG");
+            }
+
+            progressfile::Data d;
+            d.meta.savedAt = QDateTime::currentSecsSinceEpoch();
+            d.meta.title = QStringLiteral("free");
+            d.meta.sourcePath = QDir::cleanPath(dir);
+            d.meta.sourceKind = Sequence::Kind::Folder;
+            d.meta.sourceMtime = QFileInfo(dir).lastModified().toSecsSinceEpoch();
+            d.meta.hidden = false;
+            d.meta.depth = 5;
+            d.meta.innerArchiveMaxMb = 512;
+            d.meta.layout = 0;
+            d.meta.chain = QStringList{ QStringLiteral("g1.png") };
+            d.meta.page = 0;
+            for (int i = 0; i < 2; ++i) {
+                Sequence::Row r;
+                r.ord = i;
+                r.kind = Sequence::Kind::Image;
+                r.label = QStringLiteral("g%1.png").arg(i + 1);
+                const QFileInfo fi(dir + QStringLiteral("/g%1.png").arg(i + 1));
+                r.size = fi.size();
+                r.mtime = fi.lastModified().toSecsSinceEpoch();
+                d.rows.append(r);
+            }
+            const QString free = tmp.filePath(QStringLiteral("free.prsave"));
+            QString err;
+            const bool wrote = progressfile::write(free, d, &err);
+            check(wrote, QStringLiteral("⑫ 夹具：写一份「没收藏过」的来源的存档（%1）").arg(err));
+
+            if (wrote) {
+                ui.openPath(QUrl::fromLocalFile(free));
+                auto vm12 = [&]() { return qobject_cast<fetch::ViewerModel *>(ui.viewer()); };
+                const bool opened = testsupport::waitFor(
+                    [&] { return vm12() != nullptr && vm12()->totalPages() >= 2; }, 20000);
+                check(opened, QStringLiteral("⑫ 打开该存档 ⇒ 来源就绪"));
+                if (opened) {
+                    check(!ui.favoriteDisabled(),
+                          QStringLiteral("⑫ ★ 来源没被收藏 ⇒ 打开它的存档**不**禁用收藏"));
+                    check(!ui.sourceFavorited(), QStringLiteral("⑫ 星标是「未收藏」"));
+
+                    //   收藏入口必须真的能用（不是只把 ★ 点亮）：写进收藏目录后按新存档重载
+                    const bool saved = ui.saveProgressToFavorites(false);
+                    const QString fav = ui.effectiveFavoritesDir() + QLatin1Char('/')
+                                        + progressfile::fileNameFor(progressfile::titleOf(dir), dir);
+                    check(saved && QFileInfo::exists(fav),
+                          QStringLiteral("⑫ ★ 可以收藏（收藏目录里生成了存档）"));
+                    const bool after = testsupport::waitFor(
+                        [&] { return ui.sourceFavorited() && !ui.favoriteDisabled(); }, 20000);
+                    check(after, QStringLiteral("⑫ ★ 收藏后星标=已收藏，且**仍不**判冲突"));
+
+                    ui.removeFavorite();          // 收尾：别把这份存档留给后面的用例
+                }
+            }
+        }
+
         //   ── ⑧ 收藏夹里已有的文件夹 ⇒ 打开时直接续读（不重新扫描）────────────
         //   用户 2026-11-07：拖回一个在收藏夹里的文件夹，应该回到上次的位置。
         //   判据：收藏夹存档里的 `sourceMtime` 与目录 mtime 一致 ⇒ 认为"没变"。

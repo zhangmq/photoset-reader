@@ -151,7 +151,8 @@ public:
     // ── 打开来源（文件夹 / 压缩包 / 文件 = 同一套：建序列 → 看）──────────────
     //   ★ QML 入口（拖放）给的是 `drop.urls` 的 **file: URL** ⇒ 这一版负责转成本地路径；
     //     非本地 URL 一律忽略。
-    //   `index >= 0` = 定位到第 index 条（只有 CLI `--index N` 用）；不给 ⇒ 第 0 条。
+    //   `index >= 0` = 定位到第 index 条（由**调用方**显式指定；产品 CLI 没有该开关，
+    //   界面入口传默认 `-1`）。
     Q_INVOKABLE void openPath(const QUrl &fileUrl);
     void openPath(const QString &path, int index = -1);
 
@@ -433,7 +434,7 @@ private:
     QStringList m_rescanChain;
     int         m_rescanPage = 0;
     int  m_discovered = 0;
-    //   CLI `--index N`：打开时序列可能还没扫出来 ⇒ 先记下来，等条目够了再跳（一次）
+    //   显式起始位置：打开时序列可能还没扫出来 ⇒ 先记下来，等条目够了再跳（一次）
     int     m_pendingJump = -1;
     QString m_lastProgressDir;          // 进度文件对话框的起始目录（会话级）
     QString m_lastDialogDir;            // 打开对话框的起始目录（会话级）：上次成功选过的地方
