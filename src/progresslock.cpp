@@ -34,6 +34,19 @@ bool Guard::acquire(const QString &prsavePath, QString *holder, QString *reasonK
 
     release();
 
+    //   ★ 2026-11-07：**目标目录还不存在时必须先建它**（收藏夹第一次使用时就是这样）。
+    //     以前直接 `tryLock()`：`QLockFile` 建不出锁文件 ⇒ `reasonKey` 落到 "lock-error"，
+    //     上层把"目录没建"误当成"只读/被占用"，`saveProgressToFavorites()` 直接失败
+    //     （Linux CI 上就是这样红的）。`mkpath` 对已存在的目录是无操作。
+    if (!QDir().mkpath(QFileInfo(sidecar).absolutePath())) {
+        if (holder) *holder = QString();
+        if (reasonKey) *reasonKey = QStringLiteral("readonly-dir");
+        qCInfo(lcUi).noquote()
+            << QStringLiteral("[ui] progress lock failed (cannot create directory): %1")
+                   .arg(QFileInfo(sidecar).absolutePath());
+        return false;
+    }
+
     auto lock = std::make_unique<QLockFile>(sidecar);
     lock->setStaleLockTime(0);          // ★ 见头文件：默认 30 s 会把活锁抢走
 
