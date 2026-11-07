@@ -100,7 +100,7 @@ photoset-reader [<路径>] [--fullscreen] [--log-level <级别>] [--log-file <�
 | 形态 | 文件 | 用法 |
 |---|---|---|
 | **AppImage**（Linux，自带依赖） | `photoset-reader-0.1.0-beta.1-x86_64.AppImage` | `chmod +x` 后直接运行；需要 FUSE（没有就 `--appimage-extract-and-run`） |
-| **系统依赖版**（Linux，要求已装 Qt 6 与第三方库） | `photoset-reader-0.1.0-beta.1-linux-system-deps.tar.zst` | 解压后 `./install.sh`（默认 `~/.local`，`--prefix` 可改，`--uninstall` 卸载） |
+| **安装树**（Linux，要求已装 Qt 6 与第三方库） | `photoset-reader-0.1.0-beta.1-linux-x86_64-install-tree.tar.gz` | 解到某个前缀即可：`tar -xzf … -C ~/.local`（`bin/` 与 `share/` 会就位） |
 | **Windows 免安装** | `photoset-reader-0.1.0-beta.1-windows-x64.zip` | 解压后双击 `photoset-reader.exe`（DLL 已随包） |
 
 Windows 包**不带** DirectX Shader Compiler（`dxcompiler.dll` / `dxil.dll`，约 15 MB）：只有 D3D12

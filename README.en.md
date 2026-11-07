@@ -103,7 +103,7 @@ submenus open with `Enter`/`→`.
 | Form | File | How |
 |---|---|---|
 | **AppImage** (Linux, self-contained) | `photoset-reader-0.1.0-beta.1-x86_64.AppImage` | `chmod +x`, then run it; needs FUSE (otherwise `--appimage-extract-and-run`) |
-| **System-deps tarball** (Linux, needs Qt 6 + third-party libs) | `photoset-reader-0.1.0-beta.1-linux-system-deps.tar.zst` | unpack, then `./install.sh` (defaults to `~/.local`; `--prefix` / `--uninstall`) |
+| **Install tree** (Linux, needs Qt 6 + third-party libs) | `photoset-reader-0.1.0-beta.1-linux-x86_64-install-tree.tar.gz` | unpack into a prefix: `tar -xzf … -C ~/.local` (brings `bin/` and `share/` into place) |
 | **Windows portable** | `photoset-reader-0.1.0-beta.1-windows-x64.zip` | unpack and run `photoset-reader.exe` (DLLs included) |
 
 The Windows package deliberately **omits** the DirectX Shader Compiler (`dxcompiler.dll` / `dxil.dll`,
