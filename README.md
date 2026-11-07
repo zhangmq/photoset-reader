@@ -29,8 +29,8 @@
 
 | 平台 | 状态 |
 |---|---|
-| **Linux**（X11 / Wayland） | 主要平台；提供 AppImage（自带依赖）与系统依赖版 tar 包 |
-| **Windows**（10 1809+） | beta：提供免安装目录（exe + DLL 闭包），默认 D3D11 渲染 |
+| **Linux**（X11 / Wayland） | 主要平台；提供 AppImage（自带依赖）与安装树 |
+| **Windows**（10 1809+） | 支持中：提供免安装目录（exe + DLL 闭包），默认 D3D11 渲染 |
 
 ## 构建
 
@@ -95,7 +95,9 @@ photoset-reader [<路径>] [--fullscreen] [--log-level <级别>] [--log-file <�
 
 ## 安装
 
-**预编译包（beta）**：从 [Releases](https://github.com/zhangmq/photoset-reader/releases) 下载。
+**预编译包**：每个 [Release](https://github.com/zhangmq/photoset-reader/releases) 都带下面三种产物，
+文件名里的 `<版本>` 就是该 Release 的 tag（去掉 `v`）。这里刻意不写死版本号与体积——
+都由 CI 在发版时生成，避免每次发版改 README。
 
 | 形态 | 文件 | 用法 |
 |---|---|---|
@@ -103,10 +105,7 @@ photoset-reader [<路径>] [--fullscreen] [--log-level <级别>] [--log-file <�
 | **安装树**（Linux，要求已装 Qt 6 与第三方库） | `photoset-reader-<版本>-linux-x86_64-install-tree.tar.gz` | 解到某个前缀即可：`tar -xzf … -C ~/.local`（`bin/` 与 `share/` 会就位） |
 | **Windows 免安装** | `photoset-reader-<版本>-windows-x64.zip` | 解压后双击 `photoset-reader.exe`（DLL 已随包） |
 
-`<版本>` 就是 Release 的 tag 去掉 `v`（例如 `0.1.0-beta.2`）——文件名由 CI 在发版时生成，
-这里不写死，免得每次发版都要改 README。
-
-Windows 包**不带** DirectX Shader Compiler（`dxcompiler.dll` / `dxil.dll`，约 15 MB）：只有 D3D12
+Windows 包**不带** DirectX Shader Compiler（`dxcompiler.dll` / `dxil.dll`）：只有 D3D12
 后端需要它，默认的 D3D11 用系统自带的 `d3dcompiler_47.dll`。显式请求 `QSG_RHI_BACKEND=d3d12`
 而旁边没有 `dxcompiler.dll` 时，程序会自动降级到 d3d11 并记一条日志。
 

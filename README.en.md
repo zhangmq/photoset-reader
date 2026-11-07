@@ -34,8 +34,8 @@ to software rendering automatically when no usable GPU is available.
 
 | Platform | Status |
 |---|---|
-| **Linux** (X11 / Wayland) | primary; AppImage (self-contained) and a system-deps tarball |
-| **Windows** (10 1809+) | beta: portable folder (exe + DLL closure), D3D11 rendering by default |
+| **Linux** (X11 / Wayland) | primary; AppImage (self-contained) and an install tree |
+| **Windows** (10 1809+) | supported: portable folder (exe + DLL closure), D3D11 rendering by default |
 
 ## Build
 
@@ -98,7 +98,10 @@ submenus open with `Enter`/`→`.
 
 ## Install
 
-**Prebuilt packages (beta)**: grab one from [Releases](https://github.com/zhangmq/photoset-reader/releases).
+**Prebuilt packages**: every [Release](https://github.com/zhangmq/photoset-reader/releases) carries the
+three artefacts below; `<version>` in the file name is that release's tag (without the leading `v`).
+Version numbers and sizes are deliberately **not** written here — CI produces them at release time, so
+the README never needs an edit per release.
 
 | Form | File | How |
 |---|---|---|
@@ -106,11 +109,11 @@ submenus open with `Enter`/`→`.
 | **Install tree** (Linux, needs Qt 6 + third-party libs) | `photoset-reader-<version>-linux-x86_64-install-tree.tar.gz` | unpack into a prefix: `tar -xzf … -C ~/.local` (brings `bin/` and `share/` into place) |
 | **Windows portable** | `photoset-reader-<version>-windows-x64.zip` | unpack and run `photoset-reader.exe` (DLLs included) |
 
-`<version>` is the release tag without the leading `v` (e.g. `0.1.0-beta.2`); the file names are produced
-by CI at release time, so they are not hard-coded here (no README edit per release).
+`<version>` is the release tag without the leading `v`; the file names are produced by CI at release
+time, so they are not hard-coded here.
 
-The Windows package deliberately **omits** the DirectX Shader Compiler (`dxcompiler.dll` / `dxil.dll`,
-~15 MB): only the D3D12 backend needs it, and the default D3D11 path uses the OS-provided
+The Windows package deliberately **omits** the DirectX Shader Compiler (`dxcompiler.dll` / `dxil.dll`):
+only the D3D12 backend needs it, and the default D3D11 path uses the OS-provided
 `d3dcompiler_47.dll`. If `QSG_RHI_BACKEND=d3d12` is requested while `dxcompiler.dll` is missing, the
 app downgrades to D3D11 and logs it.
 
