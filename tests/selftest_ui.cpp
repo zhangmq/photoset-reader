@@ -305,6 +305,173 @@ int main(int argc, char *argv[])
             }
         }
 
+        //   ── ⑨ 收藏列表的「移除」必须真的接到确认框（用户 2026-11-07 报的 bug）──
+        //   症状：点移除毫无反应。根因是外移确认框时 `FullscreenView` 里**漏了监听**
+        //   （列表发 `removeRequested`、没人接）。这条把"接线"钉住：
+        //   发一次信号 ⇒ 待删路径被记下、确认框被打开。
+        {
+            QQuickWindow *win = qobject_cast<QQuickWindow *>(engine.rootObjects().value(0));
+            QObject *fav = win ? win->findChild<QObject *>(QStringLiteral("favoritesPopup")) : nullptr;
+            QObject *dlg = win ? win->findChild<QObject *>(QStringLiteral("removeProgressDialog"))
+                              : nullptr;
+            check(fav != nullptr && dlg != nullptr,
+                  QStringLiteral("⑨ 找到收藏浮层与移除确认框"));
+
+            if (fav && dlg) {
+                QMetaObject::invokeMethod(fav, "removeRequested",
+                                          Q_ARG(QString, QStringLiteral("/tmp/x.prsave")),
+                                          Q_ARG(QString, QStringLiteral("X")));
+                const bool recorded = testsupport::waitFor(
+                    [&] { return dlg->property("visible").toBool(); }, 3000);
+                check(recorded, QStringLiteral("⑨ ★ 发出 removeRequested ⇒ 确认框被打开"));
+                QMetaObject::invokeMethod(dlg, "close");
+            }
+        }
+
+        //   ── ⑩ 删除存档：两条入口都必须真的删文件（用户 2026-11-07 定的需求）──
+        //   "收藏夹里存在这份存档"就是"已收藏"的判据 ⇒ 取消收藏 / 移除条目 = 删掉存档文件。
+        {
+            const QString dir = tmp.filePath(QStringLiteral("favsrc"));
+            QDir().mkpath(dir);
+            for (int i = 0; i < 3; ++i) {
+                QImage img(300, 450, QImage::Format_RGB32);
+                img.fill(QColor(200, 40 + i * 50, 90));
+                img.save(dir + QStringLiteral("/f%1.png").arg(i + 1), "PNG");
+            }
+            ui.openPath(dir);
+            auto vm10 = [&]() { return qobject_cast<fetch::ViewerModel *>(ui.viewer()); };
+            const bool ready = testsupport::waitFor(
+                [&] { return vm10() != nullptr && vm10()->totalPages() >= 3; }, 20000);
+            check(ready, QStringLiteral("⑩ 夹具：来源就绪"));
+            if (ready) {
+                vm10()->jump(1);
+                testsupport::waitFor([]{ return false; }, 400);
+                const QString fav = ui.effectiveFavoritesDir() + QLatin1Char('/')
+                                    + progressfile::fileNameFor(progressfile::titleOf(dir), dir);
+                const bool saved = ui.saveProgressToFavorites(false);
+                check(saved && QFileInfo::exists(fav),
+                      QStringLiteral("⑩ 存档已生成（%1）").arg(QFileInfo(fav).fileName()));
+                //   ★ 保存完会**按新存档重新载入**：位置必须还在原地（不能跳回第一页），
+                //     且星标此时是"已收藏"（载入的是收藏夹里那份，不再算冲突）。
+                const bool stillThere = testsupport::waitFor(
+                    [&] { return vm10() != nullptr && vm10()->currentPage() == 1; }, 20000);
+                check(stillThere && ui.sourceFavorited() && !ui.favoriteDisabled(),
+                      QStringLiteral("⑩ ★ 保存后按新存档重载：位置留在第 2 页、星标=已收藏"));
+
+                //   ① 收藏列表入口
+                const bool removed1 = ui.removeProgressFile(fav);
+                check(removed1 && !QFileInfo::exists(fav),
+                      QStringLiteral("⑩ ★ 列表「移除」⇒ 存档文件真的被删"));
+
+                //   ② 主窗口 ★ 入口
+                const bool saved2 = ui.saveProgressToFavorites(false);
+                const bool removed2 = ui.removeFavorite();
+                check(saved2 && removed2 && !QFileInfo::exists(fav),
+                      QStringLiteral("⑩ ★ ★「取消收藏」⇒ 存档文件真的被删"));
+                check(!ui.sourceFavorited(), QStringLiteral("⑩ 删完星标熄灭"));
+            }
+        }
+
+        //   ── ⑪ 直接打开一份进度存档 = 同源不同进度的**逃生通道**（用户 2026-11-07）──
+        //   收藏夹里有这个来源的存档（第 2 页），但用户明确打开另一份 `.prsave`（第 1 页）
+        //   ⇒ 必须加载被打开的那份，不能被"收藏夹续读"劫持。
+        {
+            const QString dir = tmp.filePath(QStringLiteral("favsrc"));
+            auto vm11 = [&]() { return qobject_cast<fetch::ViewerModel *>(ui.viewer()); };
+            ui.openPath(dir);
+            const bool ready = testsupport::waitFor(
+                [&] { return vm11() != nullptr && vm11()->totalPages() >= 3; }, 20000);
+            if (ready) {
+                vm11()->jump(1);                       // 收藏夹里那份记在"第 2 页"
+                testsupport::waitFor([]{ return false; }, 400);
+                ui.saveProgressToFavorites(false);
+
+                //   另写一份"第 1 页"的存档到临时目录
+                progressfile::Data d;
+                d.meta.savedAt = QDateTime::currentSecsSinceEpoch();
+                d.meta.title = QStringLiteral("esc");
+                d.meta.sourcePath = QDir::cleanPath(dir);
+                d.meta.sourceKind = Sequence::Kind::Folder;
+                d.meta.sourceMtime = QFileInfo(dir).lastModified().toSecsSinceEpoch();
+                d.meta.hidden = false;
+                d.meta.depth = 5;
+                d.meta.innerArchiveMaxMb = 512;
+                d.meta.layout = 0;
+                d.meta.chain = QStringList{ QStringLiteral("f1.png") };
+                d.meta.page = 0;
+                for (int i = 0; i < 3; ++i) {
+                    Sequence::Row r;
+                    r.ord = i;
+                    r.kind = Sequence::Kind::Image;
+                    r.label = QStringLiteral("f%1.png").arg(i + 1);
+                    const QFileInfo fi(dir + QStringLiteral("/f%1.png").arg(i + 1));
+                    r.size = fi.size();
+                    r.mtime = fi.lastModified().toSecsSinceEpoch();
+                    d.rows.append(r);
+                }
+                const QString other = tmp.filePath(QStringLiteral("esc.prsave"));
+                QString err;
+                const bool wrote = progressfile::write(other, d, &err);
+                check(wrote, QStringLiteral("⑪ 夹具：另写一份第 1 页的存档（%1）").arg(err));
+
+                if (wrote) {
+                    ui.openPath(QUrl::fromLocalFile(other));
+                    const bool first = testsupport::waitFor(
+                        [&] { return vm11() != nullptr && vm11()->currentPage() == 0; }, 20000);
+                    check(first, QStringLiteral("⑪ ★ 打开 .prsave ⇒ 用它的第 1 页，而不是收藏夹的第 2 页（当前 %1）")
+                                     .arg(vm11() ? vm11()->currentPage() : -1));
+                    //   ★ 用户 2026-11-07 定的体验：这时"收藏"必须**禁用**，并显示为**未收藏**，
+                    //     tooltip 由 QML 换专门的文案（这里只钉模型侧的两个事实）。
+                    check(ui.favoriteDisabled(), QStringLiteral("⑪ ★ 从进度存档打开 ⇒ 收藏禁用"));
+                    check(!ui.sourceFavorited(), QStringLiteral("⑪ ★ 此时显示为「未收藏」"));
+                    check(!ui.saveProgressToFavorites(false),
+                          QStringLiteral("⑪ ★ 收藏入口被拒（不是只置灰按钮）"));
+
+                    //   换回普通来源 ⇒ 恢复可用、星标重新按收藏夹判定
+                    ui.openPath(dir);
+                    const bool back = testsupport::waitFor(
+                        [&] { return vm11() != nullptr && vm11()->totalPages() >= 3; }, 20000);
+                    check(back && !ui.favoriteDisabled(),
+                          QStringLiteral("⑪ ★ 回到普通来源 ⇒ 收藏恢复可用"));
+                }
+            }
+        }
+
+        //   ── ⑧ 收藏夹里已有的文件夹 ⇒ 打开时直接续读（不重新扫描）────────────
+        //   用户 2026-11-07：拖回一个在收藏夹里的文件夹，应该回到上次的位置。
+        //   判据：收藏夹存档里的 `sourceMtime` 与目录 mtime 一致 ⇒ 认为"没变"。
+        {
+            const QString dir = tmp.filePath(QStringLiteral("favsrc"));
+            QDir().mkpath(dir);
+            for (int i = 0; i < 3; ++i) {
+                QImage img(300, 450, QImage::Format_RGB32);
+                img.fill(QColor(200, 40 + i * 50, 90));
+                img.save(dir + QStringLiteral("/f%1.png").arg(i + 1), "PNG");
+            }
+            ui.openPath(dir);
+            auto vm = [&]() { return qobject_cast<fetch::ViewerModel *>(ui.viewer()); };
+            const bool opened = testsupport::waitFor(
+                [&] { return vm() != nullptr && vm()->totalPages() >= 3; }, 20000);
+            check(opened, QStringLiteral("⑧ 夹具：三张图打开成功"));
+
+            if (opened) {
+                vm()->jump(2);                       // 走到第 3 页
+                testsupport::waitFor([&] { return vm()->currentPage() == 2; }, 3000);
+                const bool saved = ui.saveProgressToFavorites(false);
+                check(saved, QStringLiteral("⑧ 存进收藏夹"));
+
+                //   目录 mtime 会被"写存档"本身改吗？不会（存档写在收藏目录里）。
+                //   这里等 1.1 s 再重开，确保 mtime 比较不是偶然省过的。
+                testsupport::waitFor([]{ return false; }, 1100);
+                ui.openPath(QStringLiteral("/"));    // 换到无关来源
+                ui.openPath(dir);                    // ★ 重新打开同一个文件夹
+                const bool resumed = testsupport::waitFor(
+                    [&] { return vm() != nullptr && vm()->currentPage() == 2; }, 20000);
+                check(resumed, QStringLiteral("⑧ ★ 打开收藏夹里的文件夹 ⇒ 续读到第 3 页（当前 %1）")
+                                   .arg(vm() ? vm()->currentPage() : -1));
+            }
+        }
+
         //   ── ⑦ 拖放 `.prsave` 必须打开进度文件，而不是把它当图片解码 ────────────
         //   用户 2026-11-07 报的 bug：拖进窗口走的是 `UiModel::openPath()`，而 `.prsave`
         //   的分流只在 `main.cpp`（命令行/双击）里 ⇒ 拖放会把进度文件丢进图片解码链。

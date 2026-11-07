@@ -113,11 +113,18 @@ ApplicationWindow {
         }
     }
 
-    // ★ 没有来源时**整窗接受拖放**（有来源时不接收：那是画布的手势区）。
-    //   只取第一个 URL（多个 = 以第一个为准），非本地 URL 由 `ui.openPath` 忽略。
+    // ★ **整窗接受拖放**（2026-11-07 用户：有图时也要能拖新的进来）。
+    //   以前 `enabled: ui.viewer === null` —— 理由是"有来源时那块是画布的手势区"，
+    //   但文件拖放走的是 `DragEnter/DragMove/Drop`，与鼠标 press/move（画布平移）是
+    //   **两条独立的分发链**，`MouseArea` 根本不收拖放事件 ⇒ 那个顾虑不成立。
+    //   · 面板（设置/确认/密码…）打开时不接：否则会替换掉背后那个来源，用户会莫名其妙
+    //     （判据复用 A 系统的：面板拿着键盘 ⇒ `panelsOpen`）；
+    //   · 替换旧来源是安全的：`UiModel::dropSource()` 会先 `autosaveProgress()`
+    //     把进度补写一次（只读模式下不写）；
+    //   · 只取第一个 URL，非本地 URL 由 `ui.openPath` 忽略。
     DropArea {
         anchors.fill: parent
-        enabled: ui.viewer === null
+        enabled: !viewerView.panelsOpen
         keys: ["text/uri-list"]
         onDropped: (drop) => {
             if (drop.urls.length > 0) ui.openPath(drop.urls[0])

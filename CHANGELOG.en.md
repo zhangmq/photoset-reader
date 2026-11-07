@@ -8,19 +8,58 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 **The single source of the version number is `project(... VERSION x.y.z)` in `CMakeLists.txt`**:
 `--version` prints it, and the packaged file names use it (see "Releasing" in the README).
 
-## [Unreleased]
+## [0.1.0-beta.2] — 2026-11-07
+
+The first round of fixes after `0.1.0-beta.1`. Fixes only — no new features.
+
+### Added
+
+- **Opening a folder that lives in favorites resumes from the record**: when the record is *fresh*
+  (its `sourceMtime` matches the folder's mtime, the path matches and the source still exists) the rows
+  and the position are restored straight from it — **no scan at all**. Stale or unreadable records are
+  ignored and the normal scan runs. `--index N` wins over auto-resume.
+- The first log line now carries the **binary build time** (`built 2026-11-07 20:22:06`, taken from the
+  executable's own mtime) so "I rebuilt but forgot to repackage, and you tested the old binary" cannot
+  happen unnoticed again.
 
 ### Changed
 
 - **Installing no longer sets up any automatic file association** (progress files included): the app keeps
   the ability to appear in the file manager's “Open with” list (`MimeType=` in the `.desktop` file plus a
   bundled MIME type), but choosing a default application is entirely up to the user.
+- **Dropping files works at any time**: previously drops were accepted only when no source was open; now
+  they work with an image on screen too (drag-and-drop and mouse dragging are separate event chains, so
+  the original worry did not hold). Drops are ignored while a panel has the keyboard, and the progress of
+  the replaced source is written first.
+- **One confirmation dialog for both removal paths**: the ★ “remove favorite” button and the favorites
+  list's “Remove” are the same operation; only the wording differs (the list names the entry).
+- **Favorites are disabled while a progress file is open** (the same-source/different-progress **escape
+  hatch**): the ★ shows as *not favorited*, dimmed, clicking does nothing and the tooltip explains why; the
+  model refuses to write a favorites record in that state.
+- **Saving progress reloads from the new archive**: saving to favorites turns the ★ into “favorited” (no
+  longer disabled); saving to an arbitrary file puts the session into the “non-favorites archive” state
+  (same rules as the escape hatch).
 
 ### Fixed
 
 - **Dropping a `.prsave` into the window decoded it as an image**: drops go through
   `UiModel::openPath()`, while the progress-file branch only existed on the command-line path — now
   `openPath()` routes progress files to `openProgress()`.
+- **The favorites list's “Remove” did nothing at all**: when the confirmation dialog was moved out,
+  `FullscreenView` never got the listener (the list emitted a signal nobody handled).
+- **That dialog was English-only**: the strings were newly created while moving it, and the translations
+  were missing.
+- **The favorites list's “Remove” deleted the record without taking the lock**: deletion is a write; it
+  now follows the same rules as “remove favorite” (detach ourselves → take the lock → delete) and is
+  refused while another window is using the file.
+- **Leaving fullscreen wiped the window manager's maximised state** (`Window.Windowed` =
+  `Qt::WindowNoState`): the state from before fullscreen is remembered and restored.
+- **The context-menu submenu had no keyboard navigation**: `Enter`/`→` opens and enters it, `↑↓` chooses,
+  `Enter` confirms, `←` goes back.
+- **`[`/`]` modified the global default interval**, so they appeared to do nothing once a source was open;
+  they now share the bottom-bar ± entry point.
+- **Slideshow accelerate/decelerate were asymmetric**: replaced with a symmetric 97-step gear grid
+  (exact inverses).
 
 ## [0.1.0-beta.1] — 2026-11-07
 

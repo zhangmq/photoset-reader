@@ -4,6 +4,7 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QFile>
+#include <QFileInfo>
 #include <QLoggingCategory>
 #include <QMutex>
 #include <QSet>
@@ -182,11 +183,15 @@ bool setLogFile(const QString &path, QString *error)
         g_prevHandler = qInstallMessageHandler(logToFile);
 
     //   开头写一行分隔：同一个文件被多次运行追加时能分清边界。
-    //   ★ 带上**构建时间戳**（2026-11-07）：反复"改了代码-打包-让对方测"之后，
-    //     最难查的一类问题是"测的其实还是旧二进制"。`__DATE__ __TIME__` 是编译期常量，
-    //     每次构建都会变 ⇒ 日志第一行就能确认跑的是哪一个构建。
-    const QString built = QStringLiteral(__DATE__) + QLatin1Char(' ')
-                          + QStringLiteral(__TIME__);
+    //   ★ 顺带带上**二进制产出的时间**（2026-11-07）：反复"改代码 → 打包 → 让对方测"
+    //     之后，最难查的一类问题是"测的其实还是旧二进制"。
+    //     取**可执行文件自身的 mtime**，不用 `__DATE__/__TIME__` —— 后者只在本文件重编时
+    //     才变（只改 QML 时会一直显示旧时间，反而误导）。它回答的就是"我现在跑的是哪一次
+    //     产出的二进制"。
+    const QFileInfo self(QCoreApplication::applicationFilePath());
+    const QString built = self.exists()
+                              ? self.lastModified().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))
+                              : QStringLiteral("?");
     const QString head = QStringLiteral("[app] ---- log started (pid %1, built %2) ----")
                              .arg(QCoreApplication::applicationPid())
                              .arg(built);

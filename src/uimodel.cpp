@@ -283,7 +283,38 @@ void UiModel::openPath(const QString &path, int index)
     }
     dropSource();
     m_path = QDir::cleanPath(path);      // ★ 统一形态（去掉尾随 `/`），见 Sequence::absClean
+    //   ★ 2026-11-07（用户）：**收藏夹里已有这份来源的存档 ⇒ 直接续读**。
+    //     以前打开文件夹一律从第一页开始（收藏夹只影响顶栏那颗星），用户拖回来的文件夹
+    //     还得自己翻回去。现在：先按路径算出收藏夹里的存档文件，命中且**新鲜**就
+    //     交给 `openProgress()`（它把 rows/位置整份还原，**连扫描都不需要**）。
+    //
+    //     "新鲜" = 存档里记的 `sourceMtime` 与当前目录/压缩包的 mtime 一致：
+    //     目录增删文件会改 mtime ⇒ 存档过期就**不作数**，走正常扫描（否则会拿到
+    //     一份和磁盘对不上、甚至指向已删除文件的行表）。
+    //     `--index N` 是调用方明确指定位置 ⇒ 优先于自动续读。
+    if (index < 0) {
+        const QFileInfo srcInfo(m_path);
+        const QString fav = currentFavoritesFile();
+        if (!fav.isEmpty() && QFileInfo::exists(fav)) {
+            progressfile::Meta meta;
+            QString why;
+            const bool fresh = progressfile::readMeta(fav, &meta, &why)
+                               && meta.sourceMtime == srcInfo.lastModified().toSecsSinceEpoch()
+                               && QDir::cleanPath(meta.sourcePath) == m_path
+                               && QFileInfo::exists(meta.sourcePath);
+            if (fresh) {
+                qCInfo(lcUi).noquote()
+                    << QStringLiteral("[ui] opening from favorites record (no scan): %1").arg(fav);
+                m_sessionNotice.clear();
+                openProgress(fav);
+                return;
+            }
+            qCInfo(lcUi).noquote()
+                << QStringLiteral("[ui] favorites record ignored (stale or unreadable): %1").arg(fav);
+        }
+    }
     m_sessionNotice.clear();                  // 换来源 ⇒ 瞬时提示重新计
+    setOpenedFromProgress(false);             // 普通来源 ⇒ 收藏功能恢复（星标按收藏夹重新判定）
     buildViewer();
     refreshScanning();
     refreshFavorited();
@@ -1231,12 +1262,24 @@ QString UiModel::currentFavoritesFile() const
 
 void UiModel::refreshFavorited()
 {
+    //   ★ 2026-11-07（用户）：从**进度存档**打开时一律显示"未收藏" —— 那份存档与收藏夹里的
+    //     记录同源不同进度，此时 ★ 禁用（见 `favoriteDisabled`），所以状态也必须是"未收藏"。
     const QString file = currentFavoritesFile();
-    const bool now = !file.isEmpty() && QFileInfo::exists(file);
+    const bool now = !m_openedFromProgress && !file.isEmpty() && QFileInfo::exists(file);
     if (now == m_sourceFavorited)
         return;
     m_sourceFavorited = now;
     emit sourceFavoritedChanged();
+}
+
+//   进入/离开"从存档打开"这个状态（唯一改动点，保证两件事同步：禁用标志 + 星标状态）
+void UiModel::setOpenedFromProgress(bool on)
+{
+    if (m_openedFromProgress == on)
+        return;
+    m_openedFromProgress = on;
+    emit favoriteDisabledChanged();
+    refreshFavorited();
 }
 
 //   把当前来源写成 filePath。**元数据里所有"进度相关"的字段都按**当前浏览状态**取**
@@ -1329,6 +1372,13 @@ bool UiModel::writeProgress(const QString &filePath, bool quiet, bool savePasswo
 
 bool UiModel::saveProgressToFavorites(bool savePasswords)
 {
+    //   ★ 2026-11-07（用户）：从"另一份"进度存档打开时，收藏会与那份存档打架 ⇒ 禁用。
+    //     界面已经把 ★ 置灰；这里再兜一层（命令行/快捷键/脚本都不会绕过去）。
+    if (m_openedFromProgress) {
+        notify(tr("Favorites are disabled: this source was opened from a progress file"));
+        qCWarning(lcUi).noquote() << QStringLiteral("[ui] saveProgressToFavorites refused: opened from a progress file");
+        return false;
+    }
     const QString file = currentFavoritesFile();
     if (file.isEmpty()) {
         notify(m_path.isEmpty() ? tr("No source is open")
@@ -1348,7 +1398,11 @@ bool UiModel::saveProgressToFavorites(bool savePasswords)
     }
     refreshFavorited();
     if (m_favorites) m_favorites->reload();      // 列表里能立刻看到
+    //   ★ 2026-11-07（用户）：保存完**按新存档重新载入** —— 之后这个会话就是
+    //     "打开着收藏夹里那份存档"的状态：`m_openedFromProgress` 归位、星标/位置都从文件来。
+    //     位置其实一样，但状态机必须一致，否则会出现"已保存却仍显示未收藏/禁用"。
     notify(tr("Added to favorites"));
+    openProgress(file);
     return true;
 }
 
@@ -1381,7 +1435,9 @@ bool UiModel::saveProgressToFile(bool savePasswords)
         return false;
     }
     m_lastProgressDir = QFileInfo(file).absolutePath();
+    //   ★ 2026-11-07（用户）：同 `saveProgressToFavorites` —— 保存完按这份新存档重新载入。
     notify(tr("Progress saved"));
+    openProgress(file);
     return true;
 }
 
@@ -1441,6 +1497,10 @@ bool UiModel::openProgress(const QString &filePath)
     m_pendingJump = -1;
     startTrackingProgress(filePath);                   // 之后按间隔 / 切来源自动保存
     snapshotSavedState(d.meta, d.rows.size());         // 文件里记着的就是这份
+    //   ★ 2026-11-07（用户）：**从"另一份"进度存档打开** ⇒ 收藏功能禁用（见头文件里的属性说明）。
+    //     只有"打开的就是该来源在收藏夹里的那份"才不算冲突（那种情况等于正常收藏态）。
+    setOpenedFromProgress(QFileInfo(filePath).absoluteFilePath()
+                          != QFileInfo(currentFavoritesFile()).absoluteFilePath());
     if (m_sessionProbe) m_sessionProbe->stop();        // 恢复的序列已经收尾，不需要探测
     m_sessionNotice.clear();
     refreshScanning();
@@ -1451,17 +1511,30 @@ bool UiModel::openProgress(const QString &filePath)
 }
 
 //   收藏夹列表里的"移除"：删文件（不动源）⇒ 刷新"已收藏" + 列表
+//   ★ 2026-11-07（用户）：收藏夹里**存在这份存档**就是"已收藏"的判据，所以"移除条目"与
+//     "取消收藏"是同一件事——都要把存档文件删掉。删除属于**写**，必须与 `removeFavorite()`
+//     同一套规矩：先拿锁，别的窗口正在用就绝不删（数据在别人进程里）。
 bool UiModel::removeProgressFile(const QString &filePath)
 {
     if (filePath.isEmpty() || !QFileInfo::exists(filePath))
         return false;
-    if (!QFile::remove(filePath)) {
-        notify(tr("Cannot delete: %1").arg(filePath));
+    const QString target = QFileInfo(filePath).absoluteFilePath();
+    //   如果是**自己**正关联的那份：先解除关联（= 放掉我们手里的锁），再重新取一次锁来删。
+    if (target == QFileInfo(m_progressFile).absoluteFilePath())
+        stopTrackingProgress();
+    progresslock::Guard guard;
+    QString holder;
+    QString reason;
+    if (!guard.acquire(target, &holder, &reason)) {
+        notify(tr("Opened read-only: another window is using this progress file"));
         return false;
     }
-    qCInfo(lcUi).noquote() << QStringLiteral("[ui] progress file removed: %1").arg(filePath);
-    if (QFileInfo(filePath).absoluteFilePath() == QFileInfo(m_progressFile).absoluteFilePath())
-        stopTrackingProgress();                    // 别在下一个间隔点把它"复活"
+    if (!QFile::remove(target)) {
+        notify(tr("Cannot delete: %1").arg(target));
+        return false;
+    }
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] progress file removed: %1").arg(target);
+    stopTrackingProgress();                        // 别在下一个间隔点把它"复活"
     refreshFavorited();
     if (m_favorites) m_favorites->reload();
     return true;
@@ -1472,24 +1545,25 @@ bool UiModel::removeFavorite()
     const QString file = currentFavoritesFile();
     if (file.isEmpty() || !QFileInfo::exists(file))
         return false;
+    const QString target = QFileInfo(file).absoluteFilePath();
     //   * 删也是写：先拿锁。若这份文件正被**别的窗口**用着，绝不删（数据在别人的进程里）。
     //     如果它恰好就是当前关联的那份，先解除关联（= 释放自己手里的锁）再取一次。
     progresslock::Guard guard;
     QString holder;
     QString reason;
-    if (file == m_progressFile)
+    if (target == QFileInfo(m_progressFile).absoluteFilePath())
         stopTrackingProgress();
-    if (!guard.acquire(file, &holder, &reason)) {
+    if (!guard.acquire(target, &holder, &reason)) {
         notify(tr("Opened read-only: another window is using this progress file"));
         return false;
     }
-    if (!QFile::remove(file)) {
-        notify(tr("Cannot delete: %1").arg(file));
+    if (!QFile::remove(target)) {
+        notify(tr("Cannot delete: %1").arg(target));
         return false;
     }
     refreshFavorited();
     if (m_favorites) m_favorites->reload();
-    qCInfo(lcUi).noquote() << QStringLiteral("[ui] favorite removed, progress file deleted: %1").arg(file);
+    qCInfo(lcUi).noquote() << QStringLiteral("[ui] favorite removed, progress file deleted: %1").arg(target);
     stopTrackingProgress();
     return true;
 }
