@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.21)
 project(photoset-reader VERSION 0.1.0 LANGUAGES CXX)
 #   ★ 预发布后缀（用户 2026-11-04）：`-alpha.1` / `-beta.2` …；**空 = 正式版**。
 #     `--version` 与打包产物名都带上它（版本号仍只有 `project(... VERSION)` 一个来源）。
-set(PHOTOSET_VERSION_SUFFIX "-alpha.1" CACHE STRING
+set(PHOTOSET_VERSION_SUFFIX "-beta.1" CACHE STRING
     "Pre-release suffix appended to the version (empty for a final release)")
 
 set(CMAKE_CXX_STANDARD 20)

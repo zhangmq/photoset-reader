@@ -8,6 +8,60 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 **The single source of the version number is `project(... VERSION x.y.z)` in `CMakeLists.txt`**:
 `--version` prints it, and the packaged file names use it (see "Releasing" in the README).
 
+## [0.1.0-beta.1] — 2026-11-07
+
+Second pre-release. Highlights since alpha: a working **Windows port**, reworked
+**settings / progress / decode** pipelines, a **keyboard overhaul**, and a much smaller AppImage.
+
+### Added
+
+- **Windows build** (beta): portable folder (exe + DLL closure + icon), D3D11 by default; fixes the
+  freeze where the whole app hung when opening the “Open file / Open folder” dialog (COM apartment
+  initialisation order on the GUI thread).
+- **Decode capability report**: Settings → Decode support lists the suffixes this machine can really
+  decode together with the component behind each one (built-in Qt / `windowcodecs.dll` /
+  `libgdk_pixbuf-2.0.so.0` / the external program's real path); one `[cap]` line per provider at startup.
+- **Progress read-only mode**: a `.prsave` file may be written by only one window at a time (sidecar
+  `QLockFile`); when another window holds it the app shows a warning-coloured “Progress read-only”
+  badge in the top bar.
+- **Software-rendering fallback**: without a usable GPU the app switches to `CpuScalerItem` (Qt smooth)
+  and disables the other scaling algorithms in settings.
+- **Two keyboard systems**: A = window-level shortcuts, focus-independent, dispatching straight into
+  `UiModel` (including `F11` / `Alt+Enter` for fullscreen and `Menu` / `Shift+F10` opening the context
+  menu **at the window centre**); B = standard focus navigation inside panels (Tab / ↑↓ / Enter / Esc),
+  including **submenus** opening with `Enter`/`→`, navigable with `↑↓`, leaving with `←`.
+- The shortcut list is now a **single source of truth** (`ShortcutCatalog`): the settings page table
+  and the implementation cannot drift apart any more.
+
+### Changed
+
+- **Settings use a draft model**: edits apply and persist only on “OK”; “Discard” writes nothing and
+  “Restore defaults” only resets the form. Default slideshow interval 300 → **1000 ms**.
+- **Slideshow accelerate/decelerate use a symmetric gear grid** (97 steps, exact inverses); `[`/`]` and
+  the bottom-bar ± share the same entry point (previously `[`/`]` modified the global default, so they
+  appeared to do nothing once a source was open).
+- **Panel classification unified**: `ModalDialog` (settings / about / confirm / password) and
+  `PopupPanel` (menus / favorites) bases, all with `popupType: Popup.Item` (no more separate surfaces).
+- The AppImage is built against **static Qt** (from the separate `photoset-reader-qt` repository) with a
+  trimmed dependency set: 37.3 MB → **22.2 MB**.
+- The Windows package **drops** the DirectX Shader Compiler (−15 MB), `qmltooling` and
+  `qtuiotouchplugin`; requesting D3D12 without DXC downgrades to D3D11 with a log line.
+
+### Fixed
+
+- Windows: the “Open file / Open folder” dialog froze the whole application.
+- Leaving fullscreen wiped the window manager's maximised state (`Window.Windowed` =
+  `Qt::WindowNoState`).
+- The context-menu submenu had **no keyboard navigation** (mouse only).
+- Software rendering still offered unusable scaling algorithms (now disabled).
+- The decode-support page displayed `N suffixes` where a component name belonged.
+
+### Known limitations
+
+- Under software rendering scaling is fixed to Qt's smooth path (measured 67–188 ms per screen for
+  CPU Bicubic/Lanczos, i.e. 5–15 fps while dragging).
+- HEIC/HEIF still requires an HEVC decoder, which is not shipped; D3D12 requires an external DXC.
+
 ## [0.1.0-alpha.1] — 2026-11-04
 
 First alpha (pre-release). Two forms: **AppImage** (self-contained) and a **system-deps tar package**

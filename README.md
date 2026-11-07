@@ -1,31 +1,41 @@
 # photoset-reader
 
-[English](README.en.md)
+[English](README.en.md) · **v0.1.0-beta.1**
 
-**开发中**
-
-只是另一个图片查看器，专注于**漫画**或**超大图集**的快速浏览。
+只是另一个图片查看器，专注于**漫画**或**超大图集**的快速浏览。缩放走自绘 GPU 管线
+（`QQuickRhiItem` + 自写 shader），没有可用 GPU 时自动退回软件渲染。
 
 ## 功能
 
 - **进度保存**：内置收藏夹，或存成 `.prsave` 进度文件（在文件管理器里双击即可恢复）。
+  同一份进度文件**同时只允许一个窗口写**（`QLockFile`），抢不到就进入**进度只读**模式并在顶栏提示。
 - **时间轴悬停预览**：鼠标停在进度条上，显示邻近页面缩略图；点缩略图直接跳转（可在设置里关）。
-- **幻灯片**：间隔 0–60000 ms（`0` = 不设最小间隔，实际速度受解码与屏幕刷新率限制），
-  预设 100 ms / 0.5 / 1 / 2 / 3 / 4 / 5 s，`[` `]` 按量级步进（10 / 50 / 500 / 1000 ms）。
-- **图像缩放算法**：目前支持 Nearest、Smooth (Qt)、Bicubic、Lanczos 2、Lanczos 3。
-- **文件格式支持**：JPEG、PNG、GIF、BMP、WebP、TIFF、ICO、TGA、SVG、AVIF、JXL、QOI、PNM。
+- **幻灯片**：帧驱动，间隔 0–60000 ms（`0` = 不设最小间隔，实际速度受解码与屏幕刷新率限制）。
+  预设 100 ms / 0.5 / 1 / 2 / 3 / 4 / 5 s；`[` `]` 与底栏 ± 走同一张**档位网格**
+  （97 档，加速与减速严格互逆）。
+- **图像缩放算法**：Nearest、Smooth (Qt)、Bicubic、Lanczos 2、Lanczos 3（GPU shader 实现）。
+  软件渲染降级时固定使用 Smooth (Qt)，设置里其它算法会被禁用。
+- **解码能力自检**：设置 → 解码支持，列出本机实际可用的后缀、对应的解码组件
+  （内置 Qt / Windows 编解码器 `windowscodecs.dll` / `libgdk_pixbuf-2.0.so.0` / 外部程序路径）。
+- **文件格式支持**：JPEG、PNG、GIF、BMP、WebP、TIFF、ICO、TGA、SVG、AVIF、JXL、QOI、PNM
+  等；Windows 上还有 WIC 覆盖的 RAW/HEIF 等（取决于系统装的编解码器）。
 - **压缩文件支持**：ZIP/CBZ、RAR/CBR、7Z/CB7、TAR/CBT（solid 包不支持，因为无法随机读）。
+  ZIP（ZipCrypto / AES-256）与 RAR 支持输入密码。
+- **设置**：修改走**草稿**——只有按「确定」才应用并落盘，「放弃修改」什么都不写；
+  「恢复默认」只重置表单。
 - **日志级别**：设置 → 系统 → 日志级别（默认 `warning`），或用 `--log-level` 临时覆盖一次。
 
 ## 平台
 
-- **Linux**：主要支持平台
-- **Windows**：计划支持，尚未构建
+| 平台 | 状态 |
+|---|---|
+| **Linux**（X11 / Wayland） | 主要平台；提供 AppImage（自带依赖）与系统依赖版 tar 包 |
+| **Windows**（10 1809+） | beta：提供免安装目录（exe + DLL 闭包），默认 D3D11 渲染 |
 
-## 构建（Linux）
+## 构建
 
-依赖：CMake ≥ 3.21、C++20、**Qt 6.9+**（含 Concurrent）、libarchive、libexif、liblzma、zlib、libunrar。
-`libheif` **可选**：装了才有 HEIC/AVIF 的 Exif/ICC 元数据（运行期加载），**看图不需要**它。
+Linux 依赖：CMake ≥ 3.21、C++20、**Qt 6.9+**（含 Concurrent）、libarchive、libexif、liblzma、
+zlib、libunrar。`libheif` **可选**（运行期 dlopen，只影响 HEIC/AVIF 的 Exif/ICC 元数据）。
 
 一键装依赖（Arch / Debian·Ubuntu / Fedora / openSUSE 自动识别）：
 
@@ -40,7 +50,13 @@ ctest --test-dir build --output-on-failure
 ./build/photoset-reader <目录|压缩包|图片>   # 位置参数；launcher / 文件管理器也是这条
 ```
 
-命令行：
+Windows 本地构建（依赖布局与已知坑见 `docs/windows/`，仓库内不随源码分发）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\ci-windows.ps1 -Step all -DepsRoot C:\psr-deps -BuildDir C:\psr-build
+```
+
+命令行（两平台一致）：
 
 ```
 photoset-reader [<路径>] [--fullscreen] [--log-level <级别>] [--log-file <文件>]
@@ -56,26 +72,40 @@ photoset-reader [<路径>] [--fullscreen] [--log-level <级别>] [--log-file <�
 
 产品本体**不含任何测试/验收开关**（截图、探针、开发定时器都已移除）。
 
-## 文档
+## 快捷键
 
-详细使用说明在 **Wiki**：<https://github.com/zhangmq/photoset-reader/wiki>
+两套逻辑，互不干扰（与「设置 → 快捷键」同一份清单，单一事实源）：
 
-- [安装](https://github.com/zhangmq/photoset-reader/wiki/安装) · [使用](https://github.com/zhangmq/photoset-reader/wiki/使用) · [快捷键](https://github.com/zhangmq/photoset-reader/wiki/快捷键)
-- [进度与收藏夹](https://github.com/zhangmq/photoset-reader/wiki/进度与收藏夹) · [格式支持](https://github.com/zhangmq/photoset-reader/wiki/格式支持) · [设置说明](https://github.com/zhangmq/photoset-reader/wiki/设置说明)
-- [常见问题](https://github.com/zhangmq/photoset-reader/wiki/常见问题) · [开发与构建](https://github.com/zhangmq/photoset-reader/wiki/开发与构建)
+**A. 浏览 / 播放控制**——窗口级快捷键，**只要窗口是活动窗口就生效**，不依赖焦点：
+
+| 键 | 动作 |
+|---|---|
+| `←` `→` / `PageUp` `PageDown` | 上一页 / 下一页 |
+| `↑` `↓` | 上一个 / 下一个文件夹 |
+| `Space` | 播放 / 暂停幻灯片 |
+| `I` | 显示 / 隐藏信息行 |
+| `+` `=` / `-` | 放大 / 缩小 |
+| `[` `]` | 幻灯片间隔 −/+ |
+| `F11` / `Alt+Enter` | 切换全屏（Windows 没有系统级全屏快捷键，由应用实现） |
+| `Esc` | 退出全屏 |
+| `Menu` / `Shift+F10` | 打开右键菜单（**窗口中心**，与鼠标右键位置无关） |
+
+**B. 面板**——右键菜单、设置、关于、确认框、密码框、收藏列表都是**标准焦点导航**：
+`Tab`/`Shift+Tab` 移动、`↑`/`↓` 选择、`Enter` 确认、`Esc` 关闭；二级菜单用 `Enter`/`→` 进入。
 
 ## 安装
 
-**预编译包（alpha）**：从 [Releases](https://github.com/zhangmq/photoset-reader/releases) 下载，
-两种形态二选一：
+**预编译包（beta）**：从 [Releases](https://github.com/zhangmq/photoset-reader/releases) 下载。
 
 | 形态 | 文件 | 用法 |
 |---|---|---|
-| **AppImage**（自带依赖） | `photoset-reader-0.1.0-alpha.1-x86_64.AppImage` | `chmod +x` 后直接运行；需要 FUSE（没有就 `--appimage-extract-and-run`） |
-| **系统依赖版**（要求系统已装 Qt 6 与第三方库） | `photoset-reader-0.1.0-alpha.1-linux-system-deps.tar.zst` | 解压后 `./install.sh`（默认装到 `~/.local`，`--prefix` 可改，`--uninstall` 卸载） |
+| **AppImage**（Linux，自带依赖） | `photoset-reader-0.1.0-beta.1-x86_64.AppImage` | `chmod +x` 后直接运行；需要 FUSE（没有就 `--appimage-extract-and-run`） |
+| **系统依赖版**（Linux，要求已装 Qt 6 与第三方库） | `photoset-reader-0.1.0-beta.1-linux-system-deps.tar.zst` | 解压后 `./install.sh`（默认 `~/.local`，`--prefix` 可改，`--uninstall` 卸载） |
+| **Windows 免安装** | `photoset-reader-0.1.0-beta.1-windows-x64.zip` | 解压后双击 `photoset-reader.exe`（DLL 已随包） |
 
-系统依赖版里的 `install.sh` 会：检查运行期依赖（缺了按发行版给安装命令）→ 复制文件 →
-把 `.desktop` 的 `Exec=` 改成绝对路径 → 重建桌面/ MIME 数据库 → 把 `.prsave` 设为默认交给本应用。
+Windows 包**不带** DirectX Shader Compiler（`dxcompiler.dll` / `dxil.dll`，约 15 MB）：只有 D3D12
+后端需要它，默认的 D3D11 用系统自带的 `d3dcompiler_47.dll`。显式请求 `QSG_RHI_BACKEND=d3d12`
+而旁边没有 `dxcompiler.dll` 时，程序会自动降级到 d3d11 并记一条日志。
 
 源码安装（开发用）：
 
@@ -86,37 +116,40 @@ cd photoset-reader
 ./scripts/install.sh --prefix /usr/local  # 系统级（需要 sudo）
 ```
 
-脚本会：检查依赖（缺了就打印安装命令，见 `scripts/install-deps.sh`）→ Release 构建 → 跑测试 →
-`cmake --install`（可执行 / `.desktop` / 全套图标 / 许可）→ 装到用户目录时顺手做桌面集成。
-其它参数：`--deps-only`、`--install-deps`、`--no-tests`、`--no-desktop`、`-j N`。
+脚本会：检查依赖 → Release 构建 → 跑测试 → `cmake --install`（可执行 / `.desktop` / 全套图标 /
+许可）→ 装到用户目录时顺手做桌面集成。其它参数：`--deps-only`、`--install-deps`、`--no-tests`、
+`--no-desktop`、`-j N`。
 
-手工等价步骤：
+## 文档
 
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j"$(nproc)"
-ctest --test-dir build --output-on-failure
-cmake --install build --prefix "$HOME/.local"
-```
+用户手册在 **Wiki**：<https://github.com/zhangmq/photoset-reader/wiki>
 
-依赖：CMake ≥ 3.21、C++20、Qt 6.9+（Widgets / Quick / QuickControls2 / ShaderTools / DBus / LinguistTools）、
-libarchive、libexif、liblzma、zlib、libunrar（`libheif` 可选，仅影响 HEIC/AVIF 的 Exif/ICC）。
+- [安装](https://github.com/zhangmq/photoset-reader/wiki/安装) · [使用](https://github.com/zhangmq/photoset-reader/wiki/使用) · [快捷键](https://github.com/zhangmq/photoset-reader/wiki/快捷键)
+- [进度与收藏夹](https://github.com/zhangmq/photoset-reader/wiki/进度与收藏夹) · [格式支持](https://github.com/zhangmq/photoset-reader/wiki/格式支持) · [设置说明](https://github.com/zhangmq/photoset-reader/wiki/设置说明)
+- [常见问题](https://github.com/zhangmq/photoset-reader/wiki/常见问题) · [开发与构建](https://github.com/zhangmq/photoset-reader/wiki/开发与构建)
 
 ## 发布
 
-1. 改 `CMakeLists.txt` 的 `project(photoset-reader VERSION x.y.z)` —— **版本号只有这一处**；
+1. 改 `CMakeLists.txt` 的 `project(photoset-reader VERSION x.y.z)` 与 `PHOTOSET_VERSION_SUFFIX`
+   （**版本号只有这两处**，`--version` 与产物文件名都从这里来）；
 2. 在 [CHANGELOG.md](CHANGELOG.md) 加一节（英文版 [CHANGELOG.en.md](CHANGELOG.en.md) 同步）；
 3. `cmake --build build && ctest --test-dir build --output-on-failure`，
    再跑 `./scripts/update-translations.sh --check` 与 `./scripts/render-icons.sh --check`；
-4. 打包：`./scripts/package-appimage.sh` 与 `./scripts/package-linux.sh`（产物文件名自动带版本）；
-5. 打 tag 并推送：`git tag v0.1.0-alpha.1 && git push origin main --tags`，然后
-   `gh release create v0.1.0-alpha.1 dist/*.AppImage dist/*-system-deps.tar.zst --prerelease`。
+4. 打包：`./scripts/package-appimage.sh` 与 `./scripts/package-linux.sh`；Windows 用
+   `scripts\ci-windows.ps1 -Step package`；
+5. 打 tag 并推送：`git tag v0.1.0-beta.1 && git push origin main --tags`，然后
+   `gh release create v0.1.0-beta.1 <产物…> --prerelease --notes-file <中英说明>`。
+
+`main` 分支已保护：后续改动一律走 PR。
 
 ## 已知限制
 
 - 信息面板里的 EXIF / 色彩空间：JPEG、PNG、WebP、TIFF、AVIF 有；CR3、JP2、JXL 还没有（不影响看图）。
 - HEIC/HEIF 不在支持之列：它的像素要 HEVC 解码器，而 HEVC 有专利，我们不随包分发解码器。
 - 没有 ICC profile 的图，色彩空间显示 `sRGB（无 profile）`。
+- **软件渲染**（没有可用 GPU / 强制 `QT_QUICK_BACKEND=software`）下，缩放固定为 Qt 平滑：
+  CPU 上的 Bicubic/Lanczos 实测单线程 67–188 ms 一屏，拖动时只有 5–15 fps，因此不启用。
+- Windows 上 D3D12 后端需要 DirectX Shader Compiler，我们不随包分发 ⇒ 默认用 D3D11。
 
 ## 许可证
 
