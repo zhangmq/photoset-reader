@@ -507,140 +507,140 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
         <translation>换个目录，或右键 → 打开…</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="498"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="514"/>
         <source>Open favorites</source>
         <translation>打开收藏夹</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="499"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="515"/>
         <source>Open progress file</source>
         <translation>打开进度文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="500"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="516"/>
         <source>Open folder</source>
         <translation>打开文件夹</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="501"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="517"/>
         <source>Open archive</source>
         <translation>打开压缩包</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="502"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="518"/>
         <source>Open file</source>
         <translation>打开文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="506"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="522"/>
         <source>Rescan</source>
         <translation>重新扫描</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="508"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="524"/>
         <source>Save progress to favorites</source>
         <translation>保存进度到收藏夹</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="509"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="525"/>
         <source>Save progress to file</source>
         <translation>保存进度到文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="516"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="532"/>
         <source>Scale algorithm</source>
         <translation>缩放算法</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="525"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="541"/>
         <source>Settings</source>
         <translation>设置</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="526"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="542"/>
         <source>About</source>
         <translation>关于</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="528"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="544"/>
         <source>Quit</source>
         <translation>退出</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="645"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="661"/>
         <source>Save password?</source>
         <translation>保存密码？</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="646"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="662"/>
         <source>Save the archive password in this progress file? It is stored as plain text.</source>
         <translation>把压缩包密码保存到这份进度文件里？密码会以明文保存。</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="648"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="664"/>
         <source>Don&apos;t save</source>
         <translation>不保存</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="663"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="679"/>
         <source>Scan not finished</source>
         <translation>扫描还没完</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="664"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="680"/>
         <source>Wait for the scan to finish before adding to favorites.</source>
         <translation>等扫描完成后再收藏。</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="665"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="681"/>
         <source>Got it</source>
         <translation>知道了</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="670"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="686"/>
         <source>Scan incomplete</source>
         <translation>扫描不完整</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="671"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="687"/>
         <source>Scanning incomplete. Save progress anyway? Files that were not scanned will not be found again; finish the scan before saving.</source>
         <translation>扫描不完整，确认保存进度吗？未扫描发现的文件不会被重新发现，建议完整扫描后收藏/保存。</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="647"/>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="672"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="663"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="688"/>
         <source>Save</source>
         <translation>保存</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="673"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="689"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="678"/>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="680"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="694"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="696"/>
         <source>Cancel scan</source>
         <translation>取消扫描</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="679"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="695"/>
         <source>Stop this scan? What has been scanned so far is still browsable.</source>
         <translation>要停止这次扫描吗？已经扫到的内容仍然可以查看。</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="681"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="697"/>
         <source>Continue scanning</source>
         <translation>继续扫描</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="686"/>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="688"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="702"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="704"/>
         <source>Remove favorite</source>
         <translation>取消收藏</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="687"/>
+        <location filename="../src/ui/fullscreen/FullscreenView.qml" line="703"/>
         <source>Delete this progress record? The source files are not deleted.</source>
         <translation>删除这条进度记录？不会删除源文件。</translation>
     </message>
@@ -689,7 +689,7 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
 <context>
     <name>PopupMenu</name>
     <message>
-        <location filename="../src/ui/components/PopupMenu.qml" line="261"/>
+        <location filename="../src/ui/components/PopupMenu.qml" line="298"/>
         <source>Zoom</source>
         <translation>缩放</translation>
     </message>
@@ -1195,20 +1195,28 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
         <translation>幻灯片间隔 +</translation>
     </message>
     <message>
-        <location filename="../src/ui/ShortcutCatalog.qml" line="47"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="51"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="52"/>
+        <source>Toggle full screen</source>
+        <translation>切换全屏</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="53"/>
         <source>Exit full screen</source>
         <translation>退出全屏</translation>
     </message>
     <message>
-        <location filename="../src/ui/ShortcutCatalog.qml" line="47"/>
-        <location filename="../src/ui/ShortcutCatalog.qml" line="48"/>
-        <location filename="../src/ui/ShortcutCatalog.qml" line="49"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="51"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="52"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="53"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="54"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="55"/>
         <source>Window</source>
         <translation>窗口</translation>
     </message>
     <message>
-        <location filename="../src/ui/ShortcutCatalog.qml" line="48"/>
-        <location filename="../src/ui/ShortcutCatalog.qml" line="49"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="54"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="55"/>
         <source>Open context menu (at view centre)</source>
         <translation>打开右键菜单（窗口中心）</translation>
     </message>

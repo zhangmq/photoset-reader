@@ -61,6 +61,11 @@ Item {
     //   键 → 动作（唯一实现；Shortcut 只负责"什么时候能触发"）
     function run(key) {
         switch (key) {
+        //   全屏**切换**：Windows 没有系统快捷键（`Alt+Enter`/`F11` 都是应用惯例），
+        //   所以由我们实现；`Esc` 只负责"退出"（看图器惯例，不切换成进入）。
+        case Qt.Key_F11:
+        case Qt.Key_Return:
+        case Qt.Key_Enter:       ui.windowFullscreen = !ui.windowFullscreen; return true
         case Qt.Key_Escape:      ui.windowFullscreen = false; return true
         case Qt.Key_Left:        if (ui.viewer) ui.viewer.stepPage(-1); return true
         case Qt.Key_Right:       if (ui.viewer) ui.viewer.stepPage(1); return true

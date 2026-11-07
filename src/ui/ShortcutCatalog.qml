@@ -44,7 +44,13 @@ QtObject {
         { seq: "]",         key: Qt.Key_BracketRight, label: qsTr("Slideshow interval +"), group: qsTr("Playback") },
 
         // ── 窗口 / 面板 ──
-        { seq: "Escape",    key: Qt.Key_Escape,      label: qsTr("Exit full screen"),      group: qsTr("Window") },
+        //   ★ 2026-11-07（用户）：**Windows 没有系统级的"切换全屏"快捷键** ——
+        //     `Alt+Enter` / `F11` 都属于"应用自己实现"的惯例（系统只管
+        //     `Win+↑/↓/←/→` 那套最大化 / 贴靠）。所以我们自己实现两个：
+        //     `F11`（看图器/浏览器的通用惯例）与 `Alt+Enter`（游戏/播放器惯例）。
+        { seq: "F11",        key: Qt.Key_F11,         label: qsTr("Toggle full screen"),    group: qsTr("Window") },
+        { seq: "Alt+Return", key: Qt.Key_Return,      label: qsTr("Toggle full screen"),    group: qsTr("Window") },
+        { seq: "Escape",     key: Qt.Key_Escape,      label: qsTr("Exit full screen"),      group: qsTr("Window") },
         { seq: "Menu",      key: Qt.Key_Menu,        label: qsTr("Open context menu (at view centre)"), group: qsTr("Window") },
         { seq: "Shift+F10", key: Qt.Key_F10,         label: qsTr("Open context menu (at view centre)"), group: qsTr("Window") }
     ]
