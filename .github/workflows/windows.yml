@@ -471,6 +471,9 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: windows-latest
+    #   ★ 2026-11-07（用户）：发版必须**受控** —— 挂在配了 required reviewers 的 `release` 环境上，
+    #     tag 推上来后停在 "Waiting for approval"，人工 Approve 才会上传产物。
+    environment: release
     steps:
       - uses: actions/download-artifact@v6
         with:
