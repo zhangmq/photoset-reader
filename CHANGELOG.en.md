@@ -8,6 +8,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 **The single source of the version number is `project(... VERSION x.y.z)` in `CMakeLists.txt`**:
 `--version` prints it, and the packaged file names use it (see "Releasing" in the README).
 
+## [Unreleased]
+
+Staging area for upcoming changes (merged into the matching version when releasing).
+
+## [0.1.0-beta.3] — 2026-11-08
+
+After `0.1.0-beta.2`: fixes the wrong favorites-conflict test when opening a progress file.
+
+### Fixed
+
+- **Opening any progress file disabled favorites** (and claimed "same source as a favorites record"),
+  even when that source had never been favorited. The conflict test now compares the **source path
+  recorded in the file**: only an *additional* record for the same source in the favorites folder
+  disables favorites. Opening the favorites record itself, or a record of a source that was never
+  favorited, keeps favorites fully available.
+  (`ib-test-ui` ⑫ pins this; verified red against the old implementation.)
+
 ## [0.1.0-beta.2] — 2026-11-07
 
 The first round of fixes after `0.1.0-beta.1`. Fixes only — no new features.
@@ -17,10 +34,14 @@ The first round of fixes after `0.1.0-beta.1`. Fixes only — no new features.
 - **Opening a folder that lives in favorites resumes from the record**: when the record is *fresh*
   (its `sourceMtime` matches the folder's mtime, the path matches and the source still exists) the rows
   and the position are restored straight from it — **no scan at all**. Stale or unreadable records are
-  ignored and the normal scan runs. `--index N` wins over auto-resume.
+  ignored and the normal scan runs. An explicit position from the caller (`openPath(path, index)`)
+  wins over auto-resume.
 - The first log line now carries the **binary build time** (`built 2026-11-07 20:22:06`, taken from the
   executable's own mtime) so "I rebuilt but forgot to repackage, and you tested the old binary" cannot
   happen unnoticed again.
+- **`--log-file <file>`**: logs are also appended to a file (timestamp + category + level).
+  The Windows build is a GUI-subsystem binary with no console, and under Wine nothing is visible at
+  all — this is how a bug report carries its logs.
 
 ### Changed
 
@@ -60,6 +81,11 @@ The first round of fixes after `0.1.0-beta.1`. Fixes only — no new features.
   they now share the bottom-bar ± entry point.
 - **Slideshow accelerate/decelerate were asymmetric**: replaced with a symmetric 97-step gear grid
   (exact inverses).
+- **GPU scaling failed on Windows**: the tap loop used `texture()` (implicit derivatives), which made
+  HLSL fail with `X3511 unable to unroll loop` → pipeline creation failed → D3D device lost.
+  Switched to `textureLod(..., 0.0)`.
+- **Double-clicking on Windows opened a console window first**: the app target is now a GUI subsystem
+  binary (`WIN32_EXECUTABLE`).
 
 ## [0.1.0-beta.1] — 2026-11-07
 
@@ -164,34 +190,3 @@ First alpha (pre-release). Two forms: **AppImage** (self-contained) and a **syst
   position.
 - With the pointer resting on the chrome during playback, the cursor and overlays are no longer
   auto-hidden.
-
-## [Unreleased]
-
-Staging area for upcoming changes (merged into the matching version when releasing).
-
-### Added
-
-- **`--log-file <file>`**: logs are also appended to a file (timestamp + category + level).
-  The Windows build is a GUI-subsystem binary with no console, and under Wine nothing is visible at
-  all — this is how a bug report carries its logs.
-
-### Fixed
-
-- **GPU scaling failed on Windows**: the tap loop used `texture()` (implicit derivatives), which made
-  HLSL fail with `X3511 unable to unroll loop` → pipeline creation failed → D3D device lost.
-  Switched to `textureLod(..., 0.0)`.
-- **Double-clicking on Windows opened a console window first**: the app target is now a GUI subsystem
-  binary (`WIN32_EXECUTABLE`).
-
-When the first stable version ships, add a section under `Added / Changed / Fixed`, for example:
-
-```markdown
-## [0.1.0] — 2026-XX-XX
-
-### Added
-- …
-### Changed
-- …
-### Fixed
-- …
-```

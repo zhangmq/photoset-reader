@@ -298,7 +298,7 @@ int main(int argc, char *argv[])
 
     // ★ 设置的 `load()` 移到 `UiModel` 构造里（设计 14 §9.3：运行期设置挂在它身上）——
     //   旧代码在这里 load 的**时机语义不变**：从这里到 `UiModel` 建出来之间，没有任何人读设置。
-    // 命令行 `-d <目录>` 属"直接打开"：走文件系统，不建图集库记录（设计 11 §四）
+    // 位置参数属"直接打开"：走文件系统 / 压缩包，不建任何库记录（图集库已删；设计 11 §四 作废）
 
     // 图标字体：C++ 侧注册（比 QML FontLoader 可靠，无异步竞态）
     // 做法对齐 ~/projects/vsr-player（同一作者）
@@ -315,7 +315,7 @@ int main(int argc, char *argv[])
 
     // ★ 2026-10-31：缩略图 provider **已随浏览 / 图集库删除** —— 界面里没有任何缩略图，
     //   也不需要把它暴露给 QML（AGENTS：QML 禁止引用 `provider.*`）。
-    Q_UNUSED(dir);   // 只有 `-d` 用得到它（打开来源）；QML 不再读 startDir
+    //   `dir` 只在下面按位置参数打开来源时用（QML 不读 startDir）。
 
     // GPU / CPU 缩放渲染组件（QML 可用）：显式注册。
     //   ★ 实现移到 `src/qmlregister.cpp`（2026-11-06）：**测试进程**同样要加载
@@ -345,8 +345,9 @@ int main(int argc, char *argv[])
     QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
                      ui, [ui]() { emit ui->systemDarkChanged(); });
 
-    // 命令行 `-d <路径>` = **打开来源**（文件夹 / 压缩包 / 文件同一套）；
-    //   `--index N` 定位到第 N 条（不给 = 第 0 条）。只有一个界面 ⇒ 不需要再切屏。
+    // 位置参数 `<路径>` = **打开来源**（文件夹 / 压缩包 / 文件同一套）；
+    //   产品 CLI **没有 `--index`**（2026-11-04 起测试/验收开关不进产品）⇒ 从第 0 条开始；
+    //   收藏夹续读由 `UiModel::openPath()` 内部按存档新鲜度决定。只有一个界面 ⇒ 不需要再切屏。
     if (hasSource) {
         if (isProgress) ui->openProgress(dir);
         else            ui->openPath(dir);
