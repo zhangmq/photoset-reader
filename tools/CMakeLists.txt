@@ -32,3 +32,12 @@ qt_add_executable(ib-bench-feed
 )
 target_include_directories(ib-bench-feed PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(ib-bench-feed PRIVATE ibcore)
+
+# ── 独立实验③：**CPU 缩放延迟**（用户 2026-11-07）────────────────────────────
+#   软件渲染路径现在只有 Qt 内置平滑；高级算法（bicubic/lanczos）只在 GPU shader 里。
+#   这个工具自己实现可分离卷积，量"若软件路径也用它们，一屏要多少 ms"。
+#   ★ 只做实验：不进产品、不进测试、不挂 add_test。
+qt_add_executable(ib-bench-scale
+    ${CMAKE_CURRENT_SOURCE_DIR}/bench-scale.cpp
+)
+target_link_libraries(ib-bench-scale PRIVATE ibcore)
