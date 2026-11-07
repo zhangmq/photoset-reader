@@ -393,6 +393,52 @@ jobs:
           Copy-Item LICENSE, THIRD-PARTY.md, THIRD-PARTY.en.md, LICENSES\*.txt $stage
           Get-ChildItem $stage -Filter *.dll | Measure-Object -Property Length -Sum |
             ForEach-Object { Write-Host ("DLL 共 {0} 个 / {1:N1} MB" -f $_.Count, ($_.Sum / 1MB)) }
+          #   -- trim (2026-11-07, user approved) ------------------------------------
+          #   * dxcompiler.dll + dxil.dll: DirectX Shader Compiler, only the D3D12 backend
+          #     needs it (D3D11 uses the OS-provided d3dcompiler_47.dll). Not part of
+          #     Windows; dropping them saves ~15 MB and main.cpp downgrades d3d12 -> d3d11.
+          #   * qmltooling\qmldbg_*: QML debugger plugins, never used in a release.
+          #   * generic\qtuiotouchplugin.dll: TUIO touch tables, unrelated to touchscreens.
+          $trim = @('dxcompiler.dll', 'dxil.dll', 'generic\qtuiotouchplugin.dll')
+          foreach ($f in $trim) {
+            $p = Join-Path $stage $f
+            if (Test-Path $p) { Remove-Item $p -Force; Write-Host "  removed $f" }
+          }
+          if (Test-Path (Join-Path $stage 'qmltooling')) {
+            Remove-Item (Join-Path $stage 'qmltooling') -Recurse -Force
+            Write-Host '  removed qmltooling\ (12 qmldbg_* plugins)'
+          }
+          foreach ($f in $trim) {
+            if (Test-Path (Join-Path $stage $f)) { throw "trim failed: $f still present" }
+          }
+          if (Test-Path (Join-Path $stage 'qmltooling')) { throw 'trim failed: qmltooling present' }
+
+          #   -- smoke: software scene graph path (2026-11-07) ------------------------
+          #   QT_QUICK_BACKEND=software (NOT QSG_RHI_BACKEND=software: that key is invalid
+          #   and Qt silently falls back). We expect the fallback warning line plus a
+          #   presenting viewer -> proves CpuScalerItem path works without a GPU.
+          $swLog = Join-Path $env:RUNNER_TEMP 'smoke-software.log'
+          New-Item -ItemType Directory -Force -Path (Join-Path $env:RUNNER_TEMP 'smoke-src') | Out-Null
+          $sw = Start-Process -FilePath "$stage\photoset-reader.exe" `
+            -ArgumentList @((Join-Path $env:RUNNER_TEMP 'smoke-src'), '--log-level', 'info', '--log-file', $swLog) `
+            -PassThru -WorkingDirectory $stage `
+            -Environment @{ QT_QPA_PLATFORM = 'offscreen'; QT_QUICK_BACKEND = 'software' }
+          $ok = $false
+          for ($i = 0; $i -lt 20; $i++) {
+            Start-Sleep -Milliseconds 500
+            if (Test-Path $swLog) {
+              $txt = Get-Content $swLog -Raw -ErrorAction SilentlyContinue
+              if ($txt -match '\[ui\] viewer:') { $ok = $true; break }
+            }
+            if ($sw.HasExited) { break }
+          }
+          if (-not $sw.HasExited) { $sw.Kill() }
+          if (-not $ok) {
+            Get-Content $swLog -ErrorAction SilentlyContinue
+            throw 'software scene graph smoke failed (no [ui] viewer line)'
+          }
+          Write-Host '  software backend smoke: OK'
+
 
       #   ★ 2026-11-06 用户决定：**工作流里不做"产物跑界面"的冒烟** —— 产物下载下来在
       #     本机（`scripts/ci-windows.ps1 -Step run` / 直接双击 exe）跑，CI 只负责编 + 单测 + 打包。

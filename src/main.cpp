@@ -260,6 +260,27 @@ int main(int argc, char *argv[])
     // ★ 2026-11-06 起这里**不再有单实例转发**：每个进程就是自己的窗口，带路径启动也一样。
     //   （为什么会有、为什么删，见 `main()` 末尾那段说明。）
 
+#if defined(Q_OS_WIN)
+    //   ★★ D3D12 降级（2026-11-07）：D3D12 后端在**运行期**要用 DirectX Shader Compiler
+    //     （`dxcompiler.dll` + `dxil.dll`）编 shader，那两个 DLL **不是 Windows 自带组件**，
+    //     我们为了体积（15 MB）不随包分发 ⇒ 选了 d3d12 会**访问违例崩溃**（实测 0xC0000005）。
+    //     所以：请求 d3d12 而 exe 旁边没有 dxcompiler.dll 时，**改写成 d3d11** 并记一条日志。
+    //     · 默认路径不受影响（Qt 在 Windows 上默认就是 d3d11）；
+    //     · `QSG_RHI_BACKEND=opengl` 这类兜底仍然保留（不在本分支里处理）。
+    if (qgetenv("QSG_RHI_BACKEND") == QByteArrayLiteral("d3d12")) {
+        const QString dxc = QCoreApplication::applicationDirPath()
+                            + QStringLiteral("/dxcompiler.dll");
+        if (!QFileInfo::exists(dxc)) {
+            qputenv("QSG_RHI_BACKEND", QByteArrayLiteral("d3d11"));
+            //   用分类日志：`--log-file` 只收我们自己的分类，裸 `qWarning` 只进 stderr，
+            //   而 Windows 的 GUI 子系统没有控制台 ⇒ 那条消息会凭空消失。
+            qCWarning(lcApp).noquote() << QStringLiteral(
+                "[app] scene graph: d3d12 requested but dxcompiler.dll is not shipped; "
+                "falling back to d3d11");
+        }
+    }
+#endif
+
     // 解码分配上限（防解压炸弹，但要容得下我们的合法素材）
     //   素材基线（AGENTS.md）：中画幅最高 ~102 MP → 102M×3B ≈ 306 MB
     //   Qt 默认 256 MB **会把合法的 102 MP 照片当炸弹拒掉**，所以必须调高。

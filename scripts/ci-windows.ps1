@@ -804,7 +804,28 @@ function Invoke-Package {
     #   !! locally this is the RELEASE single-layer zip (unpack it and you get exe + DLLs).
     #     CI no longer zips this layer: upload-artifact packs by itself, zipping again gives a zip inside a zip
     #     (pointed out by the user on 2026-11-05); CI uploads the contents of stage directly.
-    Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
+    #   -- trim (2026-11-07, user approved) --------------------------------------
+#   * dxcompiler.dll + dxil.dll: DirectX Shader Compiler, only needed by the D3D12
+#     backend (D3D11 uses the OS-provided d3dcompiler_47.dll). They are NOT part of
+#     Windows; we drop them (-15 MB) and main.cpp downgrades d3d12 -> d3d11.
+#   * qmltooling\qmldbg_*: QML debugger plugins, never used in a release build.
+#   * generic\qtuiotouchplugin.dll: TUIO (touch tables), unrelated to touchscreens.
+$trim = @('dxcompiler.dll', 'dxil.dll', 'generic\qtuiotouchplugin.dll')
+foreach ($f in $trim) {
+    $p = Join-Path $stage $f
+    if (Test-Path $p) { Remove-Item $p -Force; Write-Host "  removed $f" }
+}
+$qmlTooling = Join-Path $stage 'qmltooling'
+if (Test-Path $qmlTooling) {
+    Remove-Item $qmlTooling -Recurse -Force
+    Write-Host "  removed qmltooling\ (12 qmldbg_* plugins)"
+}
+foreach ($f in $trim) {
+    if (Test-Path (Join-Path $stage $f)) { throw "trim failed: $f is still in stage" }
+}
+if (Test-Path (Join-Path $stage 'qmltooling')) { throw 'trim failed: qmltooling still present' }
+
+Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
     Write-Host "  artifact: $zip" -ForegroundColor Green
 }
 

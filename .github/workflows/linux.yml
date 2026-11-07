@@ -211,6 +211,27 @@ jobs:
           #   ★ 冒烟：跑一次（--version 在 engine.load 之前返回，但至少证明动态库闭包是完整的）
           #   冒烟必须**能失败**：静态 Qt 里若没导入平台插件、或依赖闭包缺库，--version 就会非 0
           QT_QPA_PLATFORM=offscreen APPIMAGE_EXTRACT_AND_RUN=1 dist/*.AppImage --version
+          #   * software scene graph path (2026-11-07): the correct switch is
+          #     QT_QUICK_BACKEND=software (QSG_RHI_BACKEND=software is invalid and Qt
+          #     silently falls back). Proves "no GPU still renders": the log must contain
+          #     both the fallback line and a presenting viewer.
+          mkdir -p /tmp/swsrc
+          QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software APPIMAGE_EXTRACT_AND_RUN=1 \
+            dist/*.AppImage /tmp/swsrc --log-level info --log-file /tmp/sw.log &
+          SW_PID=$!
+          for i in $(seq 1 20); do
+            sleep 0.5
+            grep -q '\[ui\] viewer' /tmp/sw.log && break
+          done
+          kill $SW_PID 2>/dev/null || true
+          wait $SW_PID 2>/dev/null || true
+          grep -q 'scene graph backend is software' /tmp/sw.log || {
+            echo "::error::software scene graph path failed (no fallback line)"
+            tail -20 /tmp/sw.log || true; exit 1; }
+          grep -q '\[ui\] viewer' /tmp/sw.log || {
+            echo "::error::software scene graph path produced no frames"
+            tail -20 /tmp/sw.log || true; exit 1; }
+          echo "  software backend smoke: OK"
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v7
