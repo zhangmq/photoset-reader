@@ -27,12 +27,21 @@ Item {
             descriptionColor: Theme.warn
             DropdownButton {
                 label: page.algorithmLabels[Math.max(0, page.algorithmKeys.indexOf(ui.settingsDraft.scaleAlgorithm))]
+                //   ★ 2026-11-07（用户）：软件渲染下**禁用**其它算法，而不是只写一句说明。
+                //     `ui.softwareBackend` 在第一帧之后就有值（`sceneGraphInitialized` 探的），
+                //     用户能打开设置时它早已确定；`PopupMenu` 的 `enabled:false` 是整行 dim
+                //     且不响应 hover/点击/键盘，所以这里逐项给它。
+                //     `Smooth (Qt)` 永远可选（软件路径唯一真正生效的算法）。
                 menuItems: [
-                    { text: "Nearest",     selected: ui.settingsDraft.scaleAlgorithm === "nearest" },
+                    { text: "Nearest",     selected: ui.settingsDraft.scaleAlgorithm === "nearest",
+                      enabled: !ui.softwareBackend },
                     { text: "Smooth (Qt)", selected: ui.settingsDraft.scaleAlgorithm === "smooth" },
-                    { text: "Bicubic",     selected: ui.settingsDraft.scaleAlgorithm === "bicubic" },
-                    { text: "Lanczos 2",   selected: ui.settingsDraft.scaleAlgorithm === "lanczos2" },
-                    { text: "Lanczos 3",   selected: ui.settingsDraft.scaleAlgorithm === "lanczos3" }
+                    { text: "Bicubic",     selected: ui.settingsDraft.scaleAlgorithm === "bicubic",
+                      enabled: !ui.softwareBackend },
+                    { text: "Lanczos 2",   selected: ui.settingsDraft.scaleAlgorithm === "lanczos2",
+                      enabled: !ui.softwareBackend },
+                    { text: "Lanczos 3",   selected: ui.settingsDraft.scaleAlgorithm === "lanczos3",
+                      enabled: !ui.softwareBackend }
                 ]
                 onItemTriggered: function (i) { ui.settingsDraft.scaleAlgorithm = page.algorithmKeys[i] }
             }
