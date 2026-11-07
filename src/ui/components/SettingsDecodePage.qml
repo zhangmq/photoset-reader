@@ -13,15 +13,31 @@ Item {
     id: page
 
     readonly property var rows: ui.decodeSupport()
+    readonly property var providers: ui.decodeProviders()
 
-    //   后缀 → 支持组件的显示名（provider 是稳定 id）
-    function providerLabel(row) {
-        switch (row.provider) {
+    //   provider id → 人可读名字
+    function providerName(id) {
+        switch (id) {
         case "qt":  return qsTr("Built-in")
         case "wic": return qsTr("Windows codecs")
         case "gdk": return "gdk-pixbuf"
-        case "cli": return row.detail !== "" ? row.detail : qsTr("External program")
-        default:    return row.provider
+        case "cli": return qsTr("External programs")
+        default:    return id
+        }
+    }
+
+    //   后缀 → 支持组件（provider 是稳定 id）。
+    //   ★ 2026-11-07（用户）：外部解码器要**说清楚用的是哪个 .so/.dll/exe** ——
+    //     `row.component` 由 provider 自己报（内置那批为空，按用户要求不描述具体组件）。
+    function providerLabel(row) {
+        const comp = row.component !== undefined && row.component !== null ? row.component : ""
+        switch (row.provider) {
+        case "qt":  return qsTr("Built-in")
+        case "wic": return comp !== "" ? qsTr("Windows codecs") + " (" + comp + ")"
+                                       : qsTr("Windows codecs")
+        case "gdk": return comp !== "" ? comp : "gdk-pixbuf"
+        case "cli": return comp !== "" ? comp : qsTr("External program")
+        default:    return comp !== "" ? row.provider + " (" + comp + ")" : row.provider
         }
     }
 
@@ -31,6 +47,80 @@ Item {
         id: column
         width: parent.width
         spacing: 0
+
+        //   ── 组件总表（用户 2026-11-07）─────────────────────────────────────
+        //   按**后缀**列的表看不到"不广告格式"的 provider（外部程序就是这种：只兜底），
+        //   所以这里再列一遍"这台机器上有哪些解码组件、各自用的是什么 .so/.dll/exe"。
+        Item {
+            width: parent.width
+            implicitHeight: Theme.controlMd
+            Text {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                width: Theme.settingsKeyW
+                text: qsTr("Component")
+                color: Theme.textTertiary
+            }
+            Text {
+                anchors.left: parent.left
+                anchors.leftMargin: Theme.settingsKeyW + Theme.spaceLg
+                anchors.right: parent.right
+                anchors.rightMargin: Theme.spaceSm
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Used by")
+                color: Theme.textTertiary
+            }
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: Theme.hairline
+                color: Theme.borderL2
+            }
+        }
+
+        Repeater {
+            model: page.providers
+            delegate: Item {
+                required property var modelData
+
+                width: column.width
+                implicitHeight: Theme.controlMd
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Theme.settingsKeyW
+                    text: page.providerName(modelData.name)
+                    color: modelData.available ? Theme.textPrimary : Theme.textSecondary
+                }
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: Theme.settingsKeyW + Theme.spaceLg
+                    anchors.right: parent.right
+                    anchors.rightMargin: Theme.spaceSm
+                    anchors.verticalCenter: parent.verticalCenter
+                    elide: Text.ElideRight
+                    //   内置那批按用户要求不写具体组件；其它显示 .so/.dll/exe
+                    text: {
+                        const comp = modelData.component || ""
+                        const n = modelData.suffixCount
+                        const tail = modelData.available
+                                     ? (n > 0 ? qsTr("%1 formats").arg(n) : qsTr("fallback only"))
+                                     : qsTr("not available")
+                        return comp !== "" ? comp + " · " + tail : tail
+                    }
+                    color: modelData.available ? Theme.textSecondary : Theme.textCaption
+                }
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    height: Theme.hairline
+                    color: Theme.borderL2
+                }
+            }
+        }
 
         SettingsRow {
             label: qsTr("Formats")

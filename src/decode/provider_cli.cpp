@@ -153,6 +153,15 @@ public:
     }
 
     bool available() const override { return !m_tools.isEmpty(); }
+
+    //   具体组件：**实际会执行的那个可执行文件**（`QStandardPaths::findExecutable` 的解析结果）；
+    //   配了多个工具时用 ", " 连接（按顺序，第一个才是真正会用的）。
+    QString component() const override
+    {
+        QStringList exes;
+        for (const CliTool &t : m_tools) exes << t.exe;
+        return exes.join(QStringLiteral(", "));
+    }
     QStringList advertisedSuffixes() const override { return m_suffixes; }
 
     QImage decode(const Source &src, int page, QString *why) override

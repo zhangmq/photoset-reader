@@ -23,7 +23,10 @@ struct Report {
     QString     name;                 // provider 稳定 id
     bool        available = false;
     QStringList suffixes;
-    QString     detail;               // 补充说明（格式数 / 外部程序路径 / 失败原因）
+    QString     detail;               // 补充说明（格式数 / 失败原因）
+    //   ★ 2026-11-07（用户）：**具体用什么解的** —— `.so` / `.dll` / 外部程序路径。
+    //     内置那种（Qt 自带）为空串：用户定"内置不描述具体组件"。
+    QString     component;
 };
 
 class Capabilities

@@ -49,6 +49,10 @@ public:
     virtual ~Provider() = default;
 
     virtual QString     name() const = 0;               // 稳定 id（进缓存键）
+    //   人可读的**具体实现**：用哪个 .so / .dll / 外部程序来解（进"解码支持"页与 `[cap]` 日志）。
+    //   · 内置（Qt 自带那批）：返回空 —— 用户 2026-11-07 定"内置不描述具体组件"；
+    //   · 系统编解码器 / dlopen 的库 / 外部程序：返回文件名或路径（多个用 ", " 连接）。
+    virtual QString     component() const { return QString(); }
     virtual int         rank() const = 0;               // 小者先试
     virtual void        probe() = 0;                    // 启动一次（幂等）
     virtual bool        available() const = 0;

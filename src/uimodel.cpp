@@ -943,16 +943,28 @@ void UiModel::setFavoritesDir(const QString &dir)
 //   本次启动探到的能力表（设置 → 解码支持）：
 //   一个后缀可能被多个 provider 认领（链条），这里**每个后缀一行**，provider 取 rank 最靠前的那个
 //   （= 真正会用它解码的那个），其余只进 detail 的日志，不再刷屏。
+QVariantList UiModel::decodeProviders() const
+{
+    QVariantList rows;
+    const QList<decode::Report> reports = decode::Capabilities::instance().report();
+    for (const decode::Report &r : reports) {
+        QVariantMap row;
+        row.insert(QStringLiteral("name"), r.name);
+        row.insert(QStringLiteral("available"), r.available);
+        row.insert(QStringLiteral("suffixCount"), r.suffixes.size());
+        row.insert(QStringLiteral("component"), r.component);
+        rows.append(row);
+    }
+    return rows;
+}
+
 QVariantList UiModel::decodeSupport() const
 {
     const decode::Capabilities &caps = decode::Capabilities::instance();
     const QList<decode::Report> reports = caps.report();
-    QHash<QString, QString> detailOf;          // provider id -> detail
-    QHash<QString, bool> availableOf;
-    for (const decode::Report &r : reports) {
-        detailOf.insert(r.name, r.detail);
-        availableOf.insert(r.name, r.available);
-    }
+    QHash<QString, QString> componentOf;       // provider id -> 具体组件（.so/.dll/exe）
+    for (const decode::Report &r : reports)
+        componentOf.insert(r.name, r.component);
 
     QVariantList rows;
     const QHash<QString, QStringList> owners = caps.owners();
@@ -964,7 +976,7 @@ QVariantList UiModel::decodeSupport() const
         QVariantMap row;
         row.insert(QStringLiteral("suffix"), sfx);
         row.insert(QStringLiteral("provider"), provider);
-        row.insert(QStringLiteral("detail"), detailOf.value(provider));
+        row.insert(QStringLiteral("component"), componentOf.value(provider));
         row.insert(QStringLiteral("builtin"), provider == QLatin1String("qt"));
         rows.append(row);
     }

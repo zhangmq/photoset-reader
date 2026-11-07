@@ -140,6 +140,12 @@ public:
     }
 
     bool        available() const override { return m_available; }
+
+    //   具体组件：WIC 的 COM 工厂在这个系统 DLL 里（各编解码器是它注册的子组件）
+    QString     component() const override
+    {
+        return m_available ? QStringLiteral("windowscodecs.dll") : QString();
+    }
     QStringList advertisedSuffixes() const override { return m_suffixes; }
 
     //   ★★ **GUI 线程上绝不用 COM**（2026-11-06）：Qt 的 Windows 文件/文件夹对话框要求

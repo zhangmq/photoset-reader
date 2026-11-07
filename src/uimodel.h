@@ -170,6 +170,10 @@ public:
     //     每行 = { suffix, provider, detail, builtin }；provider 是稳定 id（qt/wic/gdk/cli），
     //     显示名与"要不要说具体组件"由 QML 决定。
     Q_INVOKABLE QVariantList decodeSupport() const;
+    //   组件总表（不看后缀）：name / available / suffixCount / component。
+    //   为什么需要：CLI provider 只做兜底、**不广告任何后缀** ⇒ 按后缀列的表里它一行都没有，
+    //   但用户想知道"到底用的哪个 exe/.so/.dll"（2026-11-07 用户）。
+    Q_INVOKABLE QVariantList decodeProviders() const;
     //   ★ **恢复所有设置为默认值**（2026-11-05 用户要求）：设置对话框底部的按钮调它。
     //     默认值的唯一来源仍是 `AppSettings` 的成员初值；这里只是按顺序调每个 setter
     //     （写盘 / 发信号 / 语言重装 / 日志级别 / 预取下发给 viewer 都复用它们的副作用）。

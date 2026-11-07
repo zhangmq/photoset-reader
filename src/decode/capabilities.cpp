@@ -98,10 +98,12 @@ void Capabilities::probe()
     for (const Provider *p : m_providers) {
         const QStringList sfx = p->advertisedSuffixes();
         qCInfo(lcDecode).noquote()
-            << QStringLiteral("[cap] %1%2: %3 suffixes%4")
+            << QStringLiteral("[cap] %1%2: %3 suffixes%4%5")
                    .arg(p->name(), -5)
                    .arg(p->available() ? QString() : QStringLiteral(" (unavailable)"))
                    .arg(sfx.size())
+                   .arg(p->component().isEmpty() ? QString()
+                                                 : QStringLiteral(" [%1]").arg(p->component()))
                    .arg(sfx.isEmpty() ? QString()
                                       : QStringLiteral(" (%1)").arg(sfx.join(QLatin1Char(' '))));
     }
@@ -217,6 +219,7 @@ QList<Report> Capabilities::report() const
         for (const QString &s : p->advertisedSuffixes())
             if (!excludedSuffix(s)) r.suffixes << s;
         r.detail = QStringLiteral("%1 suffixes").arg(r.suffixes.size());
+        r.component = p->component();
         out << r;
     }
     return out;

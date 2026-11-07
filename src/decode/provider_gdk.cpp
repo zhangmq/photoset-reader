@@ -181,6 +181,13 @@ public:
         m_suffixes.sort();
     }
 
+    //   具体组件：我们 dlopen 的那个库（loader 子模块在
+    //   `/usr/lib/gdk-pixbuf-2.0/<ver>/loaders/`，不逐个列）
+    QString component() const override
+    {
+        return available() ? QStringLiteral("libgdk_pixbuf-2.0.so.0") : QString();
+    }
+
     bool available() const override { return libs().ok; }
     QStringList advertisedSuffixes() const override { return m_suffixes; }
 
