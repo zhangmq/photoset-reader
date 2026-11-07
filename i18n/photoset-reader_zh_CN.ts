@@ -4,38 +4,38 @@
 <context>
     <name>AboutDialog</name>
     <message>
-        <location filename="../src/ui/components/AboutDialog.qml" line="93"/>
+        <location filename="../src/ui/components/AboutDialog.qml" line="86"/>
         <source>Version %1</source>
         <translation>版本 %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AboutDialog.qml" line="110"/>
+        <location filename="../src/ui/components/AboutDialog.qml" line="103"/>
         <source>Repository</source>
         <translation>仓库</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AboutDialog.qml" line="140"/>
+        <location filename="../src/ui/components/AboutDialog.qml" line="133"/>
         <source>License</source>
         <translation>许可证</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AboutDialog.qml" line="143"/>
+        <location filename="../src/ui/components/AboutDialog.qml" line="136"/>
         <source>view source</source>
         <translation>查看源码</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AboutDialog.qml" line="160"/>
+        <location filename="../src/ui/components/AboutDialog.qml" line="153"/>
         <source>Third-party</source>
         <translation>第三方</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AboutDialog.qml" line="163"/>
+        <location filename="../src/ui/components/AboutDialog.qml" line="156"/>
         <source>components and licenses</source>
         <translation>组件与许可</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AboutDialog.qml" line="181"/>
-        <location filename="../src/ui/components/AboutDialog.qml" line="191"/>
+        <location filename="../src/ui/components/AboutDialog.qml" line="174"/>
+        <location filename="../src/ui/components/AboutDialog.qml" line="184"/>
         <source>Close</source>
         <translation>关闭</translation>
     </message>
@@ -247,42 +247,31 @@
 <context>
     <name>FavoritesPopup</name>
     <message>
-        <location filename="../src/ui/fullscreen/FavoritesPopup.qml" line="40"/>
+        <location filename="../src/ui/fullscreen/FavoritesPopup.qml" line="42"/>
         <source>Filter by name</source>
         <translation>过滤名称</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FavoritesPopup.qml" line="126"/>
+        <location filename="../src/ui/fullscreen/FavoritesPopup.qml" line="128"/>
         <source>Unreadable</source>
         <translation>无法读取</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FavoritesPopup.qml" line="137"/>
-        <location filename="../src/ui/fullscreen/FavoritesPopup.qml" line="185"/>
+        <location filename="../src/ui/fullscreen/FavoritesPopup.qml" line="139"/>
         <source>Remove</source>
         <translation>移除</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FavoritesPopup.qml" line="162"/>
+        <location filename="../src/ui/fullscreen/FavoritesPopup.qml" line="160"/>
         <source>No matching progress files</source>
         <translation>没有匹配的进度文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/fullscreen/FavoritesPopup.qml" line="163"/>
+        <location filename="../src/ui/fullscreen/FavoritesPopup.qml" line="161"/>
         <source>No progress files yet.
 Use “Save progress to favorites” in the right-click menu to remember the current source here.</source>
         <translation>还没有进度文件。
 用右键菜单的「保存进度到收藏夹」把当前来源记在这里。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/fullscreen/FavoritesPopup.qml" line="182"/>
-        <source>Remove progress record</source>
-        <translation>移除进度记录</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/fullscreen/FavoritesPopup.qml" line="183"/>
-        <source>Delete the progress record for “%1”? The source files are not deleted.</source>
-        <translation>删除「%1」的这条进度记录？不会删除源文件。</translation>
     </message>
 </context>
 <context>
@@ -677,22 +666,22 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
         <translation>压缩包需要密码</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/PasswordDialog.qml" line="164"/>
+        <location filename="../src/ui/components/PasswordDialog.qml" line="161"/>
         <source>Use the same password for subsequent archives</source>
         <translation>后续压缩包使用相同密码</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/PasswordDialog.qml" line="174"/>
+        <location filename="../src/ui/components/PasswordDialog.qml" line="171"/>
         <source>Save the password in this progress file (plain text)</source>
         <translation>把密码保存到这份进度文件（明文）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/PasswordDialog.qml" line="197"/>
+        <location filename="../src/ui/components/PasswordDialog.qml" line="194"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/PasswordDialog.qml" line="202"/>
+        <location filename="../src/ui/components/PasswordDialog.qml" line="199"/>
         <source>Open</source>
         <translation>打开</translation>
     </message>
@@ -818,63 +807,63 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
 <context>
     <name>SettingsDialog</name>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="86"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="77"/>
         <source>Settings</source>
         <translation>设置</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="95"/>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="217"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="86"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="208"/>
         <source>Discard changes</source>
         <translation>放弃修改</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="116"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="107"/>
         <source>General</source>
         <translation>常规</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="116"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="107"/>
         <source>Image</source>
         <translation>图像</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="116"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="107"/>
         <source>System</source>
         <translation>系统</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="117"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="108"/>
         <source>Shortcuts</source>
         <translation>快捷键</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="117"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="108"/>
         <source>Decode support</source>
         <translation>解码支持</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="202"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="193"/>
         <source>Reset all settings</source>
         <translation>恢复全部默认设置</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="222"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="213"/>
         <source>OK</source>
         <translation>确定</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="235"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="226"/>
         <source>Reset settings</source>
         <translation>恢复默认设置</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="236"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="227"/>
         <source>Restore every setting to its default value? This cannot be undone.</source>
         <translation>把所有设置恢复为默认值？此操作无法撤销。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsDialog.qml" line="237"/>
+        <location filename="../src/ui/components/SettingsDialog.qml" line="228"/>
         <source>Reset</source>
         <translation>恢复</translation>
     </message>
@@ -1041,63 +1030,6 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
         <source>Action</source>
         <translation>功能</translation>
     </message>
-    <message>
-        <location filename="../src/ui/components/SettingsShortcutsPage.qml" line="49"/>
-        <location filename="../src/ui/components/SettingsShortcutsPage.qml" line="51"/>
-        <source>Previous page</source>
-        <translation>上一页</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/components/SettingsShortcutsPage.qml" line="50"/>
-        <location filename="../src/ui/components/SettingsShortcutsPage.qml" line="52"/>
-        <source>Next page</source>
-        <translation>下一页</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/components/SettingsShortcutsPage.qml" line="55"/>
-        <source>Play / pause slideshow</source>
-        <translation>播放 / 暂停幻灯片</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/components/SettingsShortcutsPage.qml" line="56"/>
-        <source>Show / hide info panel</source>
-        <translation>显示 / 隐藏信息面板</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/components/SettingsShortcutsPage.qml" line="57"/>
-        <source>Zoom in</source>
-        <translation>放大画面</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/components/SettingsShortcutsPage.qml" line="58"/>
-        <source>Zoom out</source>
-        <translation>缩小画面</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/components/SettingsShortcutsPage.qml" line="59"/>
-        <source>Slideshow interval −10 ms</source>
-        <translation>幻灯片间隔减少 10ms</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/components/SettingsShortcutsPage.qml" line="60"/>
-        <source>Slideshow interval +10 ms</source>
-        <translation>幻灯片间隔增加 10ms</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/components/SettingsShortcutsPage.qml" line="61"/>
-        <source>Exit full screen</source>
-        <translation>退出全屏窗口</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/components/SettingsShortcutsPage.qml" line="53"/>
-        <source>Previous folder</source>
-        <translation>上一个文件夹</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/components/SettingsShortcutsPage.qml" line="54"/>
-        <source>Next folder</source>
-        <translation>下一个文件夹</translation>
-    </message>
 </context>
 <context>
     <name>SettingsSystemPage</name>
@@ -1180,6 +1112,105 @@ Use “Save progress to favorites” in the right-click menu to remember the cur
         <location filename="../src/ui/components/SettingsSystemPage.qml" line="87"/>
         <source>Off</source>
         <translation>关闭</translation>
+    </message>
+</context>
+<context>
+    <name>ShortcutCatalog</name>
+    <message>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="26"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="28"/>
+        <source>Previous page</source>
+        <translation>上一页</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="26"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="27"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="28"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="29"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="30"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="31"/>
+        <source>Browsing</source>
+        <translation>浏览</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="27"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="29"/>
+        <source>Next page</source>
+        <translation>下一页</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="30"/>
+        <source>Previous folder</source>
+        <translation>上一个文件夹</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="31"/>
+        <source>Next folder</source>
+        <translation>下一个文件夹</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="34"/>
+        <source>Play / pause slideshow</source>
+        <translation>播放 / 暂停幻灯片</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="34"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="35"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="43"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="44"/>
+        <source>Playback</source>
+        <translation>播放</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="35"/>
+        <source>Show / hide info row</source>
+        <translation>显示 / 隐藏信息行</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="38"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="39"/>
+        <source>Zoom in</source>
+        <translation>放大画面</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="38"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="39"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="40"/>
+        <source>Zoom</source>
+        <translation>缩放</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="40"/>
+        <source>Zoom out</source>
+        <translation>缩小画面</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="43"/>
+        <source>Slideshow interval −</source>
+        <translation>幻灯片间隔 −</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="44"/>
+        <source>Slideshow interval +</source>
+        <translation>幻灯片间隔 +</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="47"/>
+        <source>Exit full screen</source>
+        <translation>退出全屏</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="47"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="48"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="49"/>
+        <source>Window</source>
+        <translation>窗口</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="48"/>
+        <location filename="../src/ui/ShortcutCatalog.qml" line="49"/>
+        <source>Open context menu (at view centre)</source>
+        <translation>打开右键菜单（窗口中心）</translation>
     </message>
 </context>
 <context>

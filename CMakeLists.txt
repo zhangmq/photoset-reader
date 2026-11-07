@@ -347,8 +347,13 @@ function(ib_add_qml_resources target)
     # 旧 UI（src/qml/*）已于 2026-10-11 弃用并移入 .archive/，不再参与构建
     set_source_files_properties("${CMAKE_SOURCE_DIR}/src/ui/Theme.qml"
         PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+    #   ★ 快捷键唯一清单（2026-11-07）：`AppShortcuts` 按它实例化 Shortcut，
+    #     设置 → 快捷键页按它渲染表格 ⇒ 行为与文档同源，不会漂移。
+    set_source_files_properties("${CMAKE_SOURCE_DIR}/src/ui/ShortcutCatalog.qml"
+        PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
     set(qml_files
         src/ui/Theme.qml
+        src/ui/ShortcutCatalog.qml
         src/ui/Main.qml
         src/ui/components/PopupPanel.qml
         src/ui/components/PopupMenu.qml

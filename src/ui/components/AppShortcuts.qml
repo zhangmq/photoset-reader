@@ -23,6 +23,8 @@ import AppUi
 Item {
     id: root
     objectName: "appShortcuts"        // 测试用它定位（不要改）
+    //   清单条目数：测试拿它和"实际创建了多少个 Shortcut"对齐（防止两处漂移）
+    readonly property int catalogSize: ShortcutCatalog.entries.length
 
     //   A 的作用域 = 查看界面根 item；焦点在它之外 ⇒ 认为面板拿着键盘
     property Item scope: null
@@ -89,22 +91,16 @@ Item {
     //   `+`/`-` 的档位表在 `FullscreenView`（与右键菜单同一入口），这里只转发
     function zoom(dir) { root.zoomRequested(dir) }
 
-    Shortcut { sequence: "Escape";      enabled: root.active; onActivated: root.run(Qt.Key_Escape) }
-    Shortcut { sequence: "Left";        enabled: root.active; onActivated: root.run(Qt.Key_Left) }
-    Shortcut { sequence: "Right";       enabled: root.active; onActivated: root.run(Qt.Key_Right) }
-    Shortcut { sequence: "Up";          enabled: root.active; onActivated: root.run(Qt.Key_Up) }
-    Shortcut { sequence: "Down";        enabled: root.active; onActivated: root.run(Qt.Key_Down) }
-    Shortcut { sequence: "PageUp";      enabled: root.active; onActivated: root.run(Qt.Key_PageUp) }
-    Shortcut { sequence: "PageDown";    enabled: root.active; onActivated: root.run(Qt.Key_PageDown) }
-    Shortcut { sequence: "Space";       enabled: root.active; onActivated: root.run(Qt.Key_Space) }
-    Shortcut { sequence: "I";           enabled: root.active; onActivated: root.run(Qt.Key_I) }
-    Shortcut { sequence: "[";           enabled: root.active; onActivated: root.run(Qt.Key_BracketLeft) }
-    Shortcut { sequence: "]";           enabled: root.active; onActivated: root.run(Qt.Key_BracketRight) }
-    Shortcut { sequence: "+";           enabled: root.active; onActivated: root.run(Qt.Key_Plus) }
-    Shortcut { sequence: "=";           enabled: root.active; onActivated: root.run(Qt.Key_Equal) }
-    Shortcut { sequence: "-";           enabled: root.active; onActivated: root.run(Qt.Key_Minus) }
-    //   ★ 唤出右键菜单：`Menu` 键 与 `Shift+F10`（Windows / KDE / Xfce 的通用惯例）。
-    //     `Shift+F10` 在 Qt 里是 `F10` + Shift 修饰 ⇒ 单独一条带修饰键的 Shortcut。
-    Shortcut { sequence: "Menu";        enabled: root.active; onActivated: root.run(Qt.Key_Menu) }
-    Shortcut { sequence: "Shift+F10";   enabled: root.active; onActivated: root.run(Qt.Key_F10) }
+    //   ★ 所有 `Shortcut` **由清单实例化**（`src/ui/ShortcutCatalog.qml` 是唯一事实源）：
+    //     加一个键只改清单一处 —— 行为与设置页的说明同时到位，不会再漂移。
+    //     用 `Instantiator` 而不是 `Repeater`：`Shortcut` 不是 Item，Repeater 只接受可视项。
+    Instantiator {
+        model: ShortcutCatalog.entries
+        delegate: Shortcut {
+            required property var modelData
+            sequence: modelData.seq
+            enabled: root.active
+            onActivated: root.run(modelData.key)
+        }
+    }
 }

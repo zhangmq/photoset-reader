@@ -46,18 +46,15 @@ Item {
             }
         }
 
-        SettingsKeyRow { key: "←";        func: qsTr("Previous page") }
-        SettingsKeyRow { key: "→";        func: qsTr("Next page") }
-        SettingsKeyRow { key: "PageUp";   func: qsTr("Previous page") }
-        SettingsKeyRow { key: "PageDown"; func: qsTr("Next page") }
-        SettingsKeyRow { key: "↑";        func: qsTr("Previous folder") }
-        SettingsKeyRow { key: "↓";        func: qsTr("Next folder") }
-        SettingsKeyRow { key: "Space";    func: qsTr("Play / pause slideshow") }
-        SettingsKeyRow { key: "I";        func: qsTr("Show / hide info panel") }
-        SettingsKeyRow { key: "+";        func: qsTr("Zoom in") }
-        SettingsKeyRow { key: "-";        func: qsTr("Zoom out") }
-        SettingsKeyRow { key: "[";        func: qsTr("Slideshow interval −10 ms") }
-        SettingsKeyRow { key: "]";        func: qsTr("Slideshow interval +10 ms") }
-        SettingsKeyRow { key: "Esc";      func: qsTr("Exit full screen") }
+        //   ★ 表格**按 `ShortcutCatalog.entries` 渲染**（与实现同一份清单）：
+        //     以前手抄一遍，`[`/`]` 就漂移过（说明写 ±10 ms，实现改的是全局默认值）。
+        Repeater {
+            model: ShortcutCatalog.entries
+            delegate: SettingsKeyRow {
+                required property var modelData
+                key: modelData.seq
+                func: modelData.label
+            }
+        }
     }
 }

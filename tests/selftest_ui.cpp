@@ -249,6 +249,28 @@ int main(int argc, char *argv[])
             }
         }
 
+        //   ── ⑤ 快捷键清单一致性（2026-11-07）──────────────────────────────
+        //   ★ 清单（`ShortcutCatalog.qml`）同时驱动"行为"和"设置页的说明"，
+        //     所以要钉住"清单条目数 == 实际创建出来的 Shortcut 数"；
+        //     否则哪天少实例化一条，说明里写着、按下去却没有 —— 正是 `[`/`]` 那样漂移。
+        {
+            QQuickWindow *win = qobject_cast<QQuickWindow *>(engine.rootObjects().value(0));
+            QObject *sc = win ? win->findChild<QObject *>(QStringLiteral("appShortcuts")) : nullptr;
+            if (sc) {
+                int created = 0;
+                const QList<QObject *> kids = sc->findChildren<QObject *>();
+                for (QObject *o : kids) {
+                    if (QString::fromLatin1(o->metaObject()->className())
+                            .contains(QStringLiteral("Shortcut")))
+                        ++created;
+                }
+                const int expected = sc->property("catalogSize").toInt();
+                check(expected > 0 && created == expected,
+                      QStringLiteral("⑤ ★ 清单 %1 条 == 实际创建 %2 个 Shortcut")
+                          .arg(expected).arg(created));
+            }
+        }
+
         //   ── ④ 面板分类契约（2026-11-07）────────────────────────────────
         //   ★ 断言**整窗所有 Popup 都是 `popupType: Item`**（不点名任何面板）：
         //     独立表面（Window/Native）会带隐式 grab，并让键盘焦点跑到另一个 surface 上
