@@ -372,6 +372,7 @@ Item {
         scanning: ui.scanning
         discoveredCount: ui.discoveredCount
         favorited: ui.sourceFavorited
+        favoriteDisabled: ui.favoriteDisabled
     progressReadOnly: ui.progressReadOnly
         onScanCancelRequested: cancelScanDialog.open()
         onFavoriteToggled: root.toggleFavorite()
@@ -584,8 +585,54 @@ Item {
     // ── 收藏夹（弹窗列表；设计 20 §7）──
     FavoritesPopup {
         id: favoritesPopup
+        objectName: "favoritesPopup"      // 测试用它（不要改）
     }
 
+    //   ── 「移除进度记录」的**唯一**确认框（2026-11-07 用户）──────────────────
+    //   收藏列表条目的「移除」与主窗口 ★ 的「取消收藏」是**同一件事**（删掉一份进度记录），
+    //   所以共用一个确认框，只有文案不同（措辞用户 2026-11-07 定）：
+    //     · 列表条目：报出条目标题——「删除“X”的进度记录？不会删除来源文件。」
+    //     · ★ 按钮：当前来源就在眼前——「取消收藏当前来源？你保留的进度将会被移除，来源文件不会被删除」
+    //   `targetFile` 为空 ⇒ `ui.removeFavorite()`（当前来源那条收藏）；
+    //   非空 ⇒ `ui.removeProgressFile(targetFile)`（收藏列表里的那一条）。
+    ConfirmDialog {
+        id: removeProgressDialog
+        objectName: "removeProgressDialog"
+        property string targetFile: ""
+        property string targetTitle: ""
+        readonly property bool forCurrentSource: targetFile === "" && targetTitle === ""
+        title: removeProgressDialog.forCurrentSource
+               ? qsTr("Remove favorite")
+               : qsTr("Remove progress record")
+        message: removeProgressDialog.forCurrentSource
+                 ? qsTr("Remove the current source from favorites? The progress you saved will be removed; the source files will not be deleted.")
+                 : qsTr("Delete the progress record for “%1”? The source files will not be deleted.").arg(targetTitle)
+        acceptText: removeProgressDialog.forCurrentSource ? qsTr("Remove favorite") : qsTr("Remove")
+        rejectText: qsTr("Cancel")
+        danger: true
+        onAccepted: {
+            if (removeProgressDialog.targetFile !== "")
+                ui.removeProgressFile(removeProgressDialog.targetFile)
+            else
+                ui.removeFavorite()
+            removeProgressDialog.targetFile = ""
+            removeProgressDialog.targetTitle = ""
+        }
+        onRejected: {
+            removeProgressDialog.targetFile = ""
+            removeProgressDialog.targetTitle = ""
+        }
+    }
+
+    //   收藏列表 → 这个确认框（列表只发信号，模态归这一层）
+    Connections {
+        target: favoritesPopup
+        function onRemoveRequested(file, title) {
+            removeProgressDialog.targetFile = file
+            removeProgressDialog.targetTitle = title
+            removeProgressDialog.open()
+        }
+    }
     PopupMenu {
         id: contextMenu
         items: root.contextMenuItems
@@ -651,7 +698,11 @@ Item {
     function toggleFavorite() {
         if (ui.viewer === null)
             return
-        if (ui.sourceFavorited) unfavoriteDialog.open()
+        if (ui.sourceFavorited) {
+            removeProgressDialog.targetFile = ""
+            removeProgressDialog.targetTitle = ""
+            removeProgressDialog.open()
+        }
         else requestSaveToFavorites()
     }
 
@@ -697,14 +748,10 @@ Item {
         rejectText: qsTr("Continue scanning")
         onAccepted: ui.cancelScan()
     }
-    ConfirmDialog {
-        id: unfavoriteDialog
-        title: qsTr("Remove favorite")
-        message: qsTr("Delete this progress record? The source files are not deleted.")
-        acceptText: qsTr("Remove favorite")
-        danger: true
-        onAccepted: ui.removeFavorite()
-    }
+
+    //   ★ 面板是否正霸占键盘（= A 系统被让路）。给 `Main.qml` 的 DropArea 复用：
+    //     模态面板打开时**不应该**再收文件拖放（否则会替换掉背后那个来源，很困惑）。
+    readonly property bool panelsOpen: !shortcuts.active
 
     // ── A 系统：浏览/播放快捷键（**不依赖焦点、不点名任何面板**）────────────
     //   实现与规则见 `components/AppShortcuts.qml` 文件头：

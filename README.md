@@ -107,6 +107,9 @@ Windows 包**不带** DirectX Shader Compiler（`dxcompiler.dll` / `dxil.dll`，
 后端需要它，默认的 D3D11 用系统自带的 `d3dcompiler_47.dll`。显式请求 `QSG_RHI_BACKEND=d3d12`
 而旁边没有 `dxcompiler.dll` 时，程序会自动降级到 d3d11 并记一条日志。
 
+**安装不会替你修改任何默认打开方式**（连 `.prsave` 进度文件也不会）：本应用只会出现在文件管理器的
+「打开方式」列表里（`.desktop` 声明了 `MimeType`），要不要设为默认由你在系统里自己选。
+
 源码安装（开发用）：
 
 ```bash

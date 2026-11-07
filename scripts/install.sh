@@ -93,10 +93,10 @@ if [[ $DESKTOP -eq 1 && "$PREFIX" == "$HOME"* ]]; then
         echo "  ⚠️ 没有 update-mime-database（shared-mime-info）：*.prsave 可能不被文件管理器识别"
     fi
     ./scripts/install-desktop.sh --exec "$PREFIX/bin/photoset-reader" | sed 's/^/  /'
-    #   把进度文件默认交给本应用（只在这个用户前缀下做；失败不致命）
-    if command -v xdg-mime >/dev/null 2>&1; then
-        xdg-mime default photoset-reader.desktop application/x-photoset-progress >/dev/null 2>&1 || true
-    fi
+    #   ★ 2026-11-07（用户）：**不做任何自动关联** —— 包括 `.prsave`。
+    #     安装只让文件类型**存在**（MIME 数据库 + `.desktop` 的 `MimeType=` ⇒ 文件管理器
+    #     的"打开方式"里能看到本应用），但**不替用户决定**默认程序。
+    #     用户想关联时自己选（见下面 install-desktop.sh 打印的可选命令）。
 fi
 
 case ":$PATH:" in

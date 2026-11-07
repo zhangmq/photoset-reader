@@ -30,6 +30,8 @@ Item {
 
     property int    discoveredCount: 0    // 已发现多少张（spin 的 tooltip）
     property bool   favorited: false      // 已收藏（★ 实心）
+    //   ★ 2026-11-07（用户）：来源是**从另一份进度存档打开的** ⇒ 收藏禁用（与那份存档同源不同进度）
+    property bool   favoriteDisabled: false
     property bool   progressReadOnly: false   // 进度只读（锁被别的窗口占着/目录不可写）
 
     signal scanCancelRequested()          // 点 spin → 上层弹「取消扫描」确认框
@@ -164,10 +166,21 @@ Item {
             anchors.rightMargin: Theme.spaceLg
             anchors.verticalCenter: parent.verticalCenter
             glyph: root.favorited ? Theme.icStar : Theme.icStarO
-            tooltip: root.favorited ? qsTr("Favorited (click to remove)") : qsTr("Add to favorites (saves progress)")
+            //   ★ 2026-11-07（用户）：从"另一份"进度存档打开时，收藏会与那份存档冲突 ⇒ 禁用。
+            //     ⚠️ 只做**视觉上的假禁用**：`enabled` 保持 true（真 disable 的控件收不到 hover，
+            //     tooltip 就永远不显示）。禁用语义落在两处：`opacity` 变淡 + 点击直接 return。
+            tooltip: root.favoriteDisabled
+                     ? qsTr("A progress file with the same source as a favorites record is open; favorites are disabled to avoid a conflict")
+                     : (root.favorited ? qsTr("Favorited (click to remove)")
+                                       : qsTr("Add to favorites (saves progress)"))
+            opacity: root.favoriteDisabled ? Theme.dimOpacity : 1.0
             //   ★ 不做"扫描中置灰"（用户 2026-10-31）：点了弹框告知，见上层
             enabled: root.overlaysVisible && root.hasSource
-            onTriggered: root.favoriteToggled()
+            onTriggered: {
+                if (root.favoriteDisabled)
+                    return;                  // 假禁用：点了什么都不发生（tooltip 仍然可看）
+                root.favoriteToggled();
+            }
         }
 
         // 底边框（bar 自持）

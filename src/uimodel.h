@@ -73,6 +73,10 @@ public:
     Q_PROPERTY(QString favoritesDir READ favoritesDir WRITE setFavoritesDir
                                    NOTIFY favoritesDirChanged)
     Q_PROPERTY(bool sourceFavorited READ sourceFavorited NOTIFY sourceFavoritedChanged)
+    //   ★ 2026-11-07（用户）：当前来源是**从一份进度存档打开的** ⇒ 收藏功能禁用。
+    //     理由：那份存档与收藏夹里的记录同源但进度不同，再"收藏"会制造两份互相打架的记录。
+    //     置为"未收藏"体验（见 `refreshFavorited()`），界面据此禁用 ★ 并给专门 tooltip。
+    Q_PROPERTY(bool favoriteDisabled READ favoriteDisabled NOTIFY favoriteDisabledChanged)
     //   收藏夹列表（`ui.favorites`）：模型只列文件名 + 按需读内容，见 `ProgressListModel`
     Q_PROPERTY(QObject *favorites READ favorites CONSTANT)
 
@@ -188,7 +192,7 @@ public:
     Q_INVOKABLE void resetSettingsEditToDefaults();// reset the DRAFT only (OK still required)
     Q_INVOKABLE void resetSettingsToDefaults();
     bool sourceFavorited() const { return m_sourceFavorited; }
-    ProgressListModel *favorites() const { return m_favorites; }
+    bool favoriteDisabled() const { return m_openedFromProgress; }    ProgressListModel *favorites() const { return m_favorites; }
     bool scanning() const;
     int  discoveredCount() const;
     bool scanIncomplete() const { return m_scanIncomplete; }
@@ -289,6 +293,7 @@ Q_SIGNALS:
     void viewerChanged();
     void favoritesDirChanged();
     void sourceFavoritedChanged();
+    void favoriteDisabledChanged();
     void scanningChanged();
     void scanIncompleteChanged();
     void progressReadOnlyChanged();
@@ -370,6 +375,7 @@ private:
     void cancelRescan();             // 作废：停止 + 析构，**不替换**
     QString currentFavoritesFile() const;   // 空 = 没来源 / 来源不是文件夹或压缩包
     void refreshFavorited();                // 值真变才 emit
+    void setOpenedFromProgress(bool on);    // 禁用标志 + 星标状态一起改（唯一改动点）
     void refreshScanning();
     //   幻灯片播放时抑制屏幕休眠（org.freedesktop.ScreenSaver），停下就解除。
     void updateScreenSaverInhibit();                 // 扫描中 / 已发现数（值真变才 emit）
@@ -412,6 +418,9 @@ private:
 
     // 收藏 / 扫描状态（派生值，只在这里缓存"上次 emit 的值"）
     bool m_sourceFavorited = false;
+    //   ★ 当前来源是不是"从一份进度存档打开的"（用户 2026-11-07）：
+    //     是 ⇒ 收藏功能禁用（那份存档与收藏夹记录同源不同进度，再收藏会制造冲突）。
+    bool m_openedFromProgress = false;
     bool m_scanning = false;
     //   扫描开始时刻（毫秒）——只用来判断"这次扫描够不够久，值得弹一条完成提示"
     qint64 m_scanStartedMs = 0;
