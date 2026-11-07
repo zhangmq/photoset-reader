@@ -353,6 +353,8 @@ function(ib_add_qml_resources target)
         src/ui/components/PopupPanel.qml
         src/ui/components/PopupMenu.qml
         src/ui/components/SurfaceShadow.qml
+        src/ui/components/ModalDialog.qml
+        src/ui/components/AppShortcuts.qml
         src/ui/components/AboutDialog.qml
         src/ui/components/Button.qml
         src/ui/components/DropdownButton.qml

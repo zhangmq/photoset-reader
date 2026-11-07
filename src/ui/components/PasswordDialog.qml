@@ -8,7 +8,7 @@ import AppUi
 //     · 「后续压缩包使用相同密码」checkbox（**默认勾选**）。
 //   错误提示（密码不正确）就地显示，**输入框保留**（可以直接改了再试）。
 //   取消 = 中止本次打开（调用方负责清空来源）。
-Popup {
+ModalDialog {
     id: root
 
     //   本项目风格的勾选框（自绘 indicator：Basic 风格的方块与令牌不搭）；两个勾选项共用一份实现
@@ -51,9 +51,6 @@ Popup {
     signal submitted(string password, bool reuseForSubsequent, bool saveToFile)
     signal cancelled()
 
-    modal: true
-    focus: true
-    closePolicy: Popup.CloseOnEscape
     padding: 0
     readonly property var win: parent ? parent.Window.window : null
     // 比标准对话框宽一点：这里要显示容器相对来源的**路径**（中间省略）

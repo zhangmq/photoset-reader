@@ -10,22 +10,15 @@ import AppUi
 //     `setApplicationVersion(PHOTOSET_VERSION)`），而 `PHOTOSET_VERSION` 来自 CMake 的
 //     `project(VERSION …)` + 预发布后缀 —— 与 `--version`、包名同一个来源。
 //   · 外观跟设置框一致（`bgLayer2` + `radiusPanel` + 投影）；Esc / 点外部关闭。
-Popup {
+ModalDialog {
     id: root
 
     readonly property string repoUrl: "https://github.com/zhangmq/photoset-reader"
 
-    modal: true
-    focus: true
-    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+    //   ★ 2026-11-07：About 属于**模态**，不搞"点外面就关"（用户定）。
+    //     `popupType/modal/focus/closePolicy/Overlay.modal` 全由 `ModalDialog` 给。
     padding: 0
     width: 400
-
-    //   掩膜只吃输入、不压暗（与设置框同一口径：背后画面保持可对照）
-    Overlay.modal: MouseArea {
-        acceptedButtons: Qt.AllButtons
-        onWheel: (w) => { w.accepted = true }
-    }
 
     //   居中（与设置框同一算法：先算窗口坐标，再换回本浮层父项坐标）
     onOpened: {

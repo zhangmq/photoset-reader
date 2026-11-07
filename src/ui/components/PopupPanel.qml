@@ -28,6 +28,10 @@ Popup {
     property real clampExtraWidth: 0
 
     padding: Theme.spaceMd
+    //   ★ 2026-11-07：**不新建表面**（与 ModalDialog 同一口径）。理由：键盘焦点留在
+    //     主窗口（B 系统的焦点导航才稳），也避开 Wayland 独立表面 + 隐式 grab 那一类坑。
+    //     注意：非模态浮层的语义与模态对话框不同，见 ModalDialog.qml 文件头。
+    popupType: Popup.Item
     modal: false
     // ★ focus: true —— 菜单要能用键盘操作（Esc 关闭、方向键选、Enter 激活）。
     //   Qt 在弹窗关闭时会把焦点**还给打开前持有焦点的项**（实测）；

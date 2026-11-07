@@ -7,17 +7,19 @@ import AppUi
 //   行里的源路径 / N/M 是**按需读**的（可见行才读）。
 //   形态：居中弹窗 = 顶部过滤框 + 列表；每行 = 甜甜圈（阅读百分比）+ 名称（悬停看完整路径）
 //   + 当前位置/文件数量 + 移除按钮；点行 = 打开那份进度文件。
-Item {
+PopupPanel {
     id: root
 
     property var model: ui.favorites
 
-    function open() { popup.open() }
-    function close() { popup.close() }
+    //   ★ 2026-11-07（分类定稿）：这个组件就是**非模态浮层**，根直接是 `PopupPanel`。
+    //     以前是 `Item` 包一个 `PopupPanel`：壳的 `visible` 恒为 true，把"开没开"藏起来了
+    //     （我因此写错过快捷键门控）。现在 `root.visible` 就是真实开合状态。
+    //     原来挂在壳上的"移除确认框"已外移到 `FullscreenView`（模态框归那一层管），
+    //     这里只发信号。
+    signal removeRequested(string file, string title)
 
-    PopupPanel {
-        id: popup
-        anchors.centerIn: Overlay.overlay
+    anchors.centerIn: Overlay.overlay
         padding: Theme.spaceMd
         width: Theme.favPopupW
         height: Theme.favPopupH
@@ -136,11 +138,7 @@ Item {
                             glyph: Theme.icClose
                             tooltip: qsTr("Remove")
                             danger: true
-                            onTriggered: {
-                                root.pendingRemove = row.file
-                                root.pendingTitle = row.title
-                                removeDialog.open()
-                            }
+                            onTriggered: root.removeRequested(row.file, row.title)
                         }
 
                         HintBubble {                                  // 悬停：源的完整路径
@@ -165,29 +163,11 @@ Item {
                 }
             }
         }
-    }
-
-    // 行操作
-    property string pendingRemove: ""
-    property string pendingTitle: ""
+    // 行操作（确认框已外移，这里只发请求）
     function openAt(row) {
         const file = root.model.fileAt(row)
-        popup.close()
+        root.close()
         if (file !== "")
             ui.openProgress(file)
-    }
-
-    ConfirmDialog {
-        id: removeDialog
-        title: qsTr("Remove progress record")
-        message: qsTr("Delete the progress record for “%1”? The source files are not deleted.")
-                     .arg(root.pendingTitle)
-        acceptText: qsTr("Remove")
-        danger: true
-        onAccepted: {
-            ui.removeProgressFile(root.pendingRemove)
-            root.pendingRemove = ""
-            root.pendingTitle = ""
-        }
     }
 }

@@ -12,7 +12,7 @@ import AppUi
 //     （描边/文字 `state-error-primary`，hover 底 `interactive-bg-hover-danger`）
 //   键盘：Esc = 取消；**键盘打开**时焦点给「取消」（Enter 落到取消，避免误触破坏性动作），
 //         鼠标打开时不给按钮焦点（否则按钮上会出现焦点环，像"默认选中"）
-Popup {
+ModalDialog {
     id: root
 
     property string title: ""
@@ -26,9 +26,6 @@ Popup {
     signal accepted()
     signal rejected()
 
-    modal: true
-    focus: true
-    closePolicy: Popup.CloseOnEscape
     padding: 0
     // 宽与位置都按**整窗**算（父项可能是一张卡片，尺寸在布局完成前不可靠）
     readonly property var win: parent ? parent.Window.window : null

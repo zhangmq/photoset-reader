@@ -690,69 +690,16 @@ Item {
         onAccepted: ui.removeFavorite()
     }
 
-    // ── 键盘（全屏是快捷键面）──
-    //   ★ 方向键**不拦截自动重复**：Qt 的按键自动重复正常打进来，每个重复按键自然就是一次
-    //     `stepPage(∓1)`。
-    //   ★ `↑ / ↓` = 上一个 / 下一个文件夹（设计 08 §三）。**按禁用状态走**：判定条件与底栏
-    //     那两个按钮**同一个**（名字为空 = 没有那个文件夹 ⇒ 按钮置灰）。所以：
-    //       · 到头（不循环）⇒ 名字空 ⇒ 快捷键也不动；
-    //       · **文件夹内循环** ⇒ 两个名字一律空 ⇒ 快捷键同样不许切文件夹；
-    //       · 这里**不要求** `overlaysVisible` —— 那是控件条的显隐，不是"能不能切"。
-    //   ★ 2026-10-31：只剩这一个界面 ⇒ 焦点恒在本视图（没有别的屏可切）
-    focus: true
-    //   ★ 窗口重新成为活动窗口时，若**没有任何 item 持有焦点**就还给本视图（2026-11-07）：
-    //     窗口失焦 ⇒ 键盘事件没有接收者 ⇒ **所有**快捷键一起失效。实测（ib-test-ui ③）：
-    //     等到 `win->isActive()` 后 Right/Space/I 全部正常 ⇒ handler 本身没问题，
-    //     缺的只是这条兜底。
-    Connections {
-        target: root.Window.window
-        function onActiveChanged() {
-            const w = root.Window.window
-            if (w && w.active && !w.activeFocusItem)
-                root.forceActiveFocus()
-        }
-    }
-
-    Keys.onPressed: function (event) {
-        root.wakeUi()
-        switch (event.key) {
-        //   ★ `Esc` = **退出全屏**（播放中也一样）；暂停**只由 `Space`** 负责
-        //     （返回键已改为 `Backspace`；全屏切换的最终口径未定，这里先用 `Esc` 临时承担）
-        case Qt.Key_Escape:      ui.windowFullscreen = false
-                                 event.accepted = true; break
-        case Qt.Key_Left:        if (ui.viewer) ui.viewer.stepPage(-1)
-                                 event.accepted = true; break
-        case Qt.Key_Right:       if (ui.viewer) ui.viewer.stepPage(1)
-                                 event.accepted = true; break
-        case Qt.Key_Up:          if (ui.viewer && ui.viewer.prevFolderName !== "")
-                                     ui.viewer.stepFolder(-1)
-                                 event.accepted = true; break
-        case Qt.Key_Down:        if (ui.viewer && ui.viewer.nextFolderName !== "")
-                                     ui.viewer.stepFolder(1)
-                                 event.accepted = true; break
-        case Qt.Key_PageUp:      if (ui.viewer) ui.viewer.stepPage(-1)
-                                 event.accepted = true; break
-        case Qt.Key_PageDown:    if (ui.viewer) ui.viewer.stepPage(1)
-                                 event.accepted = true; break
-        // ── 用户已确认的那几个（设计 08 §三）──
-        case Qt.Key_Space:       if (ui.viewer) ui.viewer.togglePlaying()
-                                 event.accepted = true; break
-        //   ★ 2026-11-07：`[` / `]` 以前直接改 `ui.slideshowIntervalMs` —— 那是**全局默认**，
-        //     当前这一屏的间隔在 `ui.viewer.intervalMs` ⇒ 打开来源后按了**没有任何效果**
-        //     （用户报的"快捷键失效"之一）。现在走与底栏 +/- 同一个入口（档位网格）。
-        case Qt.Key_BracketLeft:  ui.stepSlideshowInterval(-1)
-                                  event.accepted = true; break
-        case Qt.Key_BracketRight: ui.stepSlideshowInterval(1)
-                                  event.accepted = true; break
-        case Qt.Key_I:           if (ui.viewer) ui.viewer.osdVisible = !ui.viewer.osdVisible;
-                                 event.accepted = true; break
-        // 缩放（Chrome 式档位）：**裸 + / −**，不要求 Shift 或 Ctrl（用户 2026-11-02）
-        //   `=` 与 `+` 同键（美式键盘加号要 Shift）⇒ 两个 key 都收。
-        case Qt.Key_Plus:
-        case Qt.Key_Equal:       root.applyZoomPreset("in")
-                                 event.accepted = true; break
-        case Qt.Key_Minus:       root.applyZoomPreset("out")
-                                 event.accepted = true; break
-        }
+    // ── A 系统：浏览/播放快捷键（**不依赖焦点、不点名任何面板**）────────────
+    //   实现与规则见 `components/AppShortcuts.qml` 文件头：
+    //     A 生效 ⟺ 窗口 active ∧ (焦点为空 ∨ 焦点在本视图子树里)
+    AppShortcuts {
+        id: shortcuts
+        scope: root
+        //   键盘唤出右键菜单：**一律视口中心**（用户 2026-11-07：
+        //   键盘唤起与"鼠标右键点在哪儿"是两套逻辑，不许混用）
+        onMenuRequested: root.openContextMenu(canvas,
+                                              canvas.width / 2, canvas.height / 2)
+        onZoomRequested: function (dir) { root.applyZoomPreset(dir) }
     }
 }

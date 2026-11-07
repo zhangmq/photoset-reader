@@ -19,14 +19,13 @@ import AppUi
 //     · 左导航 `.nav{width:188px}`、头部 `.header{height:54px}`、关闭 `.close{28×28; radius-sm}`
 //     ⚠️ 本项目差异：头部高 `barH`(48)、关闭用标准 `IconAction`(36)
 //   键盘：Esc 关闭；Tab 在导航与字段间移动（**导航不响应 ←/→** —— 用户 2026-10-11）
-Popup {
+ModalDialog {
     id: root
+    objectName: "settingsDialog"      // 测试要能开/关它（不要改）
 
     signal finished()
 
-    modal: true
-    focus: true
-    closePolicy: Popup.CloseOnEscape
+    //   ★ 语义（popupType/modal/focus/closePolicy）由 `ModalDialog` 基类给，这里不再重复。
     padding: 0
     //   * 2026-11-07（用户）：**宽度固定**、**高度自适应但保底**；两者都随窗口重新对齐。
     //     窗口太窄/太矮时按说的"裁掉设置窗"（不做缩放，布局不会被挤变形）。
@@ -37,14 +36,6 @@ Popup {
     //   相对窗口居中（Popup 的坐标是相对 parent = 窗口 overlay）
     x: parent ? Math.round((parent.width - width) / 2) : 0
     y: parent ? Math.round((parent.height - height) / 2) : 0
-
-    // ★ 不掉暗背景（用户 2026-10-20："不要加 mask，方便对照设置调整效果"）：
-    //   后面的画面保持原样，改设置时能直接看到效果。
-    //   但这层仍然**吃掉输入**（透明 MouseArea）——模态语义不丢：背后不会被误拖/误滚。
-    Overlay.modal: MouseArea {
-        acceptedButtons: Qt.AllButtons
-        onWheel: (w) => { w.accepted = true }
-    }
 
     background: Item {
         Rectangle {

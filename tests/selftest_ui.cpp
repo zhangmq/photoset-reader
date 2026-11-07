@@ -203,32 +203,77 @@ int main(int argc, char *argv[])
             check(opened, QStringLiteral("③ 夹具：三张图打开成功"));
 
             if (opened && win && viewer()) {
-                //   ★ 实测（2026-11-07）：`requestActivate()` 之后**立刻**发的第一个键会被吞掉
-                //     （窗口还没成为活动窗口 ⇒ 键事件没有接收者）。真机上的"快捷键全部失效"
-                //     就是这个形态：窗口没拿到键盘焦点时，**所有**键都进不来；点一下窗口就恢复。
-                //     所以这里必须**等窗口真的 active** 再发键。
                 win->requestActivate();
                 const bool activated = testsupport::waitFor([&] { return win->isActive(); }, 5000);
                 check(activated, QStringLiteral("③ 窗口成为活动窗口（键盘焦点的前提）"));
-                const int before = viewer()->currentPage();
-                QTest::keyClick(win, Qt::Key_Right);
-                const bool moved = testsupport::waitFor(
-                    [&] { return viewer()->currentPage() > before; }, 3000);
-                check(moved, QStringLiteral("③ ★ →（右方向键）翻到下一页（%1 → %2）")
-                                 .arg(before).arg(viewer()->currentPage()));
 
-                const bool playingBefore = viewer()->playing();
-                QTest::keyClick(win, Qt::Key_Space);
-                const bool toggled = testsupport::waitFor(
-                    [&] { return viewer()->playing() != playingBefore; }, 3000);
-                check(toggled, QStringLiteral("③ ★ 空格切换播放/暂停"));
+                //   ★ A 系统的两条闸门分开验（2026-11-07）：
+                //     ①**规则**：焦点为空/在视图子树里 ⇒ `enabled`；焦点在面板里 ⇒ 不 enabled；
+                //     ②**动作**：`run(key)` 真的驱动 UiModel。
+                //     不在这里断言"合成按键能触发 Shortcut"—— 离屏平台插件下 `QTest::keyClick`
+                //     不经过 Qt 的 shortcut map（实测不触发），把它写进断言只会变成假覆盖；
+                //     真实键盘路径由真机手工/后续 L2 输入工具覆盖。
+                QObject *sc = win->findChild<QObject *>(QStringLiteral("appShortcuts"));
+                check(sc != nullptr, QStringLiteral("③ 找到 AppShortcuts（A 系统）"));
 
-                const bool osdBefore = viewer()->osdVisible();
-                QTest::keyClick(win, Qt::Key_I);
-                const bool osdToggled = testsupport::waitFor(
-                    [&] { return viewer()->osdVisible() != osdBefore; }, 3000);
-                check(osdToggled, QStringLiteral("③ ★ I 键切换信息行"));
+                if (sc) {
+                    check(sc->property("active").toBool(),
+                          QStringLiteral("③ ★ A 在「窗口 active、焦点不占键盘」时启用"));
+
+                    const int before = viewer()->currentPage();
+                    const bool ran = QMetaObject::invokeMethod(sc, "run",
+                                                              Q_ARG(QVariant, int(Qt::Key_Right)));
+                    const bool moved = testsupport::waitFor(
+                        [&] { return viewer()->currentPage() > before; }, 3000);
+                    check(ran && moved,
+                          QStringLiteral("③ ★ → 的动作真的翻页（%1 → %2）")
+                              .arg(before).arg(viewer()->currentPage()));
+
+                    const bool playingBefore = viewer()->playing();
+                    QMetaObject::invokeMethod(sc, "run", Q_ARG(QVariant, int(Qt::Key_Space)));
+                    check(testsupport::waitFor([&] { return viewer()->playing() != playingBefore; }, 3000),
+                          QStringLiteral("③ ★ 空格的动作真的切换播放/暂停"));
+
+                    //   把焦点交给面板（这里用设置对话框当代表）：A 必须整体让路
+                    QObject *settings = win->findChild<QObject *>(QStringLiteral("settingsDialog"));
+                    if (settings) {
+                        const bool openedDlg = QMetaObject::invokeMethod(settings, "open");
+                        testsupport::waitFor([&] { return settings->property("opened").toBool(); }, 3000);
+                        check(openedDlg && !sc->property("active").toBool(),
+                              QStringLiteral("③ ★ 面板打开（焦点被它拿走）⇒ A 整体禁用"));
+                        QMetaObject::invokeMethod(settings, "close");
+                        check(testsupport::waitFor([&] { return sc->property("active").toBool(); }, 3000),
+                              QStringLiteral("③ ★ 面板关闭 ⇒ A 恢复"));
+                    }
+                }
             }
+        }
+
+        //   ── ④ 面板分类契约（2026-11-07）────────────────────────────────
+        //   ★ 断言**整窗所有 Popup 都是 `popupType: Item`**（不点名任何面板）：
+        //     独立表面（Window/Native）会带隐式 grab，并让键盘焦点跑到另一个 surface 上
+        //     —— 那正是"快捷键/焦点"这一串问题的来源。
+        {
+            QQuickWindow *win = qobject_cast<QQuickWindow *>(engine.rootObjects().value(0));
+            int popups = 0;
+            int notItem = 0;
+            if (win) {
+                const QList<QObject *> all = win->findChildren<QObject *>();
+                for (QObject *o : all) {
+                    const QMetaObject *mo = o->metaObject();
+                    if (mo->indexOfProperty("popupType") < 0)
+                        continue;                       // 不是 Popup
+                    ++popups;
+                    if (o->property("popupType").toInt() != 0) {
+                        ++notItem;
+                        qInfo().noquote() << QStringLiteral("[uitest]   非 Item 型的 popup: %1")
+                                                 .arg(QString::fromLatin1(mo->className()));
+                    }
+                }
+            }
+            check(popups >= 6 && notItem == 0,
+                  QStringLiteral("④ ★ 窗口内 %1 个 Popup 全是 Item 型（0 = 都新建了表面）")
+                      .arg(notItem));
         }
 
         return check.finish();
