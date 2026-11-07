@@ -1,6 +1,6 @@
 # photoset-reader
 
-[中文](README.md) · **v0.1.0-beta.1**
+[中文](README.md)
 
 Just another image viewer, focused on fast browsing of **manga** or **very large image sets**.
 Scaling runs through a hand-written GPU pipeline (`QQuickRhiItem` + custom shaders) and falls back
@@ -102,9 +102,12 @@ submenus open with `Enter`/`→`.
 
 | Form | File | How |
 |---|---|---|
-| **AppImage** (Linux, self-contained) | `photoset-reader-0.1.0-beta.1-x86_64.AppImage` | `chmod +x`, then run it; needs FUSE (otherwise `--appimage-extract-and-run`) |
-| **Install tree** (Linux, needs Qt 6 + third-party libs) | `photoset-reader-0.1.0-beta.1-linux-x86_64-install-tree.tar.gz` | unpack into a prefix: `tar -xzf … -C ~/.local` (brings `bin/` and `share/` into place) |
-| **Windows portable** | `photoset-reader-0.1.0-beta.1-windows-x64.zip` | unpack and run `photoset-reader.exe` (DLLs included) |
+| **AppImage** (Linux, self-contained) | `photoset-reader-<version>-x86_64.AppImage` | `chmod +x`, then run it; needs FUSE (otherwise `--appimage-extract-and-run`) |
+| **Install tree** (Linux, needs Qt 6 + third-party libs) | `photoset-reader-<version>-linux-x86_64-install-tree.tar.gz` | unpack into a prefix: `tar -xzf … -C ~/.local` (brings `bin/` and `share/` into place) |
+| **Windows portable** | `photoset-reader-<version>-windows-x64.zip` | unpack and run `photoset-reader.exe` (DLLs included) |
+
+`<version>` is the release tag without the leading `v` (e.g. `0.1.0-beta.2`); the file names are produced
+by CI at release time, so they are not hard-coded here (no README edit per release).
 
 The Windows package deliberately **omits** the DirectX Shader Compiler (`dxcompiler.dll` / `dxil.dll`,
 ~15 MB): only the D3D12 backend needs it, and the default D3D11 path uses the OS-provided
@@ -132,13 +135,15 @@ The user guide lives in the **wiki**: <https://github.com/zhangmq/photoset-reade
 ## Release
 
 1. bump `project(photoset-reader VERSION x.y.z)` and `PHOTOSET_VERSION_SUFFIX` in `CMakeLists.txt`
-   (the only places a version lives);
+   (the only places a version lives). When reusing a build directory locally, override it explicitly:
+   `cmake -S . -B build -DPHOTOSET_VERSION_SUFFIX=-<suffix>` (it is a `CACHE` variable, so changing the
+   default does not update an existing cache);
 2. add an entry to [CHANGELOG.md](CHANGELOG.md) / [CHANGELOG.en.md](CHANGELOG.en.md);
 3. `ctest`, `./scripts/update-translations.sh --check`, `./scripts/render-icons.sh --check`;
-4. `./scripts/package-appimage.sh`, `./scripts/package-linux.sh`, and
-   `scripts\ci-windows.ps1 -Step package` for Windows;
-5. tag and push: `git tag v0.1.0-beta.1 && git push origin main --tags`, then
-   `gh release create v0.1.0-beta.1 <assets…> --prerelease --notes-file <notes>`.
+4. merge into `main`, then tag and push: `git tag v<version> && git push origin v<version>` — **CI attaches
+   the assets to the release** (the `release` job in both workflows), so nothing is downloaded/uploaded
+   from your machine;
+5. add the notes (a few KB of text): `gh release edit v<version> --title … --notes-file <notes>`.
 
 `main` is protected: further changes go through pull requests.
 

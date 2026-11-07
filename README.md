@@ -1,6 +1,6 @@
 # photoset-reader
 
-[English](README.en.md) · **v0.1.0-beta.1**
+[English](README.en.md)
 
 只是另一个图片查看器，专注于**漫画**或**超大图集**的快速浏览。缩放走自绘 GPU 管线
 （`QQuickRhiItem` + 自写 shader），没有可用 GPU 时自动退回软件渲染。
@@ -99,9 +99,12 @@ photoset-reader [<路径>] [--fullscreen] [--log-level <级别>] [--log-file <�
 
 | 形态 | 文件 | 用法 |
 |---|---|---|
-| **AppImage**（Linux，自带依赖） | `photoset-reader-0.1.0-beta.1-x86_64.AppImage` | `chmod +x` 后直接运行；需要 FUSE（没有就 `--appimage-extract-and-run`） |
-| **安装树**（Linux，要求已装 Qt 6 与第三方库） | `photoset-reader-0.1.0-beta.1-linux-x86_64-install-tree.tar.gz` | 解到某个前缀即可：`tar -xzf … -C ~/.local`（`bin/` 与 `share/` 会就位） |
-| **Windows 免安装** | `photoset-reader-0.1.0-beta.1-windows-x64.zip` | 解压后双击 `photoset-reader.exe`（DLL 已随包） |
+| **AppImage**（Linux，自带依赖） | `photoset-reader-<版本>-x86_64.AppImage` | `chmod +x` 后直接运行；需要 FUSE（没有就 `--appimage-extract-and-run`） |
+| **安装树**（Linux，要求已装 Qt 6 与第三方库） | `photoset-reader-<版本>-linux-x86_64-install-tree.tar.gz` | 解到某个前缀即可：`tar -xzf … -C ~/.local`（`bin/` 与 `share/` 会就位） |
+| **Windows 免安装** | `photoset-reader-<版本>-windows-x64.zip` | 解压后双击 `photoset-reader.exe`（DLL 已随包） |
+
+`<版本>` 就是 Release 的 tag 去掉 `v`（例如 `0.1.0-beta.2`）——文件名由 CI 在发版时生成，
+这里不写死，免得每次发版都要改 README。
 
 Windows 包**不带** DirectX Shader Compiler（`dxcompiler.dll` / `dxil.dll`，约 15 MB）：只有 D3D12
 后端需要它，默认的 D3D11 用系统自带的 `d3dcompiler_47.dll`。显式请求 `QSG_RHI_BACKEND=d3d12`
@@ -135,13 +138,14 @@ cd photoset-reader
 
 1. 改 `CMakeLists.txt` 的 `project(photoset-reader VERSION x.y.z)` 与 `PHOTOSET_VERSION_SUFFIX`
    （**版本号只有这两处**，`--version` 与产物文件名都从这里来）；
+   本地复用过构建目录时要显式覆盖：`cmake -S . -B build -DPHOTOSET_VERSION_SUFFIX=-<后缀>`
+   （它是 `CACHE` 变量，改默认值不会覆盖已存在的缓存）；
 2. 在 [CHANGELOG.md](CHANGELOG.md) 加一节（英文版 [CHANGELOG.en.md](CHANGELOG.en.md) 同步）；
 3. `cmake --build build && ctest --test-dir build --output-on-failure`，
    再跑 `./scripts/update-translations.sh --check` 与 `./scripts/render-icons.sh --check`；
-4. 打包：`./scripts/package-appimage.sh` 与 `./scripts/package-linux.sh`；Windows 用
-   `scripts\ci-windows.ps1 -Step package`；
-5. 打 tag 并推送：`git tag v0.1.0-beta.1 && git push origin main --tags`，然后
-   `gh release create v0.1.0-beta.1 <产物…> --prerelease --notes-file <中英说明>`。
+4. 合并到 `main`、打 tag 并推送：`git tag v<版本> && git push origin v<版本>` —— **产物由 CI 直接
+   挂到 Release**（两个 workflow 的 `release` job），本地不需要下载/上传；
+5. 补双语说明（只有几 KB 文本）：`gh release edit v<版本> --title … --notes-file <中英说明>`。
 
 `main` 分支已保护：后续改动一律走 PR。
 
