@@ -90,6 +90,15 @@ PopupPanel {
     // ── 键盘操作（方向键选行 / Enter 激活 / Esc 关闭由 closePolicy 处理）──
     property int currentIndex: -1
 
+    //   ── 二级菜单的键盘导航（用户 2026-11-07）──────────────────────────────
+    //   以前二级面板只有鼠标：`subColumn` 里没有任何 `Keys`。现在：
+    //     · 主列 `Enter` / `Right` ⇒ **展开并进入**二级（焦点交给 subColumn）；
+    //     · 二级里 `↑ / ↓` 移动高亮，`Enter` 选中；
+    //     · `Left` ⇒ 退回主列（二级保持展开），`Esc` ⇒ 关整个菜单（closePolicy）。
+    property int subIndex: -1                // 二级里当前高亮项（-1 = 无）
+    //   鼠标一碰主列/二级 ⇒ 清掉键盘高亮，免得"鼠标在 A、键盘高亮在 B"
+    onSubRowChanged: subIndex = -1
+
     //   可选中 = 不是分隔线、没被禁用
     function pickable(i) {
         const it = items[i]
@@ -115,12 +124,37 @@ PopupPanel {
             }
         }
     }
+    function enterSub() {
+        if (subRow < 0 || subItems.length === 0)
+            return
+        subIndex = 0
+        subColumn.forceActiveFocus()
+    }
+    function moveSub(step) {
+        const n = subItems.length
+        if (n === 0)
+            return
+        subIndex = (subIndex + step + n) % n
+    }
+    function activateSub() {
+        if (subRow < 0 || subIndex < 0 || subIndex >= subItems.length)
+            return
+        //   ⚠️ 与鼠标那条同一个坑：`close()` 会清空 `subItems` ⇒ 本行被销毁，
+        //      之后解析 `root` 会报 ReferenceError。先取局部变量，再关、再发信号。
+        const menu = root
+        const r = subRow
+        const s = subIndex
+        menu.close()
+        menu.subItemTriggered(r, s)
+    }
+
     function activateCurrent() {
         if (currentIndex < 0 || !pickable(currentIndex))
             return
         const it = items[currentIndex]
-        if (it.submenu) {          // 二级菜单入口：展开（子项本身鼠标点选）
+        if (it.submenu) {          // 二级菜单入口：展开**并进入**（Enter 就能一路键盘操作）
             subRow = currentIndex
+            enterSub()
             return
         }
         const i = currentIndex
@@ -132,6 +166,7 @@ PopupPanel {
         // ★ 鼠标打开时**不高亮任何项**（否则会像"默认选中第一项"，误导用户）
         currentIndex = ui.inputFromKeyboard ? firstSelectableIndex() : -1
         subRow = -1
+        subIndex = -1
         column.forceActiveFocus()          // 键盘事件交给菜单内容项
     }
     onClosed: subRow = -1
@@ -204,6 +239,8 @@ PopupPanel {
         Keys.onReturnPressed: root.activateCurrent()
         Keys.onEnterPressed: root.activateCurrent()
         Keys.onSpacePressed: root.activateCurrent()
+        Keys.onRightPressed: root.enterSub()
+        Keys.onLeftPressed: if (root.subOpen) { root.subRow = -1; root.subIndex = -1 }
 
         Repeater {
             model: root.items
@@ -409,6 +446,14 @@ PopupPanel {
         y: root.subY
         width: root.subMenuW
         spacing: 0
+        focus: root.subOpen               // `enterSub()` 用 forceActiveFocus 把焦点交给它
+
+        Keys.onUpPressed: root.moveSub(-1)
+        Keys.onDownPressed: root.moveSub(1)
+        Keys.onReturnPressed: root.activateSub()
+        Keys.onEnterPressed: root.activateSub()
+        //   `Left` 退回主列（二级保持展开，符合"子菜单是主菜单的延伸"的惯例）
+        Keys.onLeftPressed: { root.subIndex = -1; column.forceActiveFocus() }
 
         Repeater {
             model: root.subItems
@@ -427,10 +472,12 @@ PopupPanel {
                 width: subColumn.width
                 height: Theme.controlMd
 
+                readonly property bool highlighted: subMa.containsMouse || index === root.subIndex
+
                 Rectangle {
                     anchors.fill: parent
                     radius: Theme.radiusMd
-                    color: subMa.containsMouse ? Theme.hoverFill : "transparent"
+                    color: subRowItem.highlighted ? Theme.hoverFill : "transparent"
                     Behavior on color { ColorAnimation { duration: Theme.durFast } }
                 }
                 Text {                                        // 选中标记（与主菜单同一套对号）
@@ -456,6 +503,7 @@ PopupPanel {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
+                    onEntered: root.subIndex = FIXME_INDEX
                     onClicked: {
                         //   ⚠️ close() 会让 `subItems` 清空 ⇒ **本行被销毁**，之后解析 id
                         //      （`root`）会报 "ReferenceError: root is not defined"。

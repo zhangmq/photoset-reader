@@ -29,6 +29,7 @@
 #include <QQmlEngine>
 #include <QQuickItem>
 #include <QDir>
+#include <QSignalSpy>
 #include <QTest>
 #include <QUrl>
 #include <viewermodel.h>
@@ -246,6 +247,59 @@ int main(int argc, char *argv[])
                               QStringLiteral("③ ★ 面板关闭 ⇒ A 恢复"));
                     }
                 }
+            }
+        }
+
+        //   ── ⑥ 右键菜单二级菜单的键盘导航（用户 2026-11-07）──────────────────
+        //   以前二级面板**只有鼠标**（`subColumn` 里没有任何 Keys）。契约：
+        //     Enter/Right 在主列的"带二级"行上 ⇒ 展开**并进入**二级；
+        //     ↑/↓ 在二级里移动；Enter 选中 ⇒ `subItemTriggered(row, sub)`。
+        {
+            QQuickWindow *win = qobject_cast<QQuickWindow *>(engine.rootObjects().value(0));
+            QQmlComponent comp(&engine);
+            comp.setData(R"(
+                import QtQuick
+                import AppUi
+                PopupMenu {
+                    id: probe
+                    items: [
+                        { text: "Plain", action: "plain" },
+                        { text: "Level", submenu: [
+                            { label: "one", value: 1 },
+                            { label: "two", value: 2 }
+                        ] }
+                    ]
+                }
+            )", QUrl(QStringLiteral("qrc:/inline/SubmenuProbe.qml")));
+            QObject *menu = comp.create();
+            check(menu != nullptr, QStringLiteral("⑥ 二级菜单夹具创建成功"));
+            if (menu && win) {
+                menu->setProperty("parent", QVariant::fromValue<QObject *>(win->contentItem()));
+                QSignalSpy spy(menu, SIGNAL(subItemTriggered(int,int)));
+                const bool opened = QMetaObject::invokeMethod(menu, "open");
+                testsupport::waitFor([]{ return false; }, 300);
+
+                //   Enter 在带二级的行上 ⇒ 进入二级，高亮第 0 项
+                menu->setProperty("currentIndex", 1);
+                QMetaObject::invokeMethod(menu, "activateCurrent");
+                testsupport::waitFor([]{ return false; }, 120);
+                check(opened && menu->property("subRow").toInt() == 1
+                          && menu->property("subIndex").toInt() == 0,
+                      QStringLiteral("⑥ ★ Enter 展开并进入二级（subRow=%1 subIndex=%2）")
+                          .arg(menu->property("subRow").toInt())
+                          .arg(menu->property("subIndex").toInt()));
+
+                //   ↓ 移动到第 1 项，Enter 选中
+                QMetaObject::invokeMethod(menu, "moveSub", Q_ARG(QVariant, 1));
+                check(menu->property("subIndex").toInt() == 1,
+                      QStringLiteral("⑥ ★ ↓ 在二级里移动"));
+                QMetaObject::invokeMethod(menu, "activateSub");
+                testsupport::waitFor([]{ return false; }, 120);
+                check(spy.count() == 1 && spy.at(0).at(0).toInt() == 1 && spy.at(0).at(1).toInt() == 1,
+                      QStringLiteral("⑥ ★ Enter 选中二级项并发出 subItemTriggered(row=%1, sub=%2)")
+                          .arg(spy.count() ? spy.at(0).at(0).toInt() : -1)
+                          .arg(spy.count() ? spy.at(0).at(1).toInt() : -1));
+                delete menu;
             }
         }
 
