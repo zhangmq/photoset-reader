@@ -457,13 +457,29 @@ Item {
     }
 
     // ── 窗口全屏：状态在 ViewModel，窗口跟随（照 vsr-player 的双向同步）──
+    //   ★ 2026-11-07：**记住进全屏之前的状态并还原**。
+    //     以前退出全屏一律写 `Window.Windowed`（= `Qt::WindowNoState`）⇒
+    //     "最大化 → 全屏 → 退出" 会把窗口打回 1500×950 的普通态，等于**我们主动
+    //     抹掉了窗口管理器的最大化状态**（Windows 上尤其明显：`Win+↑` 最大化后再
+    //     全屏/退全屏，最大化就没了）。
+    //     最大化 / 最小化 / 全屏本身**都由窗口管理器负责**（Win+↑ / Win+↓ / Meta+…），
+    //     应用只在"用户从我们的按钮或 Esc 进出全屏"这一个动作上读写窗口状态。
+    property int _visibilityBeforeFullscreen: Window.Windowed
     Connections {
         target: ui
         function onWindowFullscreenChanged() {
             var win = root.Window.window
             if (!win)
                 return
-            win.visibility = ui.windowFullscreen ? Window.FullScreen : Window.Windowed
+            if (ui.windowFullscreen) {
+                if (win.visibility !== Window.FullScreen)
+                    root._visibilityBeforeFullscreen = win.visibility
+                win.visibility = Window.FullScreen
+            } else {
+                win.visibility = root._visibilityBeforeFullscreen === Window.Maximized
+                                 ? Window.Maximized : Window.Windowed
+                root._visibilityBeforeFullscreen = Window.Windowed
+            }
         }
     }
 
